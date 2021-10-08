@@ -15,8 +15,8 @@ namespace kaixo {
     template<class T, template<class...> class S>
     concept specialization_of = is_specialization<T, S>::value;
 
-	template<class T, class ...Tys>
-	concept one_of = (std::same_as<Tys, T> || ...);
+    template<class T, class ...Tys>
+    concept one_of = (std::same_as<Tys, T> || ...);
 
     template<class>
     struct member_signature;

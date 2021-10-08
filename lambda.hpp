@@ -105,52 +105,52 @@ namespace kaixo {
         using type = typename std::tuple_element<N, std::tuple<Tys...>>::type;
     };
 
-	template<class, class = captures<>>
-	class lambda;
-	template<specialization_of<captures> C, class Return, class ...Args>
-	class lambda<Return(Args...), C> : public function<Return(Args...)> {
-		using parent = function<Return(Args...)>;
-	public:
-		using captures = C;
+    template<class, class = captures<>>
+    class lambda;
+    template<specialization_of<captures> C, class Return, class ...Args>
+    class lambda<Return(Args...), C> : public function<Return(Args...)> {
+        using parent = function<Return(Args...)>;
+    public:
+        using captures = C;
 
-		template<std::invocable<Args...> T>
-		lambda(T&& t)
-			: alignment(alignof(T)), parent(std::forward<T>(t)), lambda_data(reinterpret_cast<std::byte*>(std::addressof(
-				dynamic_cast<typed_function_storage<T, parent::result_type(Args...)>*>(this->storage)->function)))
-		{}
+        template<std::invocable<Args...> T>
+        lambda(T&& t)
+            : alignment(alignof(T)), parent(std::forward<T>(t)), lambda_data(reinterpret_cast<std::byte*>(std::addressof(
+                dynamic_cast<typed_function_storage<T, parent::result_type(Args...)>*>(this->storage)->function)))
+        {}
 
-		lambda(lambda&& other)
-			: alignment(other.alignment), lambda_data(other.lambda_data), parent((parent)other)
-		{}
+        lambda(lambda&& other)
+            : alignment(other.alignment), lambda_data(other.lambda_data), parent((parent)other)
+        {}
 
-		lambda(const lambda& other)
-			: alignment(other.alignment), lambda_data(other.lambda_data), parent((parent)other)
-		{}
+        lambda(const lambda& other)
+            : alignment(other.alignment), lambda_data(other.lambda_data), parent((parent)other)
+        {}
 
-		template<std::size_t I, class Type>
-		decltype(auto) get() {
-			std::size_t _offset = alignment * I;
-			if constexpr (std::is_reference_v<Type>)
-				return *reinterpret_cast<std::remove_reference_t<Type>*>(reinterpret_cast<std::ptrdiff_t*>(lambda_data + _offset)[0]);
+        template<std::size_t I, class Type>
+        decltype(auto) get() {
+            std::size_t _offset = alignment * I;
+            if constexpr (std::is_reference_v<Type>)
+                return *reinterpret_cast<std::remove_reference_t<Type>*>(reinterpret_cast<std::ptrdiff_t*>(lambda_data + _offset)[0]);
 
-			else
-				return *reinterpret_cast<Type*>(lambda_data + _offset);
-		}
+            else
+                return *reinterpret_cast<Type*>(lambda_data + _offset);
+        }
 
-		template<std::size_t I> requires (I < captures_size<captures>::value)
-		decltype(auto) get() {
-			using Type = nth_capture<I, captures>::type;
-			std::size_t _offset = alignment * I;
-			if constexpr (std::is_reference_v<Type>)
-				return *reinterpret_cast<std::remove_reference_t<Type>*>(reinterpret_cast<std::ptrdiff_t*>(lambda_data + _offset)[0]);
+        template<std::size_t I> requires (I < captures_size<captures>::value)
+        decltype(auto) get() {
+            using Type = nth_capture<I, captures>::type;
+            std::size_t _offset = alignment * I;
+            if constexpr (std::is_reference_v<Type>)
+                return *reinterpret_cast<std::remove_reference_t<Type>*>(reinterpret_cast<std::ptrdiff_t*>(lambda_data + _offset)[0]);
 
-			else
-				return *reinterpret_cast<Type*>(lambda_data + _offset);
-		}
+            else
+                return *reinterpret_cast<Type*>(lambda_data + _offset);
+        }
 
-		size_t alignment;
-		std::byte* lambda_data;
-	};
+        size_t alignment;
+        std::byte* lambda_data;
+    };
 
     template<class>
     struct tuple_to_captures;
@@ -169,6 +169,6 @@ namespace kaixo {
         return tuple_to_captures_t<refl::as_tuple<lambda_type>>{};
     }
 
-	template<class T>
+    template<class T>
     lambda(T)->lambda<lambda_signature_t<T>, decltype(lambda_captures<T>())>;
 }
