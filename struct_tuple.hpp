@@ -57,11 +57,11 @@ namespace kaixo {
     using member_type = typename decltype(magic_friend(member<Type, Index>{}))::type;
 
     // Get the field types using an index sequence.
-    template<typename Type, std::size_t... Ns>
+    template<class Type, std::size_t... Ns>
     constexpr auto get_field_types(std::index_sequence<Ns...>) -> std::tuple<member_type<Type, Ns>...> {};
 
     // Struct info, like amount of fields, and their types.
-    template<typename Type> requires std::is_aggregate_v<Type>
+    template<class Type> requires std::is_aggregate_v<Type>
     struct struct_info {
         constexpr static std::size_t fields = find_field_count<Type, sizeof(Type)>::value;
         using field_types = decltype(get_field_types<Type>(std::make_index_sequence<fields>{}));
@@ -78,7 +78,7 @@ namespace kaixo {
     }
 
     // Get the Nth member of the struct Type
-    template<std::size_t N, typename Type> requires std::is_aggregate_v<Type>
+    template<std::size_t N, class Type> requires std::is_aggregate_v<Type>
     inline auto& get(Type& s) {
         return *reinterpret_cast<member_type<Type, N>*>((reinterpret_cast<char8_t*>(
             std::addressof(s)) + get_offset<Type>(std::make_index_sequence<N + 1>{})));
@@ -91,7 +91,7 @@ namespace kaixo {
     }
 
     // Convert Type to a tuple.
-    template<typename Type>
+    template<class Type>
     inline auto as_tuple(Type& s) {
         return as_tuple_seq(s, std::make_index_sequence<struct_info<Type>::fields>{});
     }
