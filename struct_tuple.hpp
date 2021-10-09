@@ -34,6 +34,8 @@ namespace kaixo {
     };
 
     // Concept that tests if Type is instantiable with sizeof...(Ns) arguments.
+    // When we use this concept it will also instantiate the templated implicit
+    // operators in 'all', giving us the implementation of the magic friend function.
     template<class Type, std::size_t... Ns>
     concept instantiable = requires() {
         new Type{ all<Type, Ns>{}... };
