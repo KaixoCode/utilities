@@ -11,8 +11,8 @@ namespace kaixo {
         using result_type = Return;
         using argument_types = std::tuple<Args...>;
 
-        template<class ...Tys> requires std::constructible_from<function<result_type(Args...)>, Tys...>
-        pa_function(Tys&&...f)
+        template<class ...Tys> 
+        pa_function(Tys&&...f) requires std::constructible_from<function<result_type(Args...)>, Tys...>
             : function(std::forward<Tys>(f)...) {}
 
         auto& operator=(pa_function&& f) {
@@ -36,7 +36,7 @@ namespace kaixo {
 
         inline operator bool() const { return function; }
 
-    private:
+    protected:
         function<result_type(Args...)> function;
     };
 

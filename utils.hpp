@@ -4,6 +4,10 @@
 #include <utility>
 #include <typeinfo>
 #include <stdexcept>
+#include <array>
+#include <bitset>
+#include <cassert>
+#include <iostream>
 
 namespace kaixo {
     template<class Test, template<class...> class Ref>
@@ -75,4 +79,21 @@ namespace kaixo {
     concept are_first_n = requires(typename first_n_args<Func, sizeof...(Tys)>::type func, Tys&&...tys) {
         func(std::forward<Tys>(tys)...);
     };
+
+    void print_struct(auto& data)
+    {
+        std::byte* _bytes = reinterpret_cast<std::byte*>(std::addressof(data));
+
+        constexpr size_t _size = sizeof(decltype(data));
+        constexpr size_t _bytesperrow = alignof(decltype(data));
+
+        for (int i = 0; i < _size; i++)
+        {
+            size_t index = (1 + std::floor(i / _bytesperrow)) * _bytesperrow - (1 + i % _bytesperrow);
+            std::bitset<8> _byte = (char8_t)_bytes[index];
+            std::cout << _byte << " ";
+            if ((i + 1) % _bytesperrow == 0)
+                std::cout << std::endl;
+        }
+    }
 }

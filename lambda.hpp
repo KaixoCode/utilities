@@ -1,8 +1,6 @@
 #pragma once
 #include "utils.hpp"
 #include "function.hpp"
-#include <array>
-#include <bitset>
 
 // Based on
 // * http://alexpolt.github.io/type-loophole.html
@@ -107,11 +105,54 @@ namespace kaixo {
 
     template<class, class = captures<>>
     class lambda;
-    template<specialization_of<captures> C, class Return, class ...Args>
-    class lambda<Return(Args...), C> : public function<Return(Args...)> {
+    template<class ...Tys, class Return, class ...Args>
+    class lambda<Return(Args...), captures<Tys...>> : public function<Return(Args...)> {
         using parent = function<Return(Args...)>;
+        using seq = std::make_index_sequence<sizeof...(Tys)>;
     public:
-        using captures = C;
+        using captures = captures<Tys...>;
+
+        struct value {
+            template<one_of<Tys...> T>
+            inline operator T& () { return get<T>(); }
+
+            template<one_of<Tys...> T>
+            inline operator T const& () const { return get<T>(); }
+
+            template<one_of<Tys...> T>
+            inline T& get() {
+                check_type<T>(seq{});
+
+                if constexpr (std::is_reference_v<T>)
+                    return *reinterpret_cast<std::remove_reference_t<T>*>(data);
+
+                else
+                    return *reinterpret_cast<T*>(data);
+            }
+
+            template<one_of<Tys...> T>
+            inline T const& get() const {
+                check_type<T>(seq{});
+                if constexpr (std::is_reference_v<T>)
+                    return *reinterpret_cast<std::remove_reference_t<T>*>(data);
+
+                else
+                    return *reinterpret_cast<T*>(data);
+            }
+
+        private:
+            value(std::size_t i) : index(i) {}
+
+            template<class T, std::size_t ...Is>
+            inline void check_type(std::index_sequence<Is...>) {
+                ((index == Is && !std::is_same_v<nth_capture<Is, captures>::type, T>
+                    ? throw std::bad_cast{} : false), ...);
+            }
+
+            void* data = nullptr;
+            std::size_t index = 0;
+            friend class lambda;
+        };
 
         template<std::invocable<Args...> T>
         lambda(T&& t)
@@ -127,18 +168,8 @@ namespace kaixo {
             : alignment(other.alignment), lambda_data(other.lambda_data), parent((parent)other)
         {}
 
-        template<std::size_t I, class Type>
-        decltype(auto) get() {
-            std::size_t _offset = alignment * I;
-            if constexpr (std::is_reference_v<Type>)
-                return *reinterpret_cast<std::remove_reference_t<Type>*>(reinterpret_cast<std::ptrdiff_t*>(lambda_data + _offset)[0]);
-
-            else
-                return *reinterpret_cast<Type*>(lambda_data + _offset);
-        }
-
-        template<std::size_t I> requires (I < captures_size<captures>::value)
-        decltype(auto) get() {
+        template<std::size_t I> 
+        inline auto& get() requires (I < captures_size<captures>::value) {
             using Type = nth_capture<I, captures>::type;
             std::size_t _offset = alignment * I;
             if constexpr (std::is_reference_v<Type>)
@@ -148,8 +179,34 @@ namespace kaixo {
                 return *reinterpret_cast<Type*>(lambda_data + _offset);
         }
 
+        template<std::size_t I>
+        inline auto const& get() const requires (I < captures_size<captures>::value) {
+            using Type = nth_capture<I, captures>::type;
+            std::size_t _offset = alignment * I;
+            if constexpr (std::is_reference_v<Type>)
+                return *reinterpret_cast<std::remove_reference_t<Type>*>(reinterpret_cast<std::ptrdiff_t*>(lambda_data + _offset)[0]);
+
+            else
+                return *reinterpret_cast<Type*>(lambda_data + _offset);
+        }
+
+        inline value operator[](std::size_t index) { return get(index, seq{}); }
+        inline const value operator[](std::size_t index) const { return get(index, seq{}); }
+        inline auto& get(std::size_t index) { return get(index, seq{}); }
+        inline auto const& get(std::size_t index) const { return get(index, seq{}); }
+
+    private:
         size_t alignment;
         std::byte* lambda_data;
+
+        template<std::size_t... Is>
+        inline value get(std::size_t index, std::index_sequence<Is...>) {
+            if (index >= sizeof...(Tys))
+                throw std::out_of_range{ "Index if out of range for this tuple." };
+
+            value _value = index;
+            return ((index == Is ? (_value.data = (void*)&(this->get<Is>()), _value) : _value), ...);
+        }
     };
 
     template<class>

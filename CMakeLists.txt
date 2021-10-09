@@ -13,6 +13,7 @@ add_library(utilities STATIC
   "${utilities_SOURCE_DIR}/pa_function.hpp"
   "${utilities_SOURCE_DIR}/function.hpp" 
   "${utilities_SOURCE_DIR}/lambda.hpp"
+  "${utilities_SOURCE_DIR}/struct_tuple.hpp"
 )
 
 set_target_properties(utilities PROPERTIES LINKER_LANGUAGE CXX)

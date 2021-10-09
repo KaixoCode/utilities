@@ -47,11 +47,8 @@ namespace kaixo {
         inline value operator[](std::size_t index) { return get(index, seq{}); }
         inline const value operator[](std::size_t index) const { return get(index, seq{}); }
 
-        template<one_of<Tys...> T>
-        inline T& get(std::size_t index) { return get(index, seq{}); }
-
-        template<one_of<Tys...> T>
-        inline T const& get(std::size_t index) const { return get(index, seq{}); }
+        inline auto& get(std::size_t index) { return get(index, seq{}); }
+        inline auto const& get(std::size_t index) const { return get(index, seq{}); }
 
         template<std::size_t I>
         inline auto& get() { return std::get<I>(*this); }

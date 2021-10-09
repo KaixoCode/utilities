@@ -1,9 +1,7 @@
 #include "smart_tuple.hpp"
 #include "pa_function.hpp"
 #include "lambda.hpp"
-#include <cassert>
-#include <iostream>
-
+#include "struct_tuple.hpp"
 
 using namespace kaixo;
 
@@ -65,17 +63,37 @@ void smart_tuple_example()
 
 void lambda_example()
 {
-    int a = 0;
-    double b = 1;
+    //int a = 0;
+    //double b = 1;
 
-    lambda t = [=](int c) -> int { return a + b + c; };
+    //lambda t = [=](int c) -> int { return a + b + c; };
 
-    std::cout << typeid(decltype(t)).name() << std::endl;
+    //std::cout << typeid(decltype(t)).name() << std::endl;
 
-    t.get<0>() += 10;
-    t.get<1>() += 10;
+    //t.get<0>() += 10;
+    //t.get<1>() += 10;
 
-    std::cout << t(1) << std::endl;
+    //std::cout << t(1) << std::endl;
+}
+
+void struct_tuple_example()
+{
+    struct Apple {
+        short q = 1;
+        long long d = 2;
+        int a = 3;
+        double b = 4;
+        float c = 5;
+    };
+
+    Apple apple;
+    std::tuple tuple = as_tuple(apple);
+    std::cout << typeid(decltype(tuple)).name() << std::endl;
+    std::cout << std::get<0>(tuple) << std::endl;
+    std::cout << std::get<1>(tuple) << std::endl;
+    std::cout << std::get<2>(tuple) << std::endl;
+    std::cout << std::get<3>(tuple) << std::endl;
+    std::cout << std::get<4>(tuple) << std::endl;
 }
 
 int main()
@@ -83,4 +101,5 @@ int main()
     pa_function_example();
     smart_tuple_example();
     lambda_example();
+    struct_tuple_example();
 }
