@@ -76,24 +76,40 @@ void lambda_example()
     //std::cout << t(1) << std::endl;
 }
 
+struct Apple {
+    short q = 1;
+    long long d = 2;
+    int a = 3;
+    double b = 4;
+    float c = 5;
+};
+
+class Thing
+{
+public:
+    Thing(int a, short b, long long c, double d, float e) {}
+};
+
 void struct_tuple_example()
 {
-    struct Apple {
-        short q = 1;
-        long long d = 2;
-        int a = 3;
-        double b = 4;
-        float c = 5;
-    };
+    constexpr size_t args = constructor_info<Thing>::args;
+    std::cout << args << std::endl;
+    std::cout << typeid(constructor_info<Thing>::arg_types).name() << std::endl;
 
     Apple apple;
-    std::tuple tuple = as_tuple(apple);
-    std::cout << typeid(decltype(tuple)).name() << std::endl;
-    std::cout << std::get<0>(tuple) << std::endl;
-    std::cout << std::get<1>(tuple) << std::endl;
-    std::cout << std::get<2>(tuple) << std::endl;
-    std::cout << std::get<3>(tuple) << std::endl;
-    std::cout << std::get<4>(tuple) << std::endl;
+
+    constexpr size_t fields = struct_info<Apple>::fields;
+    using tuple = struct_info<Apple>::field_types;
+    std::cout << fields << std::endl;
+    std::cout << typeid(tuple).name() << std::endl;
+    
+    tuple _tuple = as_tuple(apple);
+    std::cout << typeid(decltype(_tuple)).name() << std::endl;
+    std::cout << std::get<0>(_tuple) << std::endl;
+    std::cout << std::get<1>(_tuple) << std::endl;
+    std::cout << std::get<2>(_tuple) << std::endl;
+    std::cout << std::get<3>(_tuple) << std::endl;
+    std::cout << std::get<4>(_tuple) << std::endl;
 }
 
 int main()
