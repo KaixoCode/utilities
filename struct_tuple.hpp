@@ -49,10 +49,9 @@ namespace kaixo {
     constexpr std::size_t has_n_fields(...) { return 0; }
 
     // Find the field count of the Type using recursive inheritance with a base case of 0.
-    template<class Type, std::size_t N, std::size_t Count = has_n_fields<Type>(std::make_index_sequence<N>{}) >
-    struct find_field_count : std::conditional_t<Count == 0, find_field_count<Type, N - 1>, std::integral_constant<std::size_t, Count>> {};
     template<class Type, std::size_t N>
-    struct find_field_count<Type, 0, N> : std::integral_constant<std::size_t, 0> {};
+    struct find_field_count : std::conditional_t<has_n_fields<Type>(std::make_index_sequence<N + 1>{}) == 0, 
+        std::integral_constant<std::size_t, has_n_fields<Type>(std::make_index_sequence<N>{})>, find_field_count<Type, N + 1>>{};
 
     // Get the type of the member at Index for Type using the magic friend function.
     template<class Type, std::size_t Index>
@@ -65,7 +64,7 @@ namespace kaixo {
     // Struct info, like amount of fields, and their types.
     template<class Type> requires std::is_aggregate_v<Type>
     struct struct_info {
-        constexpr static std::size_t fields = find_field_count<Type, sizeof(Type)>::value;
+        constexpr static std::size_t fields = find_field_count<Type, 0>::value;
         using field_types = decltype(get_field_types<Type>(std::make_index_sequence<fields>{}));
     };
 
