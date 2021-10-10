@@ -10,6 +10,15 @@
 #include <iostream>
 
 namespace kaixo {
+    template<size_t, class>
+    struct nth_type_of;
+    template<size_t N, template<class...> class Type, class ...Types>
+    struct nth_type_of<N, Type<Types...>> {
+        using type = typename std::tuple_element<N, std::tuple<Types...>>::type;
+    };
+    template<size_t N, class Group>
+    using nth_type_of_t = typename nth_type_of<N, Group>::type;
+
     template<class Test, template<class...> class Ref>
     struct is_specialization : std::false_type {};
 
