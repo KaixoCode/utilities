@@ -2,6 +2,7 @@
 #include "pa_function.hpp"
 #include "lambda.hpp"
 #include "struct_tuple.hpp"
+#include "type_linker.hpp"
 
 using namespace kaixo;
 
@@ -76,6 +77,12 @@ void lambda_example()
     //std::cout << t(1) << std::endl;
 }
 
+class Thing
+{
+public:
+    Thing(int a, short b, long long c, double d, float e) {}
+};
+
 struct Apple {
     short q = 1;
     long long d = 2;
@@ -84,36 +91,45 @@ struct Apple {
     float c = 5;
 };
 
-class Thing
-{
-public:
-    Thing(int a, short b, long long c, double d, float e) {}
-};
-
 void struct_tuple_example()
 {
-    constexpr size_t args = constructor_info<Thing>::args;
-    std::cout << args << std::endl;
-    std::cout << typeid(constructor_info<Thing>::arg_types).name() << std::endl;
-
-    Apple apple;
-
-    constexpr size_t fields = struct_info<Apple>::fields;
-    using tuple = struct_info<Apple>::field_types;
-    std::cout << fields << std::endl;
-    std::cout << typeid(tuple).name() << std::endl;
-    
-    tuple _tuple = as_tuple(apple);
-    std::cout << typeid(decltype(_tuple)).name() << std::endl;
-    std::cout << std::get<0>(_tuple) << std::endl;
-    std::cout << std::get<1>(_tuple) << std::endl;
-    std::cout << std::get<2>(_tuple) << std::endl;
-    std::cout << std::get<3>(_tuple) << std::endl;
-    std::cout << std::get<4>(_tuple) << std::endl;
+    //Apple apple;
+    //
+    //constexpr size_t fields = struct_info<Apple>::fields;
+    //using tuple = struct_info<Apple>::field_types;
+    //std::cout << fields << std::endl;
+    //std::cout << typeid(tuple).name() << std::endl;
+    //
+    //tuple _tuple = as_tuple(apple);
+    //std::cout << typeid(decltype(_tuple)).name() << std::endl;
+    //std::cout << std::get<0>(_tuple) << std::endl;
+    //std::cout << std::get<1>(_tuple) << std::endl;
+    //std::cout << std::get<2>(_tuple) << std::endl;
+    //std::cout << std::get<3>(_tuple) << std::endl;
+    //std::cout << std::get<4>(_tuple) << std::endl;
+    //
+    //constexpr size_t args = constructor_info<Thing>::args;
+    //std::cout << args << std::endl;
+    //std::cout << typeid(constructor_info<Thing>::arg_types).name() << std::endl;
 }
+
+
+void type_linker_example()
+{
+    link_types<type_group<double, double>, type_group<int, short>>;
+    link_types<type_group<short, long>, type_group<char, float>>;
+
+    using type1 = linked_types<int, short>;
+    using type2 = linked_types<char, float>;
+
+    std::cout << typeid(type1).name() << std::endl;
+    std::cout << typeid(type2).name() << std::endl;
+}
+
 
 int main()
 {
+    type_linker_example();
     pa_function_example();
     smart_tuple_example();
     lambda_example();
