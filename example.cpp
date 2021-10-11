@@ -129,17 +129,30 @@ void type_linker_example()
 
 void constexpr_counter_example()
 {
-    number<incr::get()> nmr1;
-    number<incr::get()> nmr2;
-    number<incr::get()> nmr3;
-    number<incr::get()> nmr4;
-    number<incr::get()> nmr5;
+    number<counter(0)::get()> nmr1;
+    number<counter(0)::get()> nmr2;
+    number<counter(0)::get()> nmr3;
+    number<counter(0)::get()> nmr4;
+    number<counter(0)::get()> nmr5;
 
     std::cout << typeid(nmr1).name() << std::endl;
     std::cout << typeid(nmr2).name() << std::endl;
     std::cout << typeid(nmr3).name() << std::endl;
     std::cout << typeid(nmr4).name() << std::endl;
     std::cout << typeid(nmr5).name() << std::endl;
+
+    number<counter(1)::get()> nmr12;
+    number<counter(1)::get()> nmr22;
+    number<counter(1)::get()> nmr32;
+    number<counter(1)::get()> nmr42;
+    number<counter(1)::get()> nmr52;
+
+    std::cout << typeid(nmr12).name() << std::endl;
+    std::cout << typeid(nmr22).name() << std::endl;
+    std::cout << typeid(nmr32).name() << std::endl;
+    std::cout << typeid(nmr42).name() << std::endl;
+    std::cout << typeid(nmr52).name() << std::endl;
+
 }
 
 int main()
