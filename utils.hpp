@@ -10,6 +10,14 @@
 #include <iostream>
 
 namespace kaixo {
+    template<class Type>
+    struct wrapper {
+        using type = Type;
+    };
+    template<class ...Types>
+    struct type_group {
+        constexpr static inline size_t count = sizeof...(Types);
+    };
     template<size_t, class>
     struct nth_type_of;
     template<size_t N, template<class...> class Type, class ...Types>

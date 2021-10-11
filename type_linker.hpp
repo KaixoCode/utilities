@@ -2,11 +2,6 @@
 #include "utils.hpp"
 
 namespace kaixo {
-    template<class ...Types>
-    struct type_group {
-        constexpr static inline size_t count = sizeof...(Types);
-    };
-
     template<class> struct tag;
     template<class ...Input>
     struct tag<type_group<Input...>> {

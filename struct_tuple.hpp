@@ -4,10 +4,6 @@
 #include <cmath>
 
 namespace kaixo {
-    template<class Type>
-    struct wrapper {
-        using type = Type;
-    };
 
     template<class Type, std::size_t Index>
     struct member {
