@@ -10,6 +10,10 @@
 #include <iostream>
 
 namespace kaixo {
+    template<size_t V>
+    struct number {
+        constexpr static inline size_t value = V;
+    };
     template<class Type>
     struct wrapper {
         using type = Type;
