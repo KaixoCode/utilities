@@ -28,7 +28,7 @@ namespace kaixo {
 
     template<size_t V, size_t C, auto L> requires (!checker<V, C, decltype(L)>::value)
     struct incr<V, C, L> {
-        constexpr static inline size_t get() { return V; }
+        constexpr static size_t get() { return V; }
     };
 
     template<size_t V, size_t C, auto L> requires (checker<V, C, decltype(L)>::value)
