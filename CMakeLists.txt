@@ -24,3 +24,11 @@ set_target_properties(utilities PROPERTIES LINKER_LANGUAGE CXX)
 add_executable(utilities_example
   "${utilities_SOURCE_DIR}/example.cpp"
 )
+
+target_link_libraries(utilities_example
+  comctl32
+  propsys
+  dwmapi
+  gdiplus
+  user32
+)
