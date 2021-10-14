@@ -58,13 +58,13 @@ public:
 
     // Const and non-const index operators
     inline auto& operator[](size_t index) { return m_Data[index]; }
-    inline auto& operator[](size_t index) const { return m_Data[index]; }
+    inline const auto& operator[](size_t index) const { return m_Data[index]; }
 
     // Const and non-const front/back.
     inline auto& front() { return *begin(); }
     inline auto& back() { return *(end() - 1); }
-    inline auto& front() const { return *begin(); }
-    inline auto& back() const { return *(end() - 1); }
+    inline const auto& front() const { return *begin(); }
+    inline const auto& back() const { return *(end() - 1); }
 
     // Begin and end are used in range based loop syntax
     // like "for (auto& i : array)".

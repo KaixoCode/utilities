@@ -16,6 +16,7 @@ add_library(utilities STATIC
   "${utilities_SOURCE_DIR}/struct_tuple.hpp"
   "${utilities_SOURCE_DIR}/type_linker.hpp"
   "${utilities_SOURCE_DIR}/constexpr_counter.hpp"
+  "${utilities_SOURCE_DIR}/dynamic_array.hpp"
 )
 
 set_target_properties(utilities PROPERTIES LINKER_LANGUAGE CXX)

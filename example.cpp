@@ -475,7 +475,7 @@ int entrypoint() {
 int main()
 {
     size_t size = 200;
-    dynamic_array<int> arr{ size };
+    const dynamic_array<int> arr{ size };
 
     // Fill array with 0s
     
