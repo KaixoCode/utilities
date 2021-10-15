@@ -468,11 +468,208 @@ int entrypoint() {
 )~~";
 
 };
+
+template<class Type>
+class my_vector {
+public:
+    using value_type = Type;
+    using pointer = Type*;
+    using const_pointer = const Type*;
+    using reference = Type&;
+    using const_reference = const Type&;
+    using size_type = size_t;
+    using difference_type = ptrdiff_t;
+private:
+    pointer m_Data = nullptr;
+    size_type m_Size = 0;
+    size_type m_AllocatedSize = 0;
+
+public:
+
+    class const_iterator {
+    public:
+        using value_type = Type;
+        using pointer = Type*;
+        using const_pointer = const Type*;
+        using reference = Type&;
+        using const_reference = const Type&;
+        using size_type = size_t;
+        using difference_type = ptrdiff_t;
+        using iterator_category = std::random_access_iterator_tag;
+    protected:
+        pointer m_Ptr;
+    public:
+        const_iterator(pointer ptr) : m_Ptr(ptr) {}
+        const_iterator(const_iterator&& other) = default;
+        const_iterator(const const_iterator& other) = default;
+        const_iterator& operator=(const_iterator&&) = default;
+        const_iterator& operator=(const const_iterator&) = default;
+        const_iterator& operator++() { m_Ptr++; return *this; }
+        const_iterator& operator--() { m_Ptr--; return *this; }
+        const_iterator& operator+=(size_type amt) { this->m_Ptr += amt; return *this; }
+        const_iterator& operator-=(size_type amt) { this->m_Ptr -= amt; return *this; }
+        const_iterator operator++(int) { const_iterator _backup = *this; m_Ptr++; return _backup; }
+        const_iterator operator--(int) { const_iterator _backup = *this; m_Ptr--; return _backup; }
+        const_iterator operator+(size_type amt) const { const_iterator _new = *this; _new.m_Ptr += amt; return _new; }
+        const_iterator operator-(size_type amt) const { const_iterator _new = *this; _new.m_Ptr -= amt; return _new; }
+        difference_type operator-(const const_iterator& other) const { return this->m_Ptr - other.m_Ptr; }
+
+        bool operator!=(const const_iterator& other) const { return other.m_Ptr != m_Ptr; }
+        bool operator==(const const_iterator& other) const { return other.m_Ptr == m_Ptr; }
+
+        const_reference operator*() const { return *this->m_Ptr; }
+        const_pointer operator->() const { return this->m_Ptr; }
+        friend class my_vector;
+    };
+
+    class iterator : const_iterator {
+    public:
+        using value_type = Type;
+        using pointer = Type*;
+        using const_pointer = const Type*;
+        using reference = Type&;
+        using const_reference = const Type&;
+        using size_type = size_t;
+        using difference_type = ptrdiff_t;
+        using iterator_category = std::random_access_iterator_tag;
+        using const_iterator::const_iterator;
+        iterator(iterator&& other) = default;
+        iterator(const iterator& other) = default;
+        iterator& operator=(iterator&&) = default;
+        iterator& operator=(const iterator&) = default;
+        iterator& operator++() { this->m_Ptr++; return *this; }
+        iterator& operator--() { this->m_Ptr--; return *this; }
+        iterator& operator+=(size_type amt) { this->m_Ptr += amt; return *this; }
+        iterator& operator-=(size_type amt) { this->m_Ptr -= amt; return *this; }
+        iterator operator++(int) { iterator _backup = *this; this->m_Ptr++; return _backup; }
+        iterator operator--(int) { iterator _backup = *this; this->m_Ptr--; return _backup; }
+        iterator operator+(size_type amt) const { iterator _new = *this; _new.m_Ptr += amt; return _new; }
+        iterator operator-(size_type amt) const { iterator _new = *this; _new.m_Ptr -= amt; return _new; }
+        difference_type operator-(const iterator& other) const { return this->m_Ptr - other.m_Ptr; }
+
+        bool operator!=(const iterator& other) const { return other.m_Ptr != this->m_Ptr; }
+        bool operator==(const iterator& other) const { return other.m_Ptr == this->m_Ptr; }
+
+        reference operator*() { return *this->m_Ptr; }
+        pointer operator->() { return this->m_Ptr; }
+        friend class my_vector;
+    };
+
+    my_vector() { allocate(2); }
+    ~my_vector() { clear(); }
+
+    bool empty() const { return m_Size == 0; }
+    size_type size() const { return m_Size; }
+    size_type capacity() const { return m_AllocatedSize; }
+
+    void clear() {
+        for (size_type _index = 0; _index < m_Size; _index++)
+            m_Data[_index].~value_type();
+        
+        delete[] reinterpret_cast<uint8_t*>(m_Data);
+        m_Data = nullptr;
+        m_Size = 0;
+    }
+
+    void erase(iterator iter) {
+        std::move(iter + 1, end(), iter);
+        end()->~value_type();
+        m_Size--;
+    }
+
+    void reserve(size_type amount) {
+        if (amount < m_Size) return; // If already enough memory, return
+        allocate(amount);
+    }
+
+    void push_back(value_type&& elem) {
+        check_size();
+        new (&m_Data[m_Size]) value_type(std::move(elem));
+        m_Size++;
+    }
+
+    void push_back(const_reference elem) {
+        check_size();
+        new (&m_Data[m_Size]) value_type(elem);
+        m_Size++;
+    }
+
+    template<class ...Args> 
+    reference emplace_back(Args&& ...args) requires std::constructible_from<value_type, Args...> {
+        check_size();
+        new (&m_Data[m_Size]) value_type(std::forward<Args>(args)...);
+        m_Size++;
+        return m_Data[m_Size - 1];
+    }
+
+    template<class ...Args>
+    reference emplace(Args&& ...args) requires std::constructible_from<value_type, Args...> {
+        check_size();
+        new (&m_Data[m_Size]) value_type(std::forward<Args>(args)...);
+        m_Size++;
+        return m_Data[m_Size - 1];
+    }
+
+    reference at(size_type index) { return m_Data[index]; }
+    const_reference at(size_type index) const { return m_Data[index]; }
+    reference operator[](size_type index) { return m_Data[index]; }
+    const_reference operator[](size_type index) const { return m_Data[index]; }
+
+    reference front() { return *m_Data[0]; }
+    reference back() { return *m_Data[m_Size - 1]; }
+    const_reference front() const { return *m_Data[0]; }
+    const_reference back() const { return *m_Data[m_Size - 1]; }
+
+    pointer data() { return m_Data; }
+    iterator begin() { return m_Data; }
+    iterator end() { return m_Data + m_Size; }
+    const_pointer data() const { return m_Data; }
+    const_iterator begin() const { return m_Data; }
+    const_iterator end() const { return m_Data + m_Size; }
+    const_iterator cbegin() const { return m_Data; }
+    const_iterator cend() const { return m_Data + m_Size; }
+
+private:
+    void check_size() {
+        if (m_Size + 1 > m_AllocatedSize) allocate(m_AllocatedSize * 2);
+    }
+
+    void allocate(size_type amount) {
+        pointer _new = reinterpret_cast<pointer>(new uint8_t[amount * sizeof value_type]);
+        for (size_type _index = 0; _index < m_Size; _index++) {
+            new (&_new[_index]) value_type(std::move(m_Data[_index]));
+            m_Data[_index].~value_type();
+        }
+        delete[] reinterpret_cast<uint8_t*>(m_Data);
+        m_Data = _new;
+        m_AllocatedSize = amount;
+    }
+};
+
+struct Woofers {
+    int val;
+    Woofers() { puts("construct"); }
+    Woofers(int val) : val(val) { puts("construct"); }
+    Woofers(const Woofers& other) : val(other.val) { puts("copy"); }
+    Woofers(Woofers&& other) : val(other.val) { puts("move"); }
+    Woofers& operator=(const Woofers& other) { val = other.val; puts("copy assign"); return *this; }
+    Woofers& operator=(Woofers&& other) { val = other.val; puts("move assign"); return *this; }
+    ~Woofers() { puts("delete"); }
+};
+
+
 #include "image_buffer.hpp"
+#include <Windows.h>
+
+
+
+
 
 
 int main()
 {
+
+
     image buffer;
 
     buffer.load_image(R"(C:\Users\Jeroen\Pictures\Quotes\Screenshot (441).png)");
