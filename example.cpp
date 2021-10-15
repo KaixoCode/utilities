@@ -468,28 +468,14 @@ int entrypoint() {
 )~~";
 
 };
-
-#include "dynamic_array.hpp"
+#include "image_buffer.hpp"
 
 
 int main()
 {
-    size_t size = 200;
-    const dynamic_array<int> arr{ size };
+    image buffer;
 
-    // Fill array with 0s
-    
-
-    // Loop over array
-    for (auto& i : arr) {
-
-    }
-
-    // Access index
-    arr[0] = 10;
-
-    // Get size
-    std::cout << arr.size();
+    buffer.load_image(R"(C:\Users\Jeroen\Pictures\Quotes\Screenshot (441).png)");
 
     constexpr_counter_example();
     type_linker_example();
