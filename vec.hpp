@@ -1,70 +1,86 @@
+#include <concepts>
+#include <memory>
 #include <utility>
 #include "nmmintrin.h" // for SSE4.2
 #include "immintrin.h" // for AVX 
 
-template<class _Ty, size_t N>
-struct vec_union {
-    consteval static _Ty _consteval_at(const std::size_t)
-    {
-        static_assert(false, "Index out of bounds");
-    }
-};
+template<class, size_t>
+struct vec_union;
+
+template<std::floating_point, size_t>
+struct vec;
 
 template<class _Ty>
-struct vec_union<_Ty, 1> {
-    consteval _Ty _consteval_at(const std::size_t index)
-        const {
-        return index == 0 ? x : vec_union<_Ty, 0>::_consteval_at(index);
-    }
+struct vec_union<_Ty, 2> {
+    union alignas(sizeof _Ty) {
+        _Ty data[2];
 
-    union __declspec(align(sizeof _Ty)) {
-        _Ty x; _Ty r; _Ty h;
+        struct alignas(sizeof _Ty) {
+            union alignas(sizeof _Ty) { _Ty x; };
+            union alignas(sizeof _Ty) { _Ty y; };
+        };
     };
 };
 
 template<class _Ty>
-struct vec_union<_Ty, 2> : vec_union<_Ty, 1> {
-    consteval _Ty _consteval_at(const std::size_t index)
-        const {
-        return index == 1 ? y : vec_union<_Ty, 1>::_consteval_at(index);
-    }
+struct vec_union<_Ty, 3> {
+    union alignas(sizeof _Ty) {
+        _Ty data[3];
 
-    union __declspec(align(sizeof _Ty)) {
-        _Ty y; _Ty g; _Ty s;
+        struct alignas(sizeof _Ty) {
+            union alignas(sizeof _Ty) { _Ty x; _Ty r; _Ty h; };
+            union alignas(sizeof _Ty) { _Ty y; _Ty g; _Ty s; };
+            union alignas(sizeof _Ty) { _Ty z; _Ty b; _Ty v; };
+        };
+        struct alignas(sizeof _Ty) {
+            union alignas(sizeof _Ty) { vec<_Ty, 2> xy; vec<_Ty, 2> rg; vec<_Ty, 2> hs; };
+            union alignas(sizeof _Ty) { _Ty z; _Ty b; _Ty v; };
+        };
+        struct alignas(sizeof _Ty) {
+            union alignas(sizeof _Ty) { _Ty x; _Ty r; _Ty h; };
+            union alignas(sizeof _Ty) { vec<_Ty, 2> yz; vec<_Ty, 2> gb; vec<_Ty, 2> sv; };
+        };
     };
 };
 
 template<class _Ty>
-struct vec_union<_Ty, 3> : vec_union<_Ty, 2> {
-    consteval _Ty _consteval_at(const std::size_t index)
-        const {
-        return index == 2 ? z : vec_union<_Ty, 2>::_consteval_at(index);
-    }
+struct vec_union<_Ty, 4> {
+    union alignas(sizeof _Ty) {
+        _Ty data[4];
 
-    union __declspec(align(sizeof _Ty)) {
-        _Ty z; _Ty b; _Ty v; _Ty width;
-    };
-};
-
-template<class _Ty>
-struct vec_union<_Ty, 4> : vec_union<_Ty, 3> {
-    consteval _Ty _consteval_at(const std::size_t index)
-        const {
-        return index == 3 ? w : vec_union<_Ty, 3>::_consteval_at(index);
-    }
-
-    union __declspec(align(sizeof _Ty)) {
-        _Ty w; _Ty a; _Ty height;
+        struct alignas(sizeof _Ty) {
+            union alignas(sizeof _Ty) { _Ty x; _Ty r; _Ty h; };
+            union alignas(sizeof _Ty) { _Ty y; _Ty g; _Ty s; };
+            union alignas(sizeof _Ty) { _Ty z; _Ty b; _Ty v; _Ty width; };
+            union alignas(sizeof _Ty) { _Ty w; _Ty a; _Ty height; };
+        };
+        struct alignas(sizeof _Ty) {
+            union alignas(sizeof _Ty) { _Ty x; _Ty r; _Ty h; };
+            union alignas(sizeof _Ty) { vec<_Ty, 2> yz; vec<_Ty, 2> gb; vec<_Ty, 2> sv; };
+            union alignas(sizeof _Ty) { _Ty w; _Ty a; };
+        };
+        struct alignas(sizeof _Ty) {
+            union alignas(sizeof _Ty) { vec<_Ty, 3> xyz; vec<_Ty, 3> rgb; vec<_Ty, 3> hsv; };
+            union alignas(sizeof _Ty) { _Ty w; _Ty a; };
+        };
+        struct alignas(sizeof _Ty) {
+            union alignas(sizeof _Ty) { vec<_Ty, 2> xy; vec<_Ty, 2> rg; vec<_Ty, 2> hs; vec<_Ty, 2> position; };
+            union alignas(sizeof _Ty) { vec<_Ty, 2> zw; vec<_Ty, 2> ba; vec<_Ty, 2> va; vec<_Ty, 2> size; };
+        };
+        struct alignas(sizeof _Ty) {
+            union alignas(sizeof _Ty) { _Ty x; _Ty r; _Ty h; };
+            union alignas(sizeof _Ty) { vec<_Ty, 3> yzw; vec<_Ty, 3> bga; vec<_Ty, 3> sva; };
+        };
     };
 };
 
 template<std::floating_point _Ty, size_t N> requires (N >= 2 && N <= 4)
-struct vec : vec_union<_Ty, N> {
+struct vec<_Ty, N> : vec_union<_Ty, N> {
     using value_type = _Ty;
     using reference = value_type&;
     using const_reference = const reference;
     using pointer = value_type*;
-    using const_pointer = const pointer;
+    using const_pointer = value_type const*;
     using size_type = size_t;
 
     constexpr static size_type size = N;
@@ -72,58 +88,131 @@ struct vec : vec_union<_Ty, N> {
 
     using simd_type = std::conditional_t<value_bytes == 8, std::conditional_t<size == 2, __m128d, __m256d>, __m128>;
 
+    constexpr vec() = default;
+
+    constexpr vec(
+        const value_type& p1,
+        const value_type& p2,
+        const value_type& p3,
+        const value_type& p4) requires (N == 4)
+        : vec_union<_Ty, N>{ .x = p1, .y = p2, .z = p3, .w = p4 } 
+    {}
+
+    constexpr vec(
+        const value_type& p1,
+        const vec<value_type, 2>& p2,
+        const value_type& p3) requires (N == 4)
+        : vec_union<_Ty, N>{ .x = p1, .y = p2.x, .z = p2.y, .w = p3 }
+    {}
+
+    constexpr vec(
+        const vec<value_type, 2>& p1,
+        const vec<value_type, 2>& p2) requires (N == 4)
+        : vec_union<_Ty, N>{ .xy = p1, .zw = p2 }
+    {}    
+    
+    constexpr vec(
+        const vec<value_type, 3>& p1,
+        const value_type& p2) requires (N == 4)
+        : vec_union<_Ty, N>{ .x = p1.x, .y = p1.y, .z = p1.z, .w = p2 }
+    {}
+
+    constexpr vec(
+        const value_type& p1,
+        const vec<value_type, 3>& p2) requires (N == 4)
+        : vec_union<_Ty, N>{ .x = p1, .y = p2.x, .z = p2.y, .w = p2.z }
+    {}
+
+    constexpr vec(const value_type& p1) requires (N == 4)
+        : vec_union<_Ty, N>{ .x = p1, .y = p1, .z = p1, .w = p1 }
+    {}
+
+    constexpr vec(
+        const value_type& p1,
+        const value_type& p2,
+        const value_type& p3) requires (N == 3)
+        : vec_union<_Ty, N>{ .x = p1, .y = p2, .z = p3 }
+    {}
+
+    constexpr vec(
+        const vec<value_type, 2>& p1,
+        const value_type& p2) requires (N == 3)
+        : vec_union<_Ty, N>{ .x = p1.x, .y = p1.y, .z = p2 }
+    {}
+
+    constexpr vec(
+        const value_type& p1,
+        const vec<value_type, 2>& p2) requires (N == 3)
+        : vec_union<_Ty, N>{ .x = p1, .y = p2.x, .z = p2.y }
+    {}
+
+    constexpr vec(const value_type& p1) requires (N == 3)
+        : vec_union<_Ty, N>{ .x = p1, .y = p1, .z = p1 }
+    {}
+
+    constexpr vec(
+        const value_type& p1,
+        const value_type& p2) requires (N == 2)
+        : vec_union<_Ty, N>{ .x = p1, .y = p2 }
+    {}
+
+    constexpr vec(const value_type& p1) requires (N == 2)
+        : vec_union<_Ty, N>{ .x = p1, .y = p1 }
+    {}
+
     inline simd_type to_simd() const {
-        if constexpr (value_bytes == 8 && size == 2) return    _mm_set_pd(this->y, this->x);
-        if constexpr (value_bytes == 8 && size == 3) return _mm256_set_pd(0, this->z, this->y, this->x);
-        if constexpr (value_bytes == 8 && size == 4) return _mm256_set_pd(this->w, this->z, this->y, this->x);
-        if constexpr (value_bytes == 4 && size == 2) return    _mm_set_ps(0, 0, this->y, this->x);
-        if constexpr (value_bytes == 4 && size == 3) return    _mm_set_ps(0, this->z, this->y, this->x);
-        if constexpr (value_bytes == 4 && size == 4) return    _mm_set_ps(this->w, this->z, this->y, this->x);
+        const auto _data = this->data();
+        if constexpr (value_bytes == 8 && size == 2) return    _mm_load_pd(_data);
+        if constexpr (value_bytes == 8 && size == 3) return _mm256_set_pd(0, _data[2], _data[1], _data[0]);
+        if constexpr (value_bytes == 8 && size == 4) return _mm256_load_pd(_data);
+        if constexpr (value_bytes == 4 && size == 2) return    _mm_set_ps(0, 0, _data[1], _data[0]);
+        if constexpr (value_bytes == 4 && size == 3) return    _mm_set_ps(0, _data[2], _data[1], _data[0]);
+        if constexpr (value_bytes == 4 && size == 4) return    _mm_load_ps(_data);
     }
 
     static inline simd_type add(simd_type& a, simd_type& b) {
         if constexpr (value_bytes == 8 && size == 2) return _mm_add_pd(a, b);
-        if constexpr (value_bytes == 8) return _mm256_add_pd(a, b);
+        if constexpr (value_bytes == 8 && size != 2) return _mm256_add_pd(a, b);
         if constexpr (value_bytes == 4) return _mm_add_ps(a, b);
     }
 
     static inline simd_type subtract(simd_type& a, simd_type& b) {
         if constexpr (value_bytes == 8 && size == 2) return _mm_sub_pd(a, b);
-        if constexpr (value_bytes == 8) return _mm256_sub_pd(a, b);
+        if constexpr (value_bytes == 8 && size != 2) return _mm256_sub_pd(a, b);
         if constexpr (value_bytes == 4) return _mm_sub_ps(a, b);
     }
 
     static inline simd_type multiply(simd_type& a, simd_type& b) {
         if constexpr (value_bytes == 8 && size == 2) return _mm_mul_pd(a, b);
-        if constexpr (value_bytes == 8) return _mm256_mul_pd(a, b);
+        if constexpr (value_bytes == 8 && size != 2) return _mm256_mul_pd(a, b);
         if constexpr (value_bytes == 4) return _mm_mul_ps(a, b);
     }
 
     static inline simd_type divide(simd_type& a, simd_type& b) {
         if constexpr (value_bytes == 8 && size == 2) return _mm_div_pd(a, b);
-        if constexpr (value_bytes == 8) return _mm256_div_pd(a, b);
+        if constexpr (value_bytes == 8 && size != 2) return _mm256_div_pd(a, b);
         if constexpr (value_bytes == 4) return _mm_div_ps(a, b);
     }
 
-    inline auto data()->value_type(&)[size] { return reinterpret_cast<value_type(&)[size]>(*this); }
-    inline auto data() const -> const value_type(&)[size] { return reinterpret_cast<const value_type(&)[size]>(*this); }
+    inline operator pointer() { return reinterpret_cast<pointer>(this); }
+    inline operator const_pointer() const { return reinterpret_cast<const_pointer>(this); }
+    
+    inline pointer data() { return reinterpret_cast<pointer>(this); }
+    inline const_pointer data() const { return reinterpret_cast<const_pointer>(this); }
     inline reference at(size_type index) { return data()[index]; }
-    inline const_reference at(size_type index) const requires (!std::is_constant_evaluated()) { return data()[index]; }
+    inline const_reference at(size_type index) const { return data()[index]; }
     inline reference operator[](size_type index) { return data()[index]; }
-    inline const_reference operator[](size_type index) const requires (!std::is_constant_evaluated()) { return data()[index]; }
+    inline const_reference operator[](size_type index) const { return data()[index]; }
 
-    consteval value_type at(size_type index) const { return vec_union<_Ty, N>::_consteval_at(index); }
-    consteval value_type operator[](size_type index) const { return vec_union<_Ty, N>::_consteval_at(index); }
+    inline vec& operator+=(const vec& other) { fast_inplace<add>(other); return *this; }
+    inline vec& operator-=(const vec& other) { fast_inplace<subtract>(other); return *this; }
+    inline vec& operator*=(const vec& other) { fast_inplace<multiply>(other); return *this; }
+    inline vec& operator/=(const vec& other) { fast_inplace<divide>(other); return *this; }
 
-    vec& operator+=(const vec& other) { fast_inplace<add>(other); return *this; }
-    vec& operator-=(const vec& other) { fast_inplace<subtract>(other); return *this; }
-    vec& operator*=(const vec& other) { fast_inplace<multiply>(other); return *this; }
-    vec& operator/=(const vec& other) { fast_inplace<divide>(other); return *this; }
-
-    auto operator+(const vec& other) const { return fast_new<add>(other); }
-    auto operator-(const vec& other) const { return fast_new<subtract>(other); }
-    auto operator*(const vec& other) const { return fast_new<multiply>(other); }
-    auto operator/(const vec& other) const { return fast_new<divide>(other); }
+    inline auto operator+(const vec& other) const { return fast_new<add>(other); }
+    inline auto operator-(const vec& other) const { return fast_new<subtract>(other); }
+    inline auto operator*(const vec& other) const { return fast_new<multiply>(other); }
+    inline auto operator/(const vec& other) const { return fast_new<divide>(other); }
 
     template<auto _Fun>
     inline void fast_inplace(const vec& other) {

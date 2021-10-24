@@ -664,20 +664,50 @@ struct Woofers {
 
 int main()
 {
-    vec<float, 4> vfa{ 1, 2, 3, 4 };
+    constexpr auto si = sizeof vec<double, 4>;
 
-    vec<float, 4>::simd_type;
+    vec<double, 2> v2{ 1, 2 };
+    vec<double, 3> v3{ 3, 4, 5 };
+    vec<double, 4> v4{ 3, 4, 5, 6 };
 
-    vfa += { 1, 2, 3, 4 };
+    vec<double, 2> v20{ 1, 2 };
+    vec<double, 2> v21{ v2 };
 
-    auto _new = vfa + vec<float, 4>{ 1, 2, 3, 4 };
+    vec<double, 3> v30{ 1, 2, 3 };
+    vec<double, 3> v31{ v2, 2 };
+    vec<double, 3> v32{ 1, v2 };
+    vec<double, 3> v33{ v3 };
+
+    vec<double, 4> v40{ 1, 2, 3, 4 };
+    vec<double, 4> v41{ 1, v2, 2 };
+    vec<double, 4> v42{ v2, v2 };
+    vec<double, 4> v43{ v3, 2 };
+    vec<double, 4> v44{ 1, v3 };
+    vec<double, 4> v45{ v4 };
+
+    vec<double, 2> v22 = v3.xy;
+    vec<double, 2> v23 = v4.yz;
+
+    vec<double, 3> v34 = v4.yzw;
+    vec<double, 3> v35 = v4.xyz;
+
+    //vec<double, 4> v41{ 1, v2, 4 };
+    //vec<double, 4> v42{ v2, 3, 4 };
+    //vec<double, 4> v43{ v2, v2 };
+    //vec<double, 4> v44{ v3, 2, 3, 4 };
+    //vec<double, 4> v45{ 1, v3 };
+
+
+    std::is_trivial_v<vec<double, 4>>;
+
+    //auto _new = v41 + vec<double, 4>{ 1, 2, 3, 4 };
 
     //vfa.at(3) = 3;
 
-    float& a = _new.data()[0];
-    float& b = _new.data()[1];
-    float& c = _new.data()[2];
-    float& d = _new.data()[3];
+    //double& a = _new[0];
+    //double& b = _new[1];
+    //double& c = _new[2];
+   // double& d = _new[3];
 
 
 
