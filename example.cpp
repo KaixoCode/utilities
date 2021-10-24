@@ -658,21 +658,28 @@ struct Woofers {
 };
 
 
-#include "image_buffer.hpp"
-#include <Windows.h>
 
-
-
-
+#include "vec.hpp"
 
 
 int main()
 {
+    vec<float, 4> vfa{ 1, 2, 3, 4 };
+
+    vec<float, 4>::simd_type;
+
+    vfa += { 1, 2, 3, 4 };
+
+    auto _new = vfa + vec<float, 4>{ 1, 2, 3, 4 };
+
+    //vfa.at(3) = 3;
+
+    float& a = _new.data()[0];
+    float& b = _new.data()[1];
+    float& c = _new.data()[2];
+    float& d = _new.data()[3];
 
 
-    image buffer;
-
-    buffer.load_image(R"(C:\Users\Jeroen\Pictures\Quotes\Screenshot (441).png)");
 
     constexpr_counter_example();
     type_linker_example();

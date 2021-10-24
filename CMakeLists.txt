@@ -18,6 +18,7 @@ add_library(utilities STATIC
   "${utilities_SOURCE_DIR}/constexpr_counter.hpp"
   "${utilities_SOURCE_DIR}/dynamic_array.hpp"
   "${utilities_SOURCE_DIR}/image_buffer.hpp"
+  "${utilities_SOURCE_DIR}/vec.hpp"
 )
 
 set_target_properties(utilities PROPERTIES LINKER_LANGUAGE CXX)
