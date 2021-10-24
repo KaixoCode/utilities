@@ -661,9 +661,63 @@ struct Woofers {
 
 #include "vec.hpp"
 
+template<class _Ty, std::size_t _Side, class _Ind = int64_t>
+class axial_array
+{
+public:
+    using value_type = _Ty;
+    using index_type = _Ind;
+    using size_type = std::size_t;
+
+    constexpr static size_type side = _Side;
+    constexpr static size_type size = 3 * (side * side - side) + 1;
+    constexpr static size_type width = 2 * side - 1;
+
+    struct key {
+        index_type x;
+        index_type y;
+
+        constexpr index_type z() const { return -(x + y); }
+        constexpr size_type index() const { return (x + (side - 1)) + width * (y + (side - 1)); }
+    };
+
+    decltype(auto) operator[](key k) { 
+        size_type _index = k.index();
+        return m_Data[_index]; 
+    }
+
+private:
+    value_type m_Data[size];
+};
+
+
 
 int main()
 {
+    axial_array<int, 4> _arr;
+
+    constexpr axial_array<int, 4>::key _key{ -1, 1 };
+    constexpr auto z = _key.z();
+
+    _arr[{ -1, 1 }] = 1;
+
+    6 + 7 + 8 + 9 +10 +11 +10 + 9 + 8 + 7 + 6;
+    5 + 6 + 7 + 8 + 9 + 8 + 7 + 6 + 5;         // 61
+    4 + 5 + 6 + 7 + 6 + 5 + 4;                 // 37
+    3 + 4 + 5 + 4 + 3;
+    2 + 3 + 2;
+
+
+    constexpr int x = 4;
+
+    -(x - 1) <=> (x - 1);
+
+    2 * x - 1;
+    
+    constexpr float avg = 3 * (x * x - x) + 1;
+
+
+    _arr[{ 0, 0 }];
 
     constexpr auto si = sizeof vec<double, 4>;
 
