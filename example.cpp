@@ -664,6 +664,7 @@ struct Woofers {
 
 int main()
 {
+
     constexpr auto si = sizeof vec<double, 4>;
 
     vec<double, 2> v2{ 1, 2 };
@@ -697,8 +698,20 @@ int main()
     //vec<double, 4> v44{ v3, 2, 3, 4 };
     //vec<double, 4> v45{ 1, v3 };
 
+    v4 /= 4;
+    vec<double, 4> vv1{ 1, 2, 3, 4 };
+    vec<double, 4> vv2{ 1, 2, 3, 4 };
+    auto v = vv1 != vv2;
 
     std::is_trivial_v<vec<double, 4>>;
+    std::is_trivially_constructible_v<vec<double, 4>>;
+    std::is_trivially_copyable_v<vec<double, 4>>;
+    std::is_trivially_copy_assignable_v<vec<double, 4>>;
+    std::is_trivially_copy_constructible_v<vec<double, 4>>;
+    std::is_trivially_default_constructible_v<vec<double, 4>>;
+    std::is_trivially_destructible_v<vec<double, 4>>;
+    std::is_trivially_move_assignable_v<vec<double, 4>>;
+    std::is_trivially_move_constructible_v<vec<double, 4>>;
 
     //auto _new = v41 + vec<double, 4>{ 1, 2, 3, 4 };
 
