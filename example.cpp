@@ -661,13 +661,22 @@ struct Woofers {
 
 #include "vec.hpp"
 
-template<class _Ty, std::size_t _Side, class _Ind = int64_t>
-class axial_array
-{
-public:
-    using value_type = _Ty;
-    using index_type = _Ind;
-    using size_type = std::size_t;
+template<class _Ty, std::size_t _Side, std::signed_integral _Ind = int64_t>
+struct axial_array {
+    using value_type      = _Ty;
+    using size_type       = size_t;
+    using index_type      = _Ind;
+    using difference_type = ptrdiff_t;
+    using pointer         = _Ty*;
+    using const_pointer   = const _Ty*;
+    using reference       = _Ty&;
+    using const_reference = const _Ty&;
+
+    using iterator       = _Ty*;
+    using const_iterator = const _Ty*;
+
+    using reverse_iterator       = std::reverse_iterator<iterator>;
+    using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
     constexpr static size_type side = _Side;
     constexpr static size_type size = 3 * (side * side - side) + 1;
@@ -681,25 +690,46 @@ public:
         constexpr size_type index() const { return (x + (side - 1)) + width * (y + (side - 1)); }
     };
 
-    decltype(auto) operator[](key k) { 
-        size_type _index = k.index();
-        return m_Data[_index]; 
-    }
+    constexpr reference operator[](key k) { return m_Data[k.index()]; }
+    constexpr const_reference operator[](key k) const { return m_Data[k.index()]; }
+    constexpr void fill(const_reference value) { std::fill_n(m_Data, size, value); }
+    constexpr iterator begin() { return m_Data; }
+    constexpr const_iterator begin() const { return m_Data; }
+    constexpr iterator end() { return m_Data + size; }
+    constexpr const_iterator end() const { return m_Data + size; }
+    constexpr reverse_iterator rbegin() { return m_Data; }
+    constexpr const_reverse_iterator rbegin() const { return m_Data; }
+    constexpr reverse_iterator rend() { return m_Data + size; }
+    constexpr const_reverse_iterator rend() const { return m_Data + size; }
+    constexpr const_iterator cbegin() const { return m_Data; }
+    constexpr const_iterator cend() const { return m_Data + size; }
+    constexpr const_reverse_iterator crbegin() const { return m_Data; }
+    constexpr const_reverse_iterator crend() const { return m_Data + size; }
+    constexpr reference at(key k) { return m_Data[k.index()]; }
+    constexpr const_reference at(key k) const { return m_Data[k.index()]; }
+    constexpr reference front() { return m_Data[0]; }
+    constexpr const_reference front() const { return m_Data[0]; }
+    constexpr reference back() { return m_Data[size - 1]; }
+    constexpr reference back() const { return m_Data[size - 1]; }
+    constexpr pointer data() { return m_Data; }
+    constexpr const_pointer data() const { return m_Data; }
 
-private:
     value_type m_Data[size];
 };
 
-
-
 int main()
 {
-    axial_array<int, 4> _arr;
+    axial_array<int, 5, char> _arr;
 
     constexpr axial_array<int, 4>::key _key{ -1, 1 };
     constexpr auto z = _key.z();
 
-    _arr[{ -1, 1 }] = 1;
+    for (auto& i : _arr)
+    {
+        i = 1;
+    }
+
+    _arr[{ -1, 1 }] = 2;
 
     6 + 7 + 8 + 9 +10 +11 +10 + 9 + 8 + 7 + 6;
     5 + 6 + 7 + 8 + 9 + 8 + 7 + 6 + 5;         // 61
@@ -707,14 +737,14 @@ int main()
     3 + 4 + 5 + 4 + 3;
     2 + 3 + 2;
 
-
-    constexpr int x = 4;
+    constexpr int x = 5;
 
     -(x - 1) <=> (x - 1);
 
     2 * x - 1;
     
     constexpr float avg = 3 * (x * x - x) + 1;
+    constexpr float avg1 = 3 * x * (x - 1);
 
 
     _arr[{ 0, 0 }];
