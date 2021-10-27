@@ -7,6 +7,7 @@
 #include <algorithm>
 
 namespace kaixo {
+
     template<class Type, std::size_t Side, std::signed_integral IndexType = std::int64_t>
     struct axial_array {
         using value_type = Type;
@@ -18,12 +19,6 @@ namespace kaixo {
         using reference = Type&;
         using const_reference = const Type&;
 
-        using iterator = Type*;
-        using const_iterator = const Type*;
-
-        using reverse_iterator = std::reverse_iterator<iterator>;
-        using const_reverse_iterator = std::reverse_iterator<const_iterator>;
-
         constexpr static size_type side = Side;
         constexpr static size_type array_size = 3 * (side * side - side) + 1;
         constexpr static size_type width = 2 * side - 1;
@@ -33,6 +28,24 @@ namespace kaixo {
         struct key {
             index_type x;
             index_type y;
+
+            constexpr key& operator++() { 
+                x++;
+                if (y <= 0 && x == end_index + 1 || y > 0 && x == end_index - y + 1) {
+                    y++;
+                    x = begin_index + (y < 0 ? -y : 0);
+                }
+                return *this; 
+            }
+
+            constexpr key& operator--() {
+                x--;
+                if (y <= 0 && x == begin_index + y - 1 || y > 0 && x == begin_index - 1) {
+                    y--;
+                    x = end_index - (y > 0 ? y : 0);
+                }
+                return *this;
+            }
 
             constexpr index_type z() const { return -(x + y); }
             constexpr size_type index() const {
@@ -46,6 +59,91 @@ namespace kaixo {
             }
         };
 
+        template<bool IsConst>
+        struct axial_iterator {
+            using iterator_concept = std::bidirectional_iterator_tag;
+            using iterator_category = std::bidirectional_iterator_tag;
+            using value_type = Type;
+            using difference_type = ptrdiff_t;
+            using pointer = std::conditional_t<IsConst, const Type*, Type*>;
+            using reference = std::conditional_t<IsConst, const Type&, Type&>;
+
+            constexpr axial_iterator() : arr(0), pos(0, 0) {};
+            constexpr explicit axial_iterator(std::conditional_t<IsConst, 
+                const axial_array*, axial_array*> arr, key pos)
+                : arr(arr), pos(pos) {}
+
+            constexpr reference operator*() const { return arr->at(pos); }
+            constexpr pointer operator->() const noexcept { return &arr->at(pos); }
+
+            constexpr axial_iterator& operator++() { ++pos; return *this; }
+            constexpr axial_iterator operator++(int) {
+                axial_iterator _temp{ *this };
+                ++pos;
+                return _temp;
+            }
+
+            constexpr axial_iterator& operator--() { --pos; return *this; }
+            constexpr axial_iterator operator--(int) {
+                axial_iterator _temp{ *this };
+                --pos;
+                return _temp;
+            }
+
+            constexpr bool operator==(const axial_iterator& other) const {
+                return pos.x == other.pos.x && pos.y == other.pos.y;
+            }
+
+            constexpr std::strong_ordering operator<=>(const axial_iterator& other) const {
+                return pos.index() <=> other.pos.index();
+            }
+
+        private:
+            std::conditional_t<IsConst, const axial_array*, axial_array*> arr;
+            key pos;
+            friend class axial_array;
+        };
+
+        template<bool IsConst>
+        struct index_iterator : axial_iterator<IsConst> {
+            using axial_iterator<IsConst>::axial_iterator;
+            struct reference_value {
+                axial_iterator<IsConst>::reference value;
+                key pos;
+            };
+
+            struct pointer_value {
+                axial_iterator<IsConst>::pointer value;
+                key pos;
+            };
+
+            using axial_iterator<IsConst>::operator++;
+            using axial_iterator<IsConst>::operator--;
+            using axial_iterator<IsConst>::operator<=>;
+
+            constexpr reference_value operator*() const { return { this->arr->at(this->pos), this->pos }; }
+            constexpr pointer_value operator->() const noexcept { return { &this->arr->at(this->pos), this->pos }; }
+        };
+
+        template<bool IsConst>
+        struct index_loop {
+            using iterator = index_iterator<IsConst>;
+            using reverse_iterator = std::reverse_iterator<iterator>;
+
+            constexpr iterator begin() { return iterator{ &data, { 0, begin_index } }; }
+            constexpr iterator end() { return iterator{ &data, { begin_index, end_index + 1 } }; }
+            constexpr reverse_iterator rbegin() { return end(); }
+            constexpr reverse_iterator rend() { return begin(); }
+
+            std::conditional_t<IsConst, const axial_array&, axial_array&> data;
+        };
+
+        using iterator = axial_iterator<false>;
+        using const_iterator = axial_iterator<true>;
+
+        using reverse_iterator = std::reverse_iterator<iterator>;
+        using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+
         constexpr axial_array() = default;
         constexpr axial_array(axial_array&&) = default;
         constexpr axial_array(const axial_array&) = default;
@@ -57,21 +155,23 @@ namespace kaixo {
             (std::ranges::for_each(args, [&](const value_type& v) { m_Data[i] = v; i++; }), ...);
         }
 
+        constexpr index_loop<false> with_index() { return index_loop<false>{ *this }; }
+        constexpr index_loop<true> with_index() const { return index_loop<true>{ *this }; }
         constexpr reference operator[](key k) { return m_Data[k.index()]; }
         constexpr const_reference operator[](key k) const { return m_Data[k.index()]; }
         constexpr void fill(const_reference value) { std::fill_n(m_Data, array_size, value); }
-        constexpr iterator begin() { return m_Data; }
-        constexpr const_iterator begin() const { return m_Data; }
-        constexpr iterator end() { return m_Data + array_size; }
-        constexpr const_iterator end() const { return m_Data + array_size; }
-        constexpr reverse_iterator rbegin() { return m_Data; }
-        constexpr const_reverse_iterator rbegin() const { return m_Data; }
-        constexpr reverse_iterator rend() { return m_Data + array_size; }
-        constexpr const_reverse_iterator rend() const { return m_Data + array_size; }
-        constexpr const_iterator cbegin() const { return m_Data; }
-        constexpr const_iterator cend() const { return m_Data + array_size; }
-        constexpr const_reverse_iterator crbegin() const { return m_Data; }
-        constexpr const_reverse_iterator crend() const { return m_Data + array_size; }
+        constexpr iterator begin() { return iterator{ this, { 0, begin_index } }; }
+        constexpr const_iterator begin() const { return const_iterator{ this, { 0, begin_index } }; }
+        constexpr iterator end() { return iterator{ this, { begin_index, end_index + 1 } }; }
+        constexpr const_iterator end() const { return const_iterator{ this, { begin_index, end_index + 1 } }; }
+        constexpr reverse_iterator rbegin() { return end(); }
+        constexpr const_reverse_iterator rbegin() const { return end(); }
+        constexpr reverse_iterator rend() { return begin(); }
+        constexpr const_reverse_iterator rend() const { return begin(); }
+        constexpr const_iterator cbegin() const { return begin(); }
+        constexpr const_iterator cend() const { return end(); }
+        constexpr const_reverse_iterator crbegin() const { return end(); }
+        constexpr const_reverse_iterator crend() const { return begin(); }
         constexpr reference at(key k) { return m_Data[k.index()]; }
         constexpr const_reference at(key k) const { return m_Data[k.index()]; }
         constexpr reference front() { return m_Data[0]; }

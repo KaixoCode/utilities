@@ -747,18 +747,28 @@ struct callable {
 
 int main()
 {
-
+    std::array<int, 2>;
     axial_array<int, 3> _a1{ 1, 2, 3, 4, 5 };
     axial_array<int, 3> _a2{ 5, 4, 3, 2, 1 };
     _a1.swap(_a2);
 
-    axial_array<int, 3> _arr{
+
+    const axial_array<int, 3> _arr{
             {  1,  2,  3 },
           {  4,  5,  6,  7 },
         {  8,  9, 10, 11, 12 },
           { 13, 14, 15, 16 },
             { 17, 18, 19 },
     };
+
+    for (auto[val, pos] : _arr.with_index()) {
+        std::cout << pos.x << ", " << pos.y << " : " << val << std::endl;
+    }
+
+    for (auto& val : _arr) {
+        std::cout << val << std::endl;
+    }
+
 
     axial_array<int, 4> _arr2{
           {  1,  2,  3,  4 },
@@ -799,12 +809,8 @@ int main()
     axial_array<int, 4>::key _key{ -1, 1 };
     auto z = _key.z();
 
-    for (auto& i : _arr)
-    {
-        i = 1;
-    }
 
-    _arr[{ -1, 1 }] = 2;
+   // _arr[{ -1, 1 }] = 2;
 
     6 + 7 + 8 + 9 +10 +11 +10 + 9 + 8 + 7 + 6;
     5 + 6 + 7 + 8 + 9 + 8 + 7 + 6 + 5;         // 61
