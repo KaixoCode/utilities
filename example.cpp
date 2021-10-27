@@ -657,38 +657,64 @@ struct Woofers {
     ~Woofers() { puts("delete"); }
 };
 
-
+#include <algorithm>
 
 #include "vec.hpp"
 
-template<class _Ty, std::size_t _Side, std::signed_integral _Ind = int64_t>
+template<class Type, std::size_t Side, std::signed_integral IndexType = int64_t>
 struct axial_array {
-    using value_type      = _Ty;
+    using value_type      = Type;
     using size_type       = size_t;
-    using index_type      = _Ind;
+    using index_type      = IndexType;
     using difference_type = ptrdiff_t;
-    using pointer         = _Ty*;
-    using const_pointer   = const _Ty*;
-    using reference       = _Ty&;
-    using const_reference = const _Ty&;
+    using pointer         = Type*;
+    using const_pointer   = const Type*;
+    using reference       = Type&;
+    using const_reference = const Type&;
 
-    using iterator       = _Ty*;
-    using const_iterator = const _Ty*;
+    using iterator       = Type*;
+    using const_iterator = const Type*;
 
     using reverse_iterator       = std::reverse_iterator<iterator>;
     using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
-    constexpr static size_type side = _Side;
+    constexpr static size_type side = Side;
     constexpr static size_type size = 3 * (side * side - side) + 1;
     constexpr static size_type width = 2 * side - 1;
+    constexpr static index_type begin_index = -(side - 1);
+    constexpr static index_type end_index = (side - 1);
 
     struct key {
         index_type x;
         index_type y;
 
         constexpr index_type z() const { return -(x + y); }
-        constexpr size_type index() const { return (x + (side - 1)) + width * (y + (side - 1)); }
+        constexpr size_type index() const {
+            return (x + side - 1 + (y < 0 ? y : 0)) + (y + side - 1) * side + 
+                (y < 0 ? (0.5 * (y + side - 2) * (y + side - 1)) : (0.5 * 
+                (side - 2) * (side - 1))) + (y > 0 ? side - 1 : 0) + (y > 1 ?
+                0.5 * ((side - 2) * (side - 1) - (side - y) * (side - y - 1)) : 0); 
+
+            return (x + side - 1 + (y < 0 ? y : 0)) // x coord
+                + (y + side - 1) * side // Square
+                + (y < 0  
+                    ? (0.5 * (y + side - 2) * (y + side - 1)) // First triangle till y
+                    : (0.5 * (side - 2) * (side - 1)))        // Full first triangle
+                + (y > 0 ? side - 1 : 0) // Middle 
+                + (y > 1 ? 0.5 * ((side - 2) * (side - 1) - (side - y) * (side - y - 1)) : 0); // 2nd triangle till y
+        }
     };
+
+    constexpr axial_array() = default;
+    constexpr axial_array(axial_array&&) = default;
+    constexpr axial_array(const axial_array&) = default;
+    constexpr axial_array(std::initializer_list<value_type> vals) { std::move(vals.begin(), vals.end(), m_Data); };
+
+    template<std::same_as<value_type> ...Types> requires (sizeof...(Types) == width)
+    constexpr axial_array(std::initializer_list<Types>&& ...args) {
+        index_type i = 0;
+        (std::ranges::for_each(args, [&](const value_type& v) { m_Data[i] = v; i++; }), ...);
+    }
 
     constexpr reference operator[](key k) { return m_Data[k.index()]; }
     constexpr const_reference operator[](key k) const { return m_Data[k.index()]; }
@@ -714,15 +740,388 @@ struct axial_array {
     constexpr pointer data() { return m_Data; }
     constexpr const_pointer data() const { return m_Data; }
 
+private:
     value_type m_Data[size];
+};
+
+
+
+class list
+{
+public:
+    void operator[](std::pair<size_t, size_t> index) {}
+
+};
+
+struct index {
+    index(std::initializer_list<size_t>) {}
+    size_t a;
+};
+
+template<class T>
+std::pair<size_t, size_t> operator,(T a, index b) { return { a, static_cast<size_t>(b) }; }
+
+
+
+
+template<class Type>
+struct ref_or_val {
+    using type = Type;
+    enum state : uint8_t { has_ref, has_val, has_null };
+
+    ref_or_val() : m_Null(0), m_State(has_null) {}
+    ref_or_val(type& v) : m_Ref(v), m_State(has_ref) {}
+    ref_or_val(type&& v) : m_Val(std::forward<type>(v)), m_State(has_val) {}
+    ref_or_val(const type& v) = delete;
+    ref_or_val(const ref_or_val& other) { *this = other; }
+    ref_or_val(ref_or_val&& other) { *this = std::move(other); }
+
+    ref_or_val& operator=(type& v) { return assign(v), *this; }
+    ref_or_val& operator=(type&& v) { return assign(std::move(v)), *this; }
+    ref_or_val& operator=(const ref_or_val& v) { return assign(v), *this; }
+    ref_or_val& operator=(ref_or_val&& v) { return assign(std::move(v)), *this; }
+    ref_or_val& operator=(const type& v) = delete;
+
+    type& get() { return m_State == state::has_ref ? m_Ref.get() : m_Val; }
+    const type& get() const { return m_State == state::has_ref ? m_Ref.get() : m_Val; }
+    operator type&() { return m_State == state::has_ref ? m_Ref.get() : m_Val; }
+    operator const type&() const { return m_State == state::has_ref ? m_Ref.get() : m_Val; }
+
+    void assign(type& v) {
+        cleanup();
+        new (&m_Ref) std::reference_wrapper<type>(v);
+        m_State = state::has_ref;
+    }
+
+    void assign(type&& v) {
+        cleanup();
+        new (&m_Val) type{ std::move(v) };
+        m_State = state::has_val;
+    }
+
+    void assign(const ref_or_val& v) {
+        m_State = v.m_State;
+        m_State == state::has_ref
+            ? assign(v.m_Ref.get())
+            : assign(type{ v.m_Val });
+    }
+
+    void assign(ref_or_val&& v) {
+        m_State = v.m_State;
+        m_State == state::has_ref
+            ? assign(v.m_Ref.get())
+            : assign(std::move(v.m_Val));
+        v.invalidate();
+    }
+
+    operator bool() const { return m_State != state::has_null; }
+
+    decltype(auto) operator++(int)
+        requires requires(type t) { t++; } {
+        return get()++; }
+
+    decltype(auto) operator--(int)
+        requires requires(type t) { t--; } {
+        return get()--; }
+
+    decltype(auto) operator++()
+        requires requires(type t) { ++t; } {
+        return ++get(); }
+
+    decltype(auto) operator--()
+        requires requires(type t) { --t; } {
+        return --get(); }
+
+    decltype(auto) operator+()
+        requires requires(type t) { +t; } {
+        return +get(); }
+
+    decltype(auto) operator-()
+        requires requires(type t) { -t; } {
+        return -get(); }
+
+    decltype(auto) operator!()
+        requires requires(type t) { !t; } {
+        return !get(); }
+
+    decltype(auto) operator~()
+        requires requires(type t) { ~t; } {
+        return ~get(); }
+
+    decltype(auto) operator*()
+        requires requires(type t) { *t; } {
+        return *get(); }
+
+    decltype(auto) operator&()
+        requires requires(type t) { &t; } {
+        return &get(); }
+
+    template<class ...Tys>
+    decltype(auto) operator()(Tys&& ...vals)
+        requires requires(type t, Tys&& ...vals) { t(std::forward<Tys>(vals)...); } {
+        return get()(std::forward<Tys>(vals)...); }
+
+    template<class Ty>
+    decltype(auto) operator[](Ty&& val)
+        requires requires(type t, Ty&& val) { t[std::forward<Ty>(val)]; } {
+        return get()[std::forward<Ty>(val)]; }
+
+    template<class Ty>
+    decltype(auto) operator->*(Ty&& val)
+        requires requires(type t, Ty&& val) { t->*std::forward<Ty>(val); } {
+        return get()->*std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator*(Ty&& val)
+        requires requires(type t, Ty&& val) { t * std::forward<Ty>(val); } {
+        return get() * std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator/(Ty&& val)
+        requires requires(type t, Ty&& val) { t / std::forward<Ty>(val); } {
+        return get() / std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator%(Ty&& val)
+        requires requires(type t, Ty&& val) { t % std::forward<Ty>(val); } {
+        return get() % std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator+(Ty&& val)
+        requires requires(type t, Ty&& val) { t + std::forward<Ty>(val); } {
+        return get() + std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator-(Ty&& val)
+        requires requires(type t, Ty&& val) { t - std::forward<Ty>(val); } {
+        return get() - std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator<<(Ty&& val)
+        requires requires(type t, Ty&& val) { t << std::forward<Ty>(val); } {
+        return get() << std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator>>(Ty&& val)
+        requires requires(type t, Ty&& val) { t >> std::forward<Ty>(val); } {
+        return get() >> std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator<=>(Ty&& val)
+        requires requires(type t, Ty&& val) { t <=> std::forward<Ty>(val); } {
+        return get() <=> std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator<(Ty&& val)
+        requires requires(type t, Ty&& val) { t < std::forward<Ty>(val); } {
+        return get() < std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator>(Ty&& val)
+        requires requires(type t, Ty&& val) { t > std::forward<Ty>(val); } {
+        return get() > std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator<=(Ty&& val)
+        requires requires(type t, Ty&& val) { t <= std::forward<Ty>(val); } {
+        return get() <= std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator>=(Ty&& val)
+        requires requires(type t, Ty&& val) { t >= std::forward<Ty>(val); } {
+        return get() >= std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator==(Ty&& val)
+        requires requires(type t, Ty&& val) { t == std::forward<Ty>(val); } {
+        return get() == std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator!=(Ty&& val)
+        requires requires(type t, Ty&& val) { t != std::forward<Ty>(val); } {
+        return get() != std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator&(Ty&& val)
+        requires requires(type t, Ty&& val) { t& std::forward<Ty>(val); } {
+        return get() & std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator^(Ty&& val)
+        requires requires(type t, Ty&& val) { t^ std::forward<Ty>(val); } {
+        return get() ^ std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator|(Ty&& val)
+        requires requires(type t, Ty&& val) { t| std::forward<Ty>(val); } {
+        return get() | std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator&&(Ty&& val)
+        requires requires(type t, Ty&& val) { t&& std::forward<Ty>(val); } {
+        return get() && std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator||(Ty&& val)
+        requires requires(type t, Ty&& val) { t|| std::forward<Ty>(val); } {
+        return get() || std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator=(Ty&& val)
+        requires requires(type t, Ty&& val) { t = std::forward<Ty>(val); } {
+        return get() = std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator+=(Ty&& val)
+        requires requires(type t, Ty&& val) { t += std::forward<Ty>(val); } {
+        return get() += std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator-=(Ty&& val)
+        requires requires(type t, Ty&& val) { t -= std::forward<Ty>(val); } {
+        return get() -= std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator*=(Ty&& val)
+        requires requires(type t, Ty&& val) { t *= std::forward<Ty>(val); } {
+        return get() *= std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator/=(Ty&& val)
+        requires requires(type t, Ty&& val) { t /= std::forward<Ty>(val); } {
+        return get() /= std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator%=(Ty&& val)
+        requires requires(type t, Ty&& val) { t %= std::forward<Ty>(val); } {
+        return get() %= std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator>>=(Ty&& val)
+        requires requires(type t, Ty&& val) { t >>= std::forward<Ty>(val); } {
+        return get() >>= std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator<<=(Ty&& val)
+        requires requires(type t, Ty&& val) { t <<= std::forward<Ty>(val); } {
+        return get() <<= std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator&=(Ty&& val)
+        requires requires(type t, Ty&& val) { t &= std::forward<Ty>(val); } {
+        return get() &= std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator^=(Ty&& val)
+        requires requires(type t, Ty&& val) { t ^= std::forward<Ty>(val); } {
+        return get() ^= std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator|=(Ty&& val)
+        requires requires(type t, Ty&& val) { t |= std::forward<Ty>(val); } {
+        return get() |= std::forward<Ty>(val); }
+
+    template<class Ty>
+    decltype(auto) operator,(Ty&& val)
+        requires requires(type t, Ty&& val) { t, std::forward<Ty>(val); } {
+        return get(), std::forward<Ty>(val); }
+
+private:
+    union {
+        std::reference_wrapper<type> m_Ref;
+        type m_Val;
+        void* m_Null;
+    };
+    state m_State;
+
+    void cleanup() { 
+        if constexpr (!std::is_trivially_destructible_v<type>)
+            if (m_State == state::has_val) m_Val.~type(); 
+    }
+
+    void invalidate() {
+        new (&m_Null) std::nullptr_t{};
+        m_State = state::has_null;
+    }
+};
+
+#include <list>
+
+struct callable {
+    template<class ...Tys>
+    void operator()(Tys&&...args) {}
 };
 
 int main()
 {
-    axial_array<int, 5, char> _arr;
+    list l;
 
-    constexpr axial_array<int, 4>::key _key{ -1, 1 };
-    constexpr auto z = _key.z();
+    callable ba;
+    ba(1, 2);
+
+    int an_int = 30;
+    ref_or_val<int> int_holder = 10;
+    int_holder += an_int;
+    int_holder++;
+
+    assert(int_holder == 41);
+
+    int_holder = an_int;
+    int_holder += 100;
+
+    assert(an_int == 130);
+
+
+    l[{ 2, 3 }];
+
+    axial_array<int, 3> _a{ 1, 2, 3, 4, 5 };
+
+    axial_array<int, 3> _arr{
+            {  1,  2,  3 },
+          {  4,  5,  6,  7 },
+        {  8,  9, 10, 11, 12 },
+          { 13, 14, 15, 16 },
+            { 17, 18, 19 },
+    };
+
+    axial_array<int, 4> _arr2{
+          {  1,  2,  3,  4 },
+        {  5,  6,  7,  8,  9 },
+      { 10, 11, 12, 13, 14, 15 },
+    { 16, 17, 18, 19, 20, 21, 22 },
+      { 23, 24, 25, 26, 27, 28 },
+        { 29, 30, 31, 32, 33 },
+          { 34, 35, 36, 37 },
+    };
+
+    axial_array<int, 5> _arr3{
+              {  1,  2,  3,  4,  5 },
+            {  6,  7,  8,  9, 10, 11 },
+          { 12, 13, 14, 15, 16, 17, 18 },
+        { 19, 20, 21, 22, 23, 24, 25, 26 },
+      { 27, 28, 29, 30, 31, 32, 33, 34, 35 },
+        { 36, 37, 38, 39, 40, 41, 42, 43 },
+          { 44, 45, 46, 47, 48, 49, 50 },
+            { 51, 52, 53, 54, 55, 56 },
+              { 57, 58, 59, 60, 61 }
+    };
+
+    axial_array<int, 6> _arr4{
+                  {  1,  2,  3,  4,  5,  6 },
+                {  7,  8,  9, 10, 11, 12, 13 },
+              { 14, 15, 16, 17, 18, 19, 20, 21 },
+            { 22, 23, 24, 25, 26, 27, 28, 29, 30 },
+          { 31, 32, 33, 34, 35, 36, 37, 38, 39, 40 },
+        { 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51 },
+          { 52, 53, 54, 55, 56, 57, 58, 59, 60, 61 },
+            { 62, 63, 64, 65, 66, 67, 68, 69, 70 },
+              { 71, 72, 73, 74, 75, 76, 77, 78 },
+                { 79, 80, 81, 82, 83, 84, 85 },
+                  { 86, 87, 88, 89, 90, 91 }
+    };
+
+    axial_array<int, 4>::key _key{ -1, 1 };
+    auto z = _key.z();
 
     for (auto& i : _arr)
     {
