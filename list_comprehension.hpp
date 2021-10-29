@@ -56,6 +56,7 @@ namespace kaixo {
         m(find_first_not_of)
         m(find_last_of)
         m(find_last_not_of)
+#undef m;
     };
 
     /**
