@@ -10,6 +10,8 @@ namespace kaixo {
      * either another expression, a var, or a value.
      */
     template<class Type>
+    struct var;
+    template<class Type>
     struct expression {
         using type = Type;
         std::function<type()> c;
@@ -22,10 +24,38 @@ namespace kaixo {
      * list comprehension object that is generated, because it is stored as a reference.
      */
     template<class Type>
-    struct var : expression<Type> {
+    struct var_base : expression<Type> {
         using type = Type;
         void operator=(Type& t) { this->c = [&]() { return t; }; }
         void operator=(Type&& t) { this->c = [=]() { return t; }; }
+    };
+
+    template<class Type>
+    struct var : var_base<Type> {
+        using type = Type;
+        using var_base<Type>::operator=;
+        using var_base<Type>::operator();
+    };
+
+    template<>
+    struct var<std::string> : var_base<std::string> {
+        using var_base<std::string>::operator=;
+#define m(x) \
+        template<class ...Args> \
+        expression<bool> x(Args&&...args) { return { [this, ...args = std::forward<Args>(args)] () { return (*this)().x(args...); } }; }
+        m(at)            m(operator[])  m(front)     m(back)
+        m(data)          m(c_str)       m(begin)     m(cbegin)
+        m(end)           m(cend)        m(rbegin)    m(crbegin)
+        m(rend)          m(crend)       m(empty)     m(size)
+        m(length)        m(max_size)    m(reserve)   m(capacity)
+        m(shrink_to_fit) m(clear)       m(insert)    m(erase)
+        m(push_back)     m(pop_back)    m(append)    m(operator+=)
+        m(compare)       m(starts_with) m(ends_with) m(contains)
+        m(replace)       m(substr)      m(copy)      m(resize)
+        m(swap)          m(find)        m(rfind)     m(find_first_of)
+        m(find_first_not_of)
+        m(find_last_of)
+        m(find_last_not_of)
     };
 
     /**
@@ -156,6 +186,8 @@ namespace kaixo {
         std::tuple<LinkedContainers...> containers;
         std::vector<expression<bool>> constraints;
 
+        container operator*() { return get(); }
+
         container get() {
             container result;
 
@@ -251,19 +283,35 @@ namespace kaixo {
         return { { a, b } };
     }
 
+    template<class A, class ...Rest>
+    container_syntax<std::vector<std::tuple<Rest..., A>>, Rest..., A> operator,(container_syntax<std::vector<std::tuple<Rest...>>, Rest...>&& a, var<A>& b) {
+        return { std::tuple_cat(a.expressions, std::tuple{ expression<A>{ [&]() { return b(); } } }) };
+    }
+
+    template<class A, class ...Rest>
+    container_syntax<std::vector<std::tuple<Rest..., A>>, Rest..., A> operator,(container_syntax<std::vector<std::tuple<Rest...>>, Rest...>&& a, const expression<A>& b) {
+        return { std::tuple_cat(a.expressions, std::tuple{ b }) };
+    }
+
     /**
      * Operators for initializing a list comprehension object with a container syntax and the first linked container.
      */
     template<class ContainerSyntax, class Container, class CType>
     list_comprehension<ContainerSyntax, linked_container<CType, Container>>
-        operator|(ContainerSyntax&& v, linked_container<CType, Container>&& c) {
+        operator|(const ContainerSyntax& v, linked_container<CType, Container>&& c) {
         return { v, linked_container<CType, Container>{ std::move(c) }, {} };
     }
 
     template<class Type, class Container, class CType>
     list_comprehension<container_syntax<std::vector<Type>, Type>, linked_container<CType, Container>>
         operator|(var<Type>& v, linked_container<CType, Container>&& c) {
-        return { container_syntax<std::vector, Type>{ expression<Type>{ [&]() { return v(); } } }, linked_container<CType, Container>{ std::move(c) }, {} };
+        return { container_syntax<std::vector<Type>, Type>{ expression<Type>{ [&]() { return v(); } } }, std::move(c), {} };
+    }
+
+    template<class Type, class Container, class CType>
+    list_comprehension<container_syntax<std::vector<Type>, Type>, linked_container<CType, Container>>
+        operator|(const expression<Type>& v, linked_container<CType, Container>&& c) {
+        return { container_syntax<std::vector<Type>, Type>{ v }, std::move(c), {} };
     }
 
     /**
@@ -281,4 +329,16 @@ namespace kaixo {
         v.constraints.push_back(c);
         return v;
     }
+
+    template<std::convertible_to<bool> Type, class ContainerSyntax, class ...LinkedContainers>
+    list_comprehension<ContainerSyntax, LinkedContainers...>
+        operator,(list_comprehension<ContainerSyntax, LinkedContainers...>&& v, expression<Type>&& c) {
+        v.constraints.push_back({ [c = std::move(c)]() { return static_cast<bool>(c()); } });
+        return v;
+    }
+
+    struct lce {
+        template<class ContainerSyntax, class ...LinkedContainers>
+        auto operator[](list_comprehension<ContainerSyntax, LinkedContainers...>&& l) { return l.get(); };
+    } lc;
 }
