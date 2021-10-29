@@ -68,7 +68,7 @@ namespace kaixo {
         struct iterator {
             using iterator_category = std::bidirectional_iterator_tag;
             using value_type = Type;
-            using difference_type = ptrdiff_t;
+            using difference_type = std::ptrdiff_t;
             using pointer = Type*;
             using reference = Type&;
 
@@ -195,35 +195,35 @@ namespace kaixo {
          * Some helper functions because dealing with tuples
          * is a living nightmare when also working with changing indices...
          */
-        template<class T, size_t ...Is>
+        template<class T, std::size_t ...Is>
         void set_begin(T& tuple, std::index_sequence<Is...>) {
             ((std::get<Is>(tuple) = std::get<Is>(containers).container.begin()), ...);
         }
 
-        template<class T, size_t ...Is>
-        void set_begin(T& tuple, size_t i, std::index_sequence<Is...>) {
+        template<class T, std::size_t ...Is>
+        void set_begin(T& tuple, std::size_t i, std::index_sequence<Is...>) {
             ((Is == i ? (std::get<Is>(tuple) = std::get<Is>(containers).container.begin(), true) : true), ...);
         }
 
-        template<class T, size_t ...Is>
+        template<class T, std::size_t ...Is>
         bool check_end(T& tuple, size_t i, std::index_sequence<Is...>) {
             bool is_end = false;
             ((Is == i ? (is_end = std::get<Is>(tuple) == std::get<Is>(containers).container.end(), true) : true), ...);
             return is_end;
         }
 
-        template<class T, size_t ...Is>
+        template<class T, std::size_t ...Is>
         void set_values(T& tuple, std::index_sequence<Is...>) {
             ((std::get<Is>(containers).variable.get() = *std::get<Is>(tuple)), ...);
         }
 
-        template<class T, size_t ...Is>
-        void increment(T& tuple, size_t index, std::index_sequence<Is...>) {
+        template<class T, std::size_t ...Is>
+        void increment(T& tuple, std::size_t index, std::index_sequence<Is...>) {
             ((Is == index ? (++std::get<Is>(tuple), true) : true), ...);
         }
 
-        template<class T, size_t ...Is>
-        void set_as_end(T& tuple, size_t index, std::index_sequence<Is...>) {
+        template<class T, std::size_t ...Is>
+        void set_as_end(T& tuple, std::size_t index, std::index_sequence<Is...>) {
             ((Is == index ? (std::get<Is>(tuple) = std::get<Is>(containers).container.end(), true) : true), ...);
         }
     };
