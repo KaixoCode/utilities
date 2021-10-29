@@ -1004,17 +1004,15 @@ requires (std::derived_from<std::decay_t<A>, expression> || std::derived_from<st
 
 #include "list_comprehension.hpp"
 
+
+
 int main()
 {
 
 
     {
-        std::vector<int> a{ 1, 2, 3, 4 };
-
-        var<int> x;
-        var<double> y;
-
-        auto list = ((x + 10, y) | x <- a, y <- range(0., 10.), x == y).get();
+        var<int> x, y;
+        auto list = lc[(x, y) | x <- range(0, 100), y <- range(0, 100), y * 2 == x * 3];
 
         std::cout << "";
     }
