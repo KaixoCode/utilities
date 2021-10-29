@@ -20,6 +20,7 @@ add_library(utilities STATIC
   "${utilities_SOURCE_DIR}/image_buffer.hpp"
   "${utilities_SOURCE_DIR}/vec.hpp"
   "${utilities_SOURCE_DIR}/axial_array.hpp"
+  "${utilities_SOURCE_DIR}/list_comprehension.hpp"
 )
 
 set_target_properties(utilities PROPERTIES LINKER_LANGUAGE CXX)
