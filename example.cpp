@@ -1,4 +1,4 @@
-#include "smart_tuple.hpp"
+﻿#include "smart_tuple.hpp"
 #include "pa_function.hpp"
 #include "lambda.hpp"
 #include "struct_tuple.hpp"
@@ -745,8 +745,274 @@ struct callable {
     void operator()(Tys&&...args) {}
 };
 
+#include <functional>
+
+
+struct var_assignment { };
+struct var;
+struct expression {
+    function<double()> c;
+    explicit operator double() const { return c(); }
+    double operator()(auto...) const { return c(); }
+} i;
+
+struct var : expression {
+    var() = default;
+    var_assignment operator=(double v) { this->c = [v]() { return v; }; return {}; }
+};
+
+#define operation_op(x) \
+template<class A, class B> constexpr expression operator x (A&& a, B&& b) \
+requires (std::derived_from<std::decay_t<A>, expression> || std::derived_from<std::decay_t<B>, expression>) \
+{ return { [aa = std::forward<A>(a), bb = std::forward<B>(b)]() mutable { return static_cast<double>(aa) x static_cast<double>(bb); } }; } \
+template<class A, class B> constexpr expression operator x (A& a, B&& b) \
+requires (std::derived_from<std::decay_t<A>, expression> || std::derived_from<std::decay_t<B>, expression>) \
+{ return { [&aa = a, bb = std::forward<B>(b)]() mutable { return static_cast<double>(aa) x static_cast<double>(bb); } }; } \
+template<class A, class B> constexpr expression operator x (A&& a, B& b) \
+requires (std::derived_from<std::decay_t<A>, expression> || std::derived_from<std::decay_t<B>, expression>) \
+{ return { [aa = std::forward<A>(a), &bb = b]() mutable { return static_cast<double>(aa) x static_cast<double>(bb); } }; } \
+template<class A, class B> constexpr expression operator x (A& a, B& b) \
+requires (std::derived_from<std::decay_t<A>, expression> || std::derived_from<std::decay_t<B>, expression>) \
+{ return { [&aa = a, &bb = b]() mutable { return static_cast<double>(aa) x static_cast<double>(bb); } }; } \
+
+operation_op(+);
+operation_op(-);
+operation_op(*);
+operation_op(/);
+operation_op(==);
+operation_op(!=);
+operation_op(<);
+operation_op(>);
+operation_op(>=);
+operation_op(<=);
+
+#define operation_op_int(x) \
+template<class A, class B> constexpr expression operator x (A&& a, B&& b) \
+requires (std::derived_from<std::decay_t<A>, expression> || std::derived_from<std::decay_t<B>, expression>) \
+{ return { [aa = std::forward<A>(a), bb = std::forward<B>(b)]() mutable { return static_cast<int>((double)aa) x static_cast<int>((double)bb); } }; } \
+template<class A, class B> constexpr expression operator x (A& a, B&& b) \
+requires (std::derived_from<std::decay_t<A>, expression> || std::derived_from<std::decay_t<B>, expression>) \
+{ return { [&aa = a, bb = std::forward<B>(b)]() mutable { return static_cast<int>((double)aa) x static_cast<int>((double)bb); } }; } \
+template<class A, class B> constexpr expression operator x (A&& a, B& b) \
+requires (std::derived_from<std::decay_t<A>, expression> || std::derived_from<std::decay_t<B>, expression>) \
+{ return { [aa = std::forward<A>(a), &bb = b]() mutable { return static_cast<int>((double)aa) x static_cast<int>((double)bb); } }; } \
+template<class A, class B> constexpr expression operator x (A& a, B& b) \
+requires (std::derived_from<std::decay_t<A>, expression> || std::derived_from<std::decay_t<B>, expression>) \
+{ return { [&aa = a, &bb = b]() mutable { return static_cast<int>((double)aa) x static_cast<int>((double)bb); } }; } \
+
+operation_op_int(%);
+
+#define operation_fun(x) \
+template<class A, class B> constexpr expression x (A&& a, B&& b) \
+requires (std::derived_from<std::decay_t<A>, expression> || std::derived_from<std::decay_t<B>, expression>) \
+{ return { [aa = std::forward<A>(a), bb = std::forward<B>(b)]() mutable { return std::x(static_cast<double>(aa), static_cast<double>(bb)); } }; } \
+template<class A, class B> constexpr expression x (A& a, B&& b) \
+requires (std::derived_from<std::decay_t<A>, expression> || std::derived_from<std::decay_t<B>, expression>) \
+{ return { [&aa = a, bb = std::forward<B>(b)]() mutable { return std::x(static_cast<double>(aa), static_cast<double>(bb)); } }; } \
+template<class A, class B> constexpr expression x (A&& a, B& b) \
+requires (std::derived_from<std::decay_t<A>, expression> || std::derived_from<std::decay_t<B>, expression>) \
+{ return { [aa = std::forward<A>(a), &bb = b]() mutable { return std::x(static_cast<double>(aa), static_cast<double>(bb)); } }; } \
+template<class A, class B> constexpr expression x (A& a, B& b) \
+requires (std::derived_from<std::decay_t<A>, expression> || std::derived_from<std::decay_t<B>, expression>) \
+{ return { [&aa = a, &bb = b]() mutable { return std::x(static_cast<double>(aa), static_cast<double>(bb)); } }; } \
+
+operation_fun(pow);
+operation_fun(abs);
+operation_fun(exp);
+operation_fun(log);
+operation_fun(sqrt);
+operation_fun(sin);
+operation_fun(cos);
+operation_fun(tan);
+operation_fun(floor);
+operation_fun(ceil);
+operation_fun(round);
+
+
+struct range {
+    int begin;
+    int end;
+
+    int size() { return end - begin; }
+    range& operator-() { return *this; }
+};
+
+struct lazy_list {
+    range r;
+    var& var;
+};
+
+lazy_list operator<(var& v, range& r) { return { r, v };  }
+
+template<typename T>
+struct list_syntax {
+    std::vector<expression> vars;
+};
+
+list_syntax<std::vector<std::pair<double, double>>> operator,(expression&& a, expression&& b) {
+    return { { a, b } };
+}
+
+list_syntax<std::vector<std::pair<double, double>>> operator,(var& a, expression&& b) {
+    return { { { [&]() { return a(); } }, b } };
+}
+
+list_syntax<std::vector<std::pair<double, double>>> operator,(expression&& a, var& b) {
+    return { { a, { [&]() { return b(); } } } };
+}
+
+list_syntax<std::vector<std::pair<double, double>>> operator,(var& a, var& b) {
+    return { { { [&]() { return a(); } }, { [&]() { return b(); } } } };
+}
+
+auto operator,(list_syntax<std::vector<std::pair<double, double>>>&& a, expression&& b) {
+    list_syntax<std::vector<std::tuple<double, double, double>>> l;
+    l.vars.swap(a.vars);
+    l.vars.push_back(b);
+    return l;
+}
+
+auto operator,(list_syntax<std::vector<std::pair<double, double>>>&& a, var& b) {
+    list_syntax<std::vector<std::tuple<double, double, double>>> l;
+    l.vars.swap(a.vars);
+    l.vars.push_back({ [&]() { return b(); } });
+    return l;
+}
+
+template<typename ...Tys>
+auto operator,(list_syntax<std::vector<std::tuple<Tys...>>>&& a, expression&& b) {
+    list_syntax<std::vector<std::tuple<Tys..., double>>> l;
+    l.vars.swap(a.vars);
+    l.vars.push_back(b);
+    return l;
+}
+
+template<typename ...Tys>
+auto operator,(list_syntax<std::vector<std::tuple<Tys...>>>&& a, var& b) {
+    list_syntax<std::vector<std::tuple<Tys..., double>>> l;
+    l.vars.swap(a.vars);
+    l.vars.push_back({ [&]() { return b(); } });
+    return l;
+}
+
+template<typename T>
+struct list_comprehension {
+    list_syntax<T> syntax;
+    std::vector<lazy_list> lists;
+    std::vector<expression> constraints;
+};
+
+list_comprehension<std::vector<double>> operator|(var& s, lazy_list&& l) {
+    return { list_syntax<std::vector<double>>{ { { [&]() { return s(); } } } }, { l } };
+}
+
+list_comprehension<std::vector<double>> operator|(expression&& s, lazy_list&& l) {
+    return { list_syntax<std::vector<double>>{ { s } }, { l } };
+}
+
+template<typename T>
+list_comprehension<T> operator|(list_syntax<T>&& s, lazy_list&& l) {
+    return { s, { l } };
+}
+
+template<typename T>
+list_comprehension<T> operator,(list_comprehension<T>&& c, lazy_list&& l) {
+    c.lists.push_back(l);
+    return c;
+}
+
+template<typename T>
+list_comprehension<T> operator,(list_comprehension<T>&& c, expression&& l) {
+    c.constraints.push_back(l);
+    return c;
+}
+
+struct to_list {
+    template<typename ...Tys>
+    auto operator[](list_comprehension<std::vector<std::tuple<Tys...>>>&& l) {
+        std::vector<std::tuple<Tys...>> list;
+        return list;
+    }
+
+    auto operator[](list_comprehension<std::vector<double>>&& l) {
+        std::vector<double> list;
+
+        thing<1>(l, list);
+
+        return list;
+    }
+
+    auto operator[](list_comprehension<std::vector<std::pair<double, double>>>&& l) {
+        std::vector<std::pair<double, double>> list;
+
+        thing<2>(l, list);
+
+        return list;
+    }
+
+    template<size_t Size, typename T, typename L>
+    void thing(T& l, L& list) {
+        std::vector<int> vals;
+        vals.resize(l.lists.size());
+        for (int i = 0; i < l.lists.size(); i++) {
+            vals[i] = l.lists[i].r.begin;
+        }
+
+        int index = 0;
+        while (true) {
+            for (int i = 0; i < l.lists.size(); i++) {
+                l.lists[i].var = vals[i];
+            }
+
+            bool _match = true;
+            for (auto& c : l.constraints) {
+                _match &= static_cast<bool>(c());
+            }
+
+            if (_match) {
+                fill_tuple(list.emplace_back(), l.syntax.vars, std::make_index_sequence<Size>{});
+            }
+
+            vals[index]++;
+            while (vals[index] == l.lists[index].r.end) {
+                vals[index] = l.lists[index].r.begin;
+                index++;
+                if (index == vals.size()) {
+                    vals[index - 1] = l.lists.back().r.end;
+                    break;
+                }
+                vals[index]++;
+            }
+            if (vals[l.lists.size() - 1] == l.lists.back().r.end)
+                break;
+            index = 0;
+        }
+    }
+
+    template<typename T, size_t ...Is>
+    void fill_tuple(T& tuple, std::vector<expression>& vars, std::index_sequence<Is...>) {
+        ((std::get<Is>(tuple) = vars[Is]()), ...);
+    }
+
+    template<size_t ...Is>
+    void fill_tuple(double& tuple, std::vector<expression>& vars, std::index_sequence<Is...>) {
+        ((tuple = vars[Is]()), ...);
+    }
+
+} $;
+
 int main()
 {
+
+
+    {
+
+        var x, y;
+        auto list = $[y | x <- range(0, 100), y <- range(0, 100), pow(x, 2) == y];
+
+        std::cout << "";
+    }
+
     std::array<int, 2>;
     axial_array<int, 3> _a1{ 1, 2, 3, 4, 5 };
     axial_array<int, 3> _a2{ 5, 4, 3, 2, 1 };
@@ -805,6 +1071,14 @@ int main()
                 { 79, 80, 81, 82, 83, 84, 85 },
                   { 86, 87, 88, 89, 90, 91 }
     };
+
+    for (auto [val, pos] : _arr4.with_index()) {
+        std::cout << pos.x << ", " << pos.y << " : " << val << std::endl;
+    }
+
+    for (auto& val : _arr4) {
+        std::cout << val << std::endl;
+    }
 
     axial_array<int, 4>::key _key{ -1, 1 };
     auto z = _key.z();
