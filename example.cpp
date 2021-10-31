@@ -755,25 +755,24 @@ struct callable {
 int main()
 {
 
-
     {
 
 
-        for (var<int> f; auto& i : lc[f | f <- range(1, 100), f % 2 == 0]) {
-            std::cout << i << std::endl;
-        }
 
-        var<int> x, y;
-        auto list = lc[(x, y) | x <- range(0, 100), y <- range(0, 100), y * 2 == x * 3];
 
-        std::vector<std::string> s2{ "bbaaa", "bbaa", "aaaa", "bbaa" };
 
-        std::list<std::string> s1{ "bbbaa", "baaa", "aaaa", "bbaa" };
-
-        constexpr auto lct = (a | a < -range(1, 2));
-
-        auto strs = lc[a | a <- range(1, 2)];
+        var<char> a;
+        var<std::string> t = "carrot";
+        std::string mystr = "hello world";
+        std::string strs = lc[a | a <- mystr, t.find(a) != std::string::npos];
         
+        var<int> x;
+        std::array numbers{ 103, 3, 310, 5, 149, 23, 49 };
+        auto list = lc[x | x <- range(0, 100), find(numbers.begin(), numbers.end(), x) != numbers.end()];
+
+
+
+
 
         std::cout << "";
     }
