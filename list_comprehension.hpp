@@ -3,9 +3,9 @@
 #include <iterator>
 #include <tuple>
 #include <map>
+#include "utils.hpp"
 
 namespace kaixo {
-
     template<class Type>
     using container_for = std::conditional_t<std::is_same_v<Type, char>, std::string, std::vector<Type>>;
 
@@ -13,16 +13,19 @@ namespace kaixo {
     struct container_syntax;
 
     /**
-     * An expression is basically just nested lambdas that all execute some operator on 
+     * An expression is basically just nested lambdas that all execute some operator on
      * either another expression, a var, or a value.
      */
     template<class Type>
     struct expression;
+
     template<class Type>
     struct var;
     template<class Type>
     struct expression_base {
         using type = Type;
+        expression_base() = default;
+        expression_base(auto f) : c(f) {};
         std::function<type()> c;
         explicit operator type() const { return c(); }
         type operator()() const { return c(); }
@@ -36,56 +39,113 @@ namespace kaixo {
 
     template<class Type>
     struct expression : expression_base<Type> {
+        using type = Type;
+    };
 
+    template<class Type>
+    struct expression_wrapper {
+        Type value;
+        auto get() { return value; }
+    };
+
+    template<class Type>
+    struct expression_wrapper<var<Type>> {
+        var<Type> value;
+        auto get() { return value(); }
+    };
+
+    template<class Type>
+    struct expression_wrapper<var<Type>&&> {
+        var<Type> value;
+        auto get() { return value(); }
+    };
+
+    template<class Type>
+    struct expression_wrapper<var<Type>&> {
+        var<Type>& value;
+        auto get() { return value(); }
+    };
+
+    template<class Type>
+    struct expression_wrapper<expression<Type>&&> {
+        expression<Type> value;
+        auto get() { return value(); }
+    };
+
+    template<class Type>
+    struct expression_wrapper<expression<Type>> {
+        expression<Type> value;
+        auto get() { return value(); }
+    };
+
+    template<class Type>
+    struct expression_wrapper<expression<Type>&> {
+        expression<Type>& value;
+        auto get() { return value(); }
     };
 
     /**
-     * A var is an expression with a simple assignment, a var's lifetime must be longer than the 
+     * A var is an expression with a simple assignment, a var's lifetime must be longer than the
      * list comprehension object that is generated, because it is stored as a reference.
      */
     template<class Type>
     struct var : expression<Type> {
         using type = Type;
-        void operator=(Type& t) { this->c = [&]() { return t; }; }
-        void operator=(Type&& t) { this->c = [=]() { return t; }; }
+            
+        using expression<Type>::expression;
+
+        template<class ...Args> requires std::constructible_from<Type, Args...>
+        var(Args&&...args) { (*this) = Type{ std::forward<Args>(args)... }; }
+        var(const Type& t) { (*this) = t; }
+        var(Type& t) { (*this) = t; }
+        var(Type&& t) { (*this) = std::move(t); }
+
+        var& operator=(const Type& t) { this->c = [&]() { return t; }; return *this; }
+        var& operator=(Type& t) { this->c = [&]() { return t; }; return *this; }
+        var& operator=(Type&& t) { this->c = [t = t]() { return t; }; return *this; }
     };
+
+#define lc_mem_fun(y, x) \
+    template<class ...Args> \
+    auto x(Args&& ...exprs) const& -> kaixo::expression<decltype(std::declval<y>().x(std::declval<expression_wrapper<Args>>().get()...))> { \
+        return { [this, ...args = expression_wrapper<Args>{ std::forward<Args>(exprs) }]() mutable { return this->c().y::x(args.get()...); } }; } \
+    template<class ...Args> \
+    auto x(Args&& ...exprs) const&& -> kaixo::expression<decltype(std::declval<y>().x(std::declval<expression_wrapper<Args>>().get()...))> { \
+        return { [c = this->c, ...args = expression_wrapper<Args>{ std::forward<Args>(exprs) }]() mutable { return c().y::x(args.get()...); } }; } \
 
     template<>
     struct expression<std::string> : expression_base<std::string> {
-#define m(x) \
-        template<class ...Args> \
-        auto x(Args&&...args) && -> expression<decltype(std::declval<std::string>().x(args...))> { return { [c = this->c, ...args = std::forward<Args>(args)] () { return c().x(args...); } }; } \
-        template<class ...Args> \
-        auto x(Args&&...args) & -> expression<decltype(std::declval<std::string>().x(args...))> { return { [this, ...args = std::forward<Args>(args)] () { return this->c().x(args...); } }; }
+        using type = std::string;
 
-        m(at)            m(operator[])  m(front)     m(back)
-        m(data)          m(c_str)       m(begin)     m(cbegin)
-        m(end)           m(cend)        m(rbegin)    m(crbegin)
-        m(rend)          m(crend)       m(empty)     m(size)
-        m(length)        m(max_size)    m(reserve)   m(capacity)
-        m(shrink_to_fit) m(clear)       m(insert)    m(erase)
-        m(push_back)     m(pop_back)    m(append)    m(operator+=)
-        m(compare)       m(starts_with) m(ends_with) 
-        m(replace)       m(substr)      m(copy)      m(resize)
-        m(swap)          m(find)        m(rfind)     m(find_first_of)
-        m(find_first_not_of)
-        m(find_last_of)
-        m(find_last_not_of)
-#undef m;
+        lc_mem_fun(type, at)            lc_mem_fun(type, operator[])  lc_mem_fun(type, front)     lc_mem_fun(type, back)
+        lc_mem_fun(type, data)          lc_mem_fun(type, c_str)       lc_mem_fun(type, begin)     lc_mem_fun(type, cbegin)
+        lc_mem_fun(type, end)           lc_mem_fun(type, cend)        lc_mem_fun(type, rbegin)    lc_mem_fun(type, crbegin)
+        lc_mem_fun(type, rend)          lc_mem_fun(type, crend)       lc_mem_fun(type, empty)     lc_mem_fun(type, size)
+        lc_mem_fun(type, length)        lc_mem_fun(type, max_size)    lc_mem_fun(type, reserve)   lc_mem_fun(type, capacity)
+        lc_mem_fun(type, shrink_to_fit) lc_mem_fun(type, clear)       lc_mem_fun(type, insert)    lc_mem_fun(type, erase)
+        lc_mem_fun(type, push_back)     lc_mem_fun(type, pop_back)    lc_mem_fun(type, append)    lc_mem_fun(type, operator+=)
+        lc_mem_fun(type, compare)       lc_mem_fun(type, starts_with) lc_mem_fun(type, ends_with) 
+        lc_mem_fun(type, replace)       lc_mem_fun(type, substr)      lc_mem_fun(type, copy)      lc_mem_fun(type, resize)
+        lc_mem_fun(type, swap)          lc_mem_fun(type, find)        lc_mem_fun(type, rfind)     lc_mem_fun(type, find_first_of)
+        lc_mem_fun(type, find_first_not_of)
+        lc_mem_fun(type, find_last_of)
+        lc_mem_fun(type, find_last_not_of)
+
     };
 
     template<class ...Args>
     struct expression<std::tuple<Args...>> : expression_base<std::tuple<Args...>> {
+        using type = std::tuple<Args...>;
         using expression_base<std::tuple<Args...>>::operator=;
 
         template<size_t N>
-        expression<std::decay_t<decltype(std::get<N>(std::declval<std::tuple<Args...>>()))>>get() && {
-            return { [c = this->c]() { return std::get<N>(c()); } };
+        expression<std::decay_t<decltype(std::get<N>(std::declval<std::tuple<Args...>>()))>>get()&& {
+            return { [c = this->c] () { return std::get<N>(c()); } };
         }
 
         template<size_t N>
-        expression<std::decay_t<decltype(std::get<N>(std::declval<std::tuple<Args...>>()))>>get() & {
-            return { [this] () { return std::get<N>(this->c()); } };
+        expression<std::decay_t<decltype(std::get<N>(std::declval<std::tuple<Args...>>()))>>get()& {
+            return { [this]() { return std::get<N>(this->c()); } };
         }
     };
 
@@ -104,20 +164,20 @@ namespace kaixo {
 
     var_op(+);
     var_op(-);
-    var_op(/);
+    var_op(/ );
     var_op(*);
     var_op(%);
-    var_op(==);
-    var_op(!=);
-    var_op(<=);
-    var_op(>=);
-    var_op(>);
-    var_op(<);
-    var_op(<=>);
+    var_op(== );
+    var_op(!= );
+    var_op(<= );
+    var_op(>= );
+    var_op(> );
+    var_op(< );
+    var_op(<=> );
     var_op(&&);
-    var_op(||);
-    var_op(<<);
-    var_op(>>);
+    var_op(|| );
+    var_op(<< );
+    var_op(>> );
 
 #define u_var_op(x)\
     template<class A> auto operator x(var<A>& a) { return expression<decltype(x a())>{ [&a]() { return x a(); } }; } \
@@ -204,7 +264,7 @@ namespace kaixo {
     linked_container<Type, Container> operator<(var<Type>& v, const container<Type, Container>& r) { return { v, std::move(r) }; }
 
     /**
-     * This is the part before the '|', and defined what type of container the 
+     * This is the part before the '|', and defined what type of container the
      * result will be stored in. Also contains a generate method to easily generate an entry
      * for the resulting container given the values currently in the variables.
      */
@@ -223,7 +283,7 @@ namespace kaixo {
     };
 
     /**
-     * Everything combined into a single object, contains the container syntax, all 
+     * Everything combined into a single object, contains the container syntax, all
      * the linked containers, and also some constraints, which are expressions that evaluate to 'bool'
      */
     template<class ContainerSyntax, class ...LinkedContainers>
@@ -382,7 +442,7 @@ namespace kaixo {
     template<std::convertible_to<bool> Type, class ContainerSyntax, class ...LinkedContainers>
     list_comprehension<ContainerSyntax, LinkedContainers...>
         operator,(list_comprehension<ContainerSyntax, LinkedContainers...>&& v, expression<Type>&& c) {
-        v.constraints.push_back({ [c = std::move(c)]() { return static_cast<bool>(c()); } });
+        v.constraints.push_back({ [c = std::move(c)] () { return static_cast<bool>(c()); } });
         return v;
     }
 
@@ -466,11 +526,385 @@ namespace kaixo {
     }
 
     /**
-     * Some sugar on top that allows syntax like 
+     * Some sugar on top that allows syntax like
      * 'lc[a | a <- range(0, 10)]' for 'true' list comprehension.
      */
     struct lce {
         template<class ContainerSyntax, class ...LinkedContainers>
         auto operator[](list_comprehension<ContainerSyntax, LinkedContainers...>&& l) { return l.get(); };
     } lc;
+
+
+
+#define lc_std_fun(y, x) \
+    template<class ...Args> \
+    auto x(Args&& ...exprs) -> kaixo::expression<decltype(y x(std::declval<expression_wrapper<Args>>().get()...))> { \
+        return { [...args = expression_wrapper<Args>{ std::forward<Args>(exprs) }]() mutable { return y x(args.get()...); } }; \
+    }
 }
+
+
+#define LC_ALGORITHMS
+#ifdef LC_ALGORITHMS
+#include <algorithm>
+namespace kaixo {
+    lc_std_fun(std::, adjacent_find);
+    lc_std_fun(std::, binary_search);
+    lc_std_fun(std::, bsearch);
+    lc_std_fun(std::, clamp);
+    lc_std_fun(std::, copy_backward);
+    lc_std_fun(std::, copy_n);
+    lc_std_fun(std::, count);
+    lc_std_fun(std::, count_if);
+    lc_std_fun(std::, equal);
+    lc_std_fun(std::, equal_range);
+    lc_std_fun(std::, fill);
+    lc_std_fun(std::, fill_n);
+    lc_std_fun(std::, find);
+    lc_std_fun(std::, find_end);
+    lc_std_fun(std::, find_first_of);
+    lc_std_fun(std::, find_if);
+    lc_std_fun(std::, find_if_not);
+    lc_std_fun(std::, for_each);
+    lc_std_fun(std::, for_each_n);
+    lc_std_fun(std::, generate);
+    lc_std_fun(std::, generate_n);
+    lc_std_fun(std::, includes);
+    lc_std_fun(std::, inplace_merge);
+    lc_std_fun(std::, iter_swap);
+    lc_std_fun(std::, lexicographical_compare);
+    lc_std_fun(std::, lower_bound);
+    lc_std_fun(std::, make_heap);
+    lc_std_fun(std::, max);
+    lc_std_fun(std::, max_element);
+    lc_std_fun(std::, merge);
+    lc_std_fun(std::, min);
+    lc_std_fun(std::, min_element);
+    lc_std_fun(std::, minmax);
+    lc_std_fun(std::, minmax_element);
+    lc_std_fun(std::, mismatch);
+    lc_std_fun(std::, move);
+    lc_std_fun(std::, move_backward);
+    lc_std_fun(std::, next_permutation);
+    lc_std_fun(std::, nth_element);
+    lc_std_fun(std::, partial_sort);
+    lc_std_fun(std::, partial_sort_copy);
+    lc_std_fun(std::, partition);
+    lc_std_fun(std::, partition_copy);
+    lc_std_fun(std::, partition_point);
+    lc_std_fun(std::, pop_heap);
+    lc_std_fun(std::, prev_permutation);
+    lc_std_fun(std::, push_heap);
+    lc_std_fun(std::, qsort);
+    lc_std_fun(std::, remove);
+    lc_std_fun(std::, remove_copy);
+    lc_std_fun(std::, replace);
+    lc_std_fun(std::, replace_copy);
+    lc_std_fun(std::, replace_copy_if);
+    lc_std_fun(std::, reverse);
+    lc_std_fun(std::, reverse_copy);
+    lc_std_fun(std::, rotate);
+    lc_std_fun(std::, rotate_copy);
+    lc_std_fun(std::, sample);
+    lc_std_fun(std::, search);
+    lc_std_fun(std::, search_n);
+    lc_std_fun(std::, shift_left);
+    lc_std_fun(std::, shift_right);
+    lc_std_fun(std::, set_difference);
+    lc_std_fun(std::, set_intersection);
+    lc_std_fun(std::, set_symmetric_difference);
+    lc_std_fun(std::, set_union);
+    lc_std_fun(std::, sort);
+    lc_std_fun(std::, sort_heap);
+    lc_std_fun(std::, stable_partition);
+    lc_std_fun(std::, stable_sort);
+    lc_std_fun(std::, swap);
+    lc_std_fun(std::, swap_ranges);
+    lc_std_fun(std::, transform);
+    lc_std_fun(std::, unique);
+    lc_std_fun(std::, unique_copy);
+    lc_std_fun(std::, upper_bound);
+}
+#endif
+
+#define LC_ITERATOR
+#ifdef LC_ITERATOR
+#include <iterator>
+namespace kaixo {
+    lc_std_fun(std::, advance);
+    lc_std_fun(std::, back_inserter);
+    lc_std_fun(std::, begin);
+    lc_std_fun(std::, data);
+    lc_std_fun(std::, distance);
+    lc_std_fun(std::, empty);
+    lc_std_fun(std::, end);
+    lc_std_fun(std::, front_inserter);
+    lc_std_fun(std::, inserter);
+    lc_std_fun(std::, make_move_iterator);
+    lc_std_fun(std::, make_reverse_iterator);
+    lc_std_fun(std::, next);
+    lc_std_fun(std::, prev);
+    lc_std_fun(std::, rbegin);
+    lc_std_fun(std::, rend);
+    lc_std_fun(std::, size);
+}
+#endif
+
+#define LC_MEMORY
+#ifdef LC_MEMORY
+#include <memory>
+#include <memory_resource>
+namespace kaixo {
+    lc_std_fun(std::, addressof);
+    lc_std_fun(std::, align);
+    lc_std_fun(std::, assume_aligned);
+    lc_std_fun(std::, calloc);
+    lc_std_fun(std::, free);
+    lc_std_fun(std::, malloc);
+    lc_std_fun(std::, realloc);
+    lc_std_fun(std::, destroy);
+    lc_std_fun(std::, destroy_at);
+    lc_std_fun(std::, destroy_n);
+    lc_std_fun(std::pmr::, get_default_resource);
+    lc_std_fun(std::, make_obj_using_allocator);
+    lc_std_fun(std::pmr::, new_delete_resource);
+    lc_std_fun(std::pmr::, null_memory_resource);
+    lc_std_fun(std::pmr::, pool_options);
+    lc_std_fun(std::pmr::, set_default_resource);
+    lc_std_fun(std::, to_address);
+    lc_std_fun(std::, uninitialized_construct_using_allocator);
+    lc_std_fun(std::, uninitialized_copy);
+    lc_std_fun(std::, uninitialized_copy_n);
+    lc_std_fun(std::, uninitialized_default_construct);
+    lc_std_fun(std::, uninitialized_default_construct_n);
+    lc_std_fun(std::, uninitialized_fill);
+    lc_std_fun(std::, uninitialized_fill_n);
+    lc_std_fun(std::, uninitialized_move);
+    lc_std_fun(std::, uninitialized_move_n);
+    lc_std_fun(std::, uninitialized_value_construct);
+    lc_std_fun(std::, uninitialized_value_construct_n);
+}
+#endif
+
+#define LC_NUMERIC
+#ifdef LC_NUMERIC
+#include <numeric>
+namespace kaixo {
+    lc_std_fun(std::, accumulate);
+    lc_std_fun(std::, adjacent_difference);
+    lc_std_fun(std::, inclusive_scan);
+    lc_std_fun(std::, inner_product);
+    lc_std_fun(std::, iota);
+    lc_std_fun(std::, reduce);
+    lc_std_fun(std::, partial_sum);
+    lc_std_fun(std::, transform_exclusive_scan);
+    lc_std_fun(std::, transform_inclusive_scan);
+    lc_std_fun(std::, transform_reduce);
+    
+    lc_std_fun(std::, bit_cast);
+    lc_std_fun(std::, gcd);
+    lc_std_fun(std::, lcm);
+    lc_std_fun(std::, lerp);
+    lc_std_fun(std::, abs);
+    lc_std_fun(std::, acos);
+    lc_std_fun(std::, acosh);
+    lc_std_fun(std::, asin);
+    lc_std_fun(std::, asinh);
+    lc_std_fun(std::, atan);
+    lc_std_fun(std::, atan2);
+    lc_std_fun(std::, atanh);
+    lc_std_fun(std::, cbrt);
+    lc_std_fun(std::, ceil);
+    lc_std_fun(std::, copysign);
+    lc_std_fun(std::, cos);
+    lc_std_fun(std::, cosh);
+    lc_std_fun(std::, div);
+    lc_std_fun(std::, erf);
+    lc_std_fun(std::, erfc);
+    lc_std_fun(std::, exp);
+    lc_std_fun(std::, exp2);
+    lc_std_fun(std::, expm1);
+    lc_std_fun(std::, fabs);
+    lc_std_fun(std::, fdim);
+    lc_std_fun(std::, floor);
+    lc_std_fun(std::, fma);
+    lc_std_fun(std::, fmax);
+    lc_std_fun(std::, fmin);
+    lc_std_fun(std::, fmod);
+    lc_std_fun(std::, fpclassify);
+    lc_std_fun(std::, frexp);
+    lc_std_fun(std::, hypot);
+    lc_std_fun(std::, ilogb);
+    lc_std_fun(std::, isfinite);
+    lc_std_fun(std::, isgreater);
+    lc_std_fun(std::, isgreaterequal);
+    lc_std_fun(std::, isinf);
+    lc_std_fun(std::, isless);
+    lc_std_fun(std::, islessequal);
+    lc_std_fun(std::, islessgreater);
+    lc_std_fun(std::, isnan);
+    lc_std_fun(std::, isnormal);
+    lc_std_fun(std::, isunordered);
+    lc_std_fun(std::, ldexp);
+    lc_std_fun(std::, lgamma);
+    lc_std_fun(std::, log);
+    lc_std_fun(std::, log10);
+    lc_std_fun(std::, log1p);
+    lc_std_fun(std::, log2);
+    lc_std_fun(std::, logb);
+    lc_std_fun(std::, modf);
+    lc_std_fun(std::, nan);
+    lc_std_fun(std::, nearbyint);
+    lc_std_fun(std::, nextafter);
+    lc_std_fun(std::, pow);
+    lc_std_fun(std::, remainder);
+    lc_std_fun(std::, remquo);
+    lc_std_fun(std::, rint);
+    lc_std_fun(std::, round);
+    lc_std_fun(std::, scalbn);
+    lc_std_fun(std::, signbit);
+    lc_std_fun(std::, sin);
+    lc_std_fun(std::, sinh);
+    lc_std_fun(std::, sqrt);
+    lc_std_fun(std::, tan);
+    lc_std_fun(std::, tanh);
+    lc_std_fun(std::, tgamma);
+    lc_std_fun(std::, trunc);
+    lc_std_fun(std::, midpoint);
+    lc_std_fun(std::, assoc_laguerre);
+    lc_std_fun(std::, assoc_legendre);
+    lc_std_fun(std::, beta);
+    lc_std_fun(std::, comp_ellint_1);
+    lc_std_fun(std::, comp_ellint_2);
+    lc_std_fun(std::, comp_ellint_3);
+    lc_std_fun(std::, cyl_bessel_i);
+    lc_std_fun(std::, cyl_bessel_j);
+    lc_std_fun(std::, cyl_bessel_k);
+    lc_std_fun(std::, cyl_neumann);
+    lc_std_fun(std::, ellint_1);
+    lc_std_fun(std::, ellint_2);
+    lc_std_fun(std::, ellint_3);
+    lc_std_fun(std::, expint);
+    lc_std_fun(std::, hermite);
+    lc_std_fun(std::, laguerre);
+    lc_std_fun(std::, legendre);
+    lc_std_fun(std::, riemann_zeta);
+    lc_std_fun(std::, sph_bessel);
+    lc_std_fun(std::, sph_legendre);
+    lc_std_fun(std::, sph_neumann);
+}
+#endif
+
+#define LC_STRING
+#ifdef LC_STRING
+#include <string>
+#include <cstring>
+#include <cwctype>
+#include <cuchar>
+namespace kaixo {
+    lc_std_fun(std::, atof);
+    lc_std_fun(std::, atoi);
+    lc_std_fun(std::, isalnum);
+    lc_std_fun(std::, isalpha);
+    lc_std_fun(std::, isblank);
+    lc_std_fun(std::, iscntrl);
+    lc_std_fun(std::, isdigit);
+    lc_std_fun(std::, isgraph);
+    lc_std_fun(std::, islower);
+    lc_std_fun(std::, isprint);
+    lc_std_fun(std::, ispunct);
+    lc_std_fun(std::, isspace);
+    lc_std_fun(std::, isupper);
+    lc_std_fun(std::, isxdigit);
+    lc_std_fun(std::, memchr);
+    lc_std_fun(std::, memcmp);
+    lc_std_fun(std::, memcpy);
+    lc_std_fun(std::, memmove);
+    lc_std_fun(std::, memset);
+    lc_std_fun(std::, strcat);
+    lc_std_fun(std::, strchr);
+    lc_std_fun(std::, strcmp);
+    lc_std_fun(std::, strcoll);
+    lc_std_fun(std::, strcpy);
+    lc_std_fun(std::, strcspn);
+    lc_std_fun(std::, strerror);
+    lc_std_fun(std::, strlen);
+    lc_std_fun(std::, strncat);
+    lc_std_fun(std::, strncmp);
+    lc_std_fun(std::, strncpy);
+    lc_std_fun(std::, strpbrk);
+    lc_std_fun(std::, strrchr);
+    lc_std_fun(std::, strspn);
+    lc_std_fun(std::, strstr);
+    lc_std_fun(std::, strtof);
+    lc_std_fun(std::, strtok);
+    lc_std_fun(std::, strtol);
+    lc_std_fun(std::, strtoul);
+    lc_std_fun(std::, strxfrm);
+    lc_std_fun(std::, tolower);
+    lc_std_fun(std::, toupper);
+    lc_std_fun(std::, copy);
+    lc_std_fun(std::, btowc);
+    lc_std_fun(std::, c16rtomb);
+    lc_std_fun(std::, c32rtomb);
+    lc_std_fun(std::, mblen);
+    lc_std_fun(std::, mbrlen);
+    lc_std_fun(std::, mbrtoc16);
+    lc_std_fun(std::, mbrtoc32);
+    lc_std_fun(std::, mbrtowc);
+    lc_std_fun(std::, mbsinit);
+    lc_std_fun(std::, mbsrtowcs);
+    lc_std_fun(std::, mbstowcs);
+    lc_std_fun(std::, mbtowc);
+    lc_std_fun(std::, wcrtomb);
+    lc_std_fun(std::, wcsrtombs);
+    lc_std_fun(std::, wcstombs);
+    lc_std_fun(std::, wctob);
+    lc_std_fun(std::, wctomb);
+    lc_std_fun(std::, iswalnum);
+    lc_std_fun(std::, iswalpha);
+    lc_std_fun(std::, iswblank);
+    lc_std_fun(std::, iswcntrl);
+    lc_std_fun(std::, iswctype);
+    lc_std_fun(std::, iswdigit);
+    lc_std_fun(std::, iswgraph);
+    lc_std_fun(std::, iswlower);
+    lc_std_fun(std::, iswprint);
+    lc_std_fun(std::, iswpunct);
+    lc_std_fun(std::, iswspace);
+    lc_std_fun(std::, iswupper);
+    lc_std_fun(std::, iswxdigit);
+    lc_std_fun(std::, towctrans);
+    lc_std_fun(std::, towlower);
+    lc_std_fun(std::, towupper);
+    lc_std_fun(std::, wcscat);
+    lc_std_fun(std::, wcschr);
+    lc_std_fun(std::, wcscmp);
+    lc_std_fun(std::, wcscoll);
+    lc_std_fun(std::, wcscpy);
+    lc_std_fun(std::, wcscspn);
+    lc_std_fun(std::, wcslen);
+    lc_std_fun(std::, wcsncat);
+    lc_std_fun(std::, wcsncmp);
+    lc_std_fun(std::, wcsncpy);
+    lc_std_fun(std::, wcspbrk);
+    lc_std_fun(std::, wcsrchr);
+    lc_std_fun(std::, wcsspn);
+    lc_std_fun(std::, wcsstr);
+    lc_std_fun(std::, wcstof);
+    lc_std_fun(std::, wcstok);
+    lc_std_fun(std::, wcstol);
+    lc_std_fun(std::, wcstoul);
+    lc_std_fun(std::, wcsxfrm);
+    lc_std_fun(std::, wctrans);
+    lc_std_fun(std::, wctype);
+    lc_std_fun(std::, wmemchr);
+    lc_std_fun(std::, wmemcmp);
+    lc_std_fun(std::, wmemcpy);
+    lc_std_fun(std::, wmemmove);
+    lc_std_fun(std::, wmemset);
+}
+#endif
+
+#undef lc_std_fun
+#undef lc_mem_fun
