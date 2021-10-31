@@ -13,6 +13,7 @@
 #include <iterator>
 #include <tuple>
 #include <map>
+#include "utils.hpp"
 
 namespace kaixo {
     template<class Type>
@@ -56,8 +57,16 @@ namespace kaixo {
         using expression_base<Type>::expression_base;
     };
 
+    template<class>
+    struct return_type;
+
+    template<class R, class...T>
+    struct return_type<R(T...)> {
+        using type = R;
+    };
+
     template<class Type>
-    expression(Type)->expression<Type>;
+    expression(Type)->expression<typename return_type<lambda_signature_t<Type>>::type>;
 
     template<class Type>
     struct expression_wrapper {
@@ -119,11 +128,11 @@ namespace kaixo {
 
 #define lc_mem_fun(y, x) \
     template<class ...Args> \
-    auto x(Args&& ...exprs) const& -> kaixo::expression<decltype(std::declval<y>().x(std::declval<expression_wrapper<Args>>().get()...))> { \
-        return { [this, ...args = expression_wrapper<Args>{ std::forward<Args>(exprs) }]() mutable { return this->c().y::x(args.get()...); } }; } \
+    auto x(Args&& ...exprs) const& { \
+        return kaixo::expression{ [this, ...args = expression_wrapper<Args>{ std::forward<Args>(exprs) }]() mutable { return this->c().y::x(args.get()...); } }; } \
     template<class ...Args> \
-    auto x(Args&& ...exprs) const&& -> kaixo::expression<decltype(std::declval<y>().x(std::declval<expression_wrapper<Args>>().get()...))> { \
-        return { [c = this->c, ...args = expression_wrapper<Args>{ std::forward<Args>(exprs) }]() mutable { return c().y::x(args.get()...); } }; } \
+    auto x(Args&& ...exprs) const&& { \
+        return kaixo::expression{ [c = this->c, ...args = expression_wrapper<Args>{ std::forward<Args>(exprs) }]() mutable { return c().y::x(args.get()...); } }; } \
 
     template<>
     struct expression<std::string> : expression_base<std::string> {
@@ -705,15 +714,15 @@ namespace kaixo {
     }
 
     template<class Type, class Container, class CType>
-    list_comprehension<container_syntax<container_for<Type>, Type>, linked_container<CType, Container>>
+    list_comprehension<container_syntax<container_for<std::decay_t<Type>>, Type>, linked_container<CType, Container>>
         operator|(var<Type>& v, linked_container<CType, Container>&& c) {
-        return { container_syntax<container_for<Type>, Type>{ expression<Type>{ [&]() { return v(); } } }, std::move(c), {} };
+        return { container_syntax<container_for<std::decay_t<Type>>, Type>{ expression<Type>{ [&]() { return v(); } } }, std::move(c), {} };
     }
 
     template<class Type, class Container, class CType>
-    list_comprehension<container_syntax<container_for<Type>, Type>, linked_container<CType, Container>>
+    list_comprehension<container_syntax<container_for<std::decay_t<Type>>, Type>, linked_container<CType, Container>>
         operator|(const expression<Type>& v, linked_container<CType, Container>&& c) {
-        return { container_syntax<container_for<Type>, Type>{ v }, std::move(c), {} };
+        return { container_syntax<container_for<std::decay_t<Type>>, Type>{ v }, std::move(c), {} };
     }
 
     /**
@@ -829,8 +838,8 @@ namespace kaixo {
 
 #define lc_std_fun(y, x) \
     template<class ...Args> \
-    auto x(Args&& ...exprs) -> kaixo::expression<decltype(y x(std::declval<expression_wrapper<Args>>().get()...))> { \
-        return { [...args = expression_wrapper<Args>{ std::forward<Args>(exprs) }]() mutable { return y x(args.get()...); } }; \
+    auto x(Args&& ...exprs) { \
+        return kaixo::expression{ [...args = expression_wrapper<Args>{ std::forward<Args>(exprs) }]() mutable { return y x(args.get()...); } }; \
     }
 }
 
