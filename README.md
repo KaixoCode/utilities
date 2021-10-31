@@ -34,7 +34,7 @@ int main() {
 }
 ```
 # axial_array
- Axial array for storing hexagonal grids of data.
+ Axial array for storing hexagonal grids of data. coords (0, 0) are the center, here's a [link](https://www.redblobgames.com/grids/hexagons/#coordinates-axial) to a really cool website that explains axial coordinates.
 ```cpp
     // Axial array with sidelength 3
     const axial_array<int, 3> _arr{
@@ -54,6 +54,9 @@ int main() {
     for (auto& val : _arr) {
         std::cout << val << std::endl;
     }
+    
+    // Index access
+    _arr[{ 0, 0 }]; // 0, 0 is the center.
     
     // Some cool looking constructors, you can also directly construct
     // with 1d array, since behind the scenes it is just a single array.
