@@ -2,8 +2,11 @@
 #include <functional>
 #include <iterator>
 #include <tuple>
+#include <map>
 
 namespace kaixo {
+    template<class Container, class ...Types>
+    struct container_syntax;
 
     /**
      * An expression is basically just nested lambdas that all execute some operator on 
@@ -12,11 +15,16 @@ namespace kaixo {
     template<class Type>
     struct var;
     template<class Type>
-    struct expression {
+    struct expression_base {
         using type = Type;
         std::function<type()> c;
         explicit operator type() const { return c(); }
         type operator()() const { return c(); }
+    };
+
+    template<class Type>
+    struct expression : expression_base<Type> {
+
     };
 
     /**
@@ -24,25 +32,20 @@ namespace kaixo {
      * list comprehension object that is generated, because it is stored as a reference.
      */
     template<class Type>
-    struct var_base : expression<Type> {
+    struct var : expression<Type> {
         using type = Type;
         void operator=(Type& t) { this->c = [&]() { return t; }; }
         void operator=(Type&& t) { this->c = [=]() { return t; }; }
     };
 
-    template<class Type>
-    struct var : var_base<Type> {
-        using type = Type;
-        using var_base<Type>::operator=;
-        using var_base<Type>::operator();
-    };
-
     template<>
-    struct var<std::string> : var_base<std::string> {
-        using var_base<std::string>::operator=;
+    struct expression<std::string> : expression_base<std::string> {
 #define m(x) \
         template<class ...Args> \
-        expression<bool> x(Args&&...args) { return { [this, ...args = std::forward<Args>(args)] () { return (*this)().x(args...); } }; }
+        auto x(Args&&...args) && -> expression<decltype(std::declval<std::string>().x(args...))> { return { [c = this->c, ...args = std::forward<Args>(args)] () { return c().x(args...); } }; } \
+        template<class ...Args> \
+        auto x(Args&&...args) & -> expression<decltype(std::declval<std::string>().x(args...))> { return { [this, ...args = std::forward<Args>(args)] () { return this->c().x(args...); } }; }
+
         m(at)            m(operator[])  m(front)     m(back)
         m(data)          m(c_str)       m(begin)     m(cbegin)
         m(end)           m(cend)        m(rbegin)    m(crbegin)
@@ -50,13 +53,28 @@ namespace kaixo {
         m(length)        m(max_size)    m(reserve)   m(capacity)
         m(shrink_to_fit) m(clear)       m(insert)    m(erase)
         m(push_back)     m(pop_back)    m(append)    m(operator+=)
-        m(compare)       m(starts_with) m(ends_with) m(contains)
+        m(compare)       m(starts_with) m(ends_with) 
         m(replace)       m(substr)      m(copy)      m(resize)
         m(swap)          m(find)        m(rfind)     m(find_first_of)
         m(find_first_not_of)
         m(find_last_of)
         m(find_last_not_of)
 #undef m;
+    };
+
+    template<class ...Args>
+    struct expression<std::tuple<Args...>> : expression_base<std::tuple<Args...>> {
+        using expression_base<std::tuple<Args...>>::operator=;
+
+        template<size_t N>
+        expression<std::decay_t<decltype(std::get<N>(std::declval<std::tuple<Args...>>()))>>get() && {
+            return { [c = this->c]() { return std::get<N>(c()); } };
+        }
+
+        template<size_t N>
+        expression<std::decay_t<decltype(std::get<N>(std::declval<std::tuple<Args...>>()))>>get() & {
+            return { [this] () { return std::get<N>(this->c()); } };
+        }
     };
 
     /**
@@ -89,12 +107,24 @@ namespace kaixo {
     var_op(<<);
     var_op(>>);
 
+#define u_var_op(x)\
+    template<class A> auto operator x(var<A>& a) { return expression<decltype(x a())>{ [&a]() { return x a(); } }; } \
+    template<class A> auto operator x(const expression<A>& a) { return expression<decltype(x a())>{ [a]() { return x a(); } }; } \
+
+    u_var_op(-);
+    u_var_op(+);
+    u_var_op(~);
+    u_var_op(!);
+    u_var_op(*);
+    u_var_op(&);
+
     /**
      * Simple range class with a start and end, plus an iterator because
      * list comprehension uses iterators to create the cartesian product of all sets.
      */
     template<class Type>
     struct range {
+        using value_type = Type;
         Type a, b;
         struct iterator {
             using iterator_category = std::bidirectional_iterator_tag;
@@ -115,16 +145,22 @@ namespace kaixo {
 
         iterator begin() { return { a }; }
         iterator end() { return { b }; }
+        size_t size() const { return b - a; }
     };
 
     template<class Type>
     range(Type, Type)->range<Type>;
 
+    template<class Type>
+    concept has_begin_end = requires(Type a) {
+        a.begin(), a.end(), a.size();
+    };
+
     /**
      * Wrapper for a container, used when creating a cartesian product, works
      * with any class that defines a begin and end method.
      */
-    template<class Type, class Container>
+    template<class Type, has_begin_end Container>
     struct container {
         using type = Type;
         Container container;
@@ -137,7 +173,7 @@ namespace kaixo {
      * A struct that links a var to a container, this is stored in the final
      * link comprehension object.
      */
-    template<class Type, class Container>
+    template<class Type, has_begin_end Container>
     struct linked_container {
         using type = Type;
         std::reference_wrapper<var<Type>> variable;
@@ -150,10 +186,10 @@ namespace kaixo {
      * creates a container from some class that defines a begin() and end(), and the '<'
      * links that container to a variable.
      */
-    template<template<class...> class Container, class Type>
-    container<Type, Container<Type>> operator-(const Container<Type>& r) { return { r }; }
+    template<template<class...> class Container, class ...Type>
+    container<typename Container<Type...>::value_type, Container<Type...>> operator-(const Container<Type...>& r) { return { r }; }
     template<class Type, class Container>
-    linked_container<Type, Container> operator<(var<Type>& v, container<Type, Container>&& r) { return { v, std::move(r) }; }
+    linked_container<Type, Container> operator<(var<Type>& v, const container<Type, Container>& r) { return { v, std::move(r) }; }
 
     /**
      * This is the part before the '|', and defined what type of container the 
@@ -338,6 +374,89 @@ namespace kaixo {
         return v;
     }
 
+    /**
+     * Used for parallel iteration of containers.
+     */
+    template<has_begin_end... Containers>
+    struct tuple_of_containers {
+        using value_type = std::tuple<typename std::decay_t<Containers>::value_type...>;
+        std::tuple<Containers...> containers;
+
+        struct iterator {
+            using iterator_category = std::forward_iterator_tag;
+            using value_type = std::tuple<typename std::decay_t<Containers>::value_type&...>;
+            using difference_type = std::ptrdiff_t;
+            using pointer = value_type*;
+            using reference = value_type&;
+
+            constexpr static auto seq = std::make_index_sequence<sizeof...(Containers)>{};
+
+            iterator& operator++() { return increment_r(seq); }
+            iterator operator++(int) { return increment(seq); }
+            value_type operator*() { return get(seq); }
+            bool operator==(const iterator& o) const { return equal(o, seq); }
+            std::tuple<typename std::decay_t<Containers>::iterator...> iterators;
+
+        private:
+            template<size_t ...Is>
+            value_type get(std::index_sequence<Is...>) {
+                return { *std::get<Is>(iterators)... };
+            }
+
+            template<size_t ...Is>
+            iterator& increment_r(std::index_sequence<Is...>) {
+                ((++std::get<Is>(iterators)), ...);
+                return *this;
+            }
+
+            template<size_t ...Is>
+            iterator increment(std::index_sequence<Is...>) {
+                ((std::get<Is>(iterators)++), ...);
+                return *this;
+            }
+
+            template<size_t ...Is>
+            bool equal(const iterator& other, std::index_sequence<Is...>) const {
+                return ((std::get<Is>(iterators) == std::get<Is>(other.iterators)) || ...);
+            }
+        };
+
+        size_t size() const { return seq_size(std::make_index_sequence<sizeof...(Containers)>{}); }
+        iterator begin() { return seq_begin(std::make_index_sequence<sizeof...(Containers)>{}); };
+        iterator end() { return seq_end(std::make_index_sequence<sizeof...(Containers)>{}); };
+
+    private:
+        template<size_t ...Is>
+        size_t seq_size(std::index_sequence<Is...>) const {
+            size_t _size = 0;
+            ((std::get<Is>(containers).size() > _size ? (_size = std::get<Is>(containers).size(), false) : false), ...);
+            return _size;
+        }
+
+        template<size_t ...Is>
+        iterator seq_begin(std::index_sequence<Is...>) { return { { std::get<Is>(containers).begin()... } }; }
+
+        template<size_t ...Is>
+        iterator seq_end(std::index_sequence<Is...>) { return { { std::get<Is>(containers).end()... } }; }
+    };
+
+    /**
+     * Operators to construct tuple of containers.
+     */
+    template<has_begin_end A, has_begin_end B>
+    tuple_of_containers<A, B> operator,(A&& a, B&& b) {
+        return { { { std::forward<A>(a) }, { std::forward<B>(b) } } };
+    }
+
+    template<has_begin_end A, has_begin_end ...Rest>
+    tuple_of_containers<Rest..., A> operator,(tuple_of_containers<Rest...>&& a, A&& b) {
+        return { std::tuple_cat(a.containers, std::tuple{ std::forward<A>(b) }) };
+    }
+
+    /**
+     * Some sugar on top that allows syntax like 
+     * 'lc[a | a <- range(0, 10)]' for 'true' list comprehension.
+     */
     struct lce {
         template<class ContainerSyntax, class ...LinkedContainers>
         auto operator[](list_comprehension<ContainerSyntax, LinkedContainers...>&& l) { return l.get(); };
