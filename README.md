@@ -18,7 +18,7 @@ int main() {
 
     // Determine resulting container
     std::vector<std::string> strings{ "hello", "carrot", "pizza" };
-    var<std::string> e;
+    var<std::tuple<std::string, int>> e;
     auto r4 = lc[map(e.get<0>(), e.get<1>()) | e <- (strings, range(0, 100))]; 
     
     // Call std functions (need to call to<int>() because max returns const ref, which can't be stored in std::vector)
@@ -33,7 +33,70 @@ int main() {
     std::string r6 = lc[tolower(g).to<char>() | g <- mystr];
 }
 ```
+# axial_array
+ Axial array for storing hexagonal grids of data. coords (0, 0) are the center, here's a [link](https://www.redblobgames.com/grids/hexagons/#coordinates-axial) to a really cool website that explains axial coordinates.
+```cpp
+    // Axial array with sidelength 3
+    const axial_array<int, 3> _arr{
+            {  1,  2,  3 },
+          {  4,  5,  6,  7 },
+        {  8,  9, 10, 11, 12 },
+          { 13, 14, 15, 16 },
+            { 17, 18, 19 },
+    };
 
+    // Iterate with indices
+    for (auto[val, pos] : _arr.with_index()) {
+        std::cout << pos.x << ", " << pos.y << " : " << val << std::endl;
+    }
+
+    // Iterate normally
+    for (auto& val : _arr) {
+        std::cout << val << std::endl;
+    }
+    
+    // Index access
+    _arr[{ 0, 0 }]; // 0, 0 is the center.
+    
+    // Some cool looking constructors, you can also directly construct
+    // with 1d array, since behind the scenes it is just a single array.
+    // values are stored in the order that they are numbered down below.
+    axial_array<int, 4> _arr2{
+          {  1,  2,  3,  4 },
+        {  5,  6,  7,  8,  9 },
+      { 10, 11, 12, 13, 14, 15 },
+    { 16, 17, 18, 19, 20, 21, 22 },
+      { 23, 24, 25, 26, 27, 28 },
+        { 29, 30, 31, 32, 33 },
+          { 34, 35, 36, 37 },
+    };
+
+    axial_array<int, 5> _arr3{
+              {  1,  2,  3,  4,  5 },
+            {  6,  7,  8,  9, 10, 11 },
+          { 12, 13, 14, 15, 16, 17, 18 },
+        { 19, 20, 21, 22, 23, 24, 25, 26 },
+      { 27, 28, 29, 30, 31, 32, 33, 34, 35 },
+        { 36, 37, 38, 39, 40, 41, 42, 43 },
+          { 44, 45, 46, 47, 48, 49, 50 },
+            { 51, 52, 53, 54, 55, 56 },
+              { 57, 58, 59, 60, 61 }
+    };
+
+    axial_array<int, 6> _arr4{
+                  {  1,  2,  3,  4,  5,  6 },
+                {  7,  8,  9, 10, 11, 12, 13 },
+              { 14, 15, 16, 17, 18, 19, 20, 21 },
+            { 22, 23, 24, 25, 26, 27, 28, 29, 30 },
+          { 31, 32, 33, 34, 35, 36, 37, 38, 39, 40 },
+        { 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51 },
+          { 52, 53, 54, 55, 56, 57, 58, 59, 60, 61 },
+            { 62, 63, 64, 65, 66, 67, 68, 69, 70 },
+              { 71, 72, 73, 74, 75, 76, 77, 78 },
+                { 79, 80, 81, 82, 83, 84, 85 },
+                  { 86, 87, 88, 89, 90, 91 }
+    };
+```
 # pa_function
  Partial application function class in C++ with consistent typing. Works with functors, (capturing) lambdas, function pointer, and member functions. 
 ```cpp
