@@ -35,19 +35,20 @@ namespace kaixo {
     struct expression_base {
         using type = Type;
         expression_base() = default;
-        expression_base(auto f) : c(f) {};
-        expression_base(Type&& f) : c([f = std::move(f)]() { return f; }) {};
-        expression_base(Type& f) : c([&]() { return f; }) {};
-        expression_base(const Type& f) : c([&]() { return f; }) {};
+        expression_base(std::function<type()> f) : c(f) {};
+        expression_base(const std::decay_t<Type>& f) : c([&]() { return f; }) {};
+        expression_base(std::decay_t<Type>&& f) : c([f = std::move(f)]() { return f; }) {};
+        expression_base(std::decay_t<Type>& f) : c([&]() { return f; }) {};
+
         std::function<type()> c;
         explicit operator type() const { return c(); }
         type operator()() const { return c(); }
 
         template<class Ty>
-        explicit operator expression<Ty>()&& { return { [c = c]() { return static_cast<Ty>(c()); } }; }
+        expression<Ty> to()&& { return { [c = this->c] () { return static_cast<Ty>(c()); } }; }
 
         template<class Ty>
-        explicit operator expression<Ty>()& { return { [&]() { return static_cast<Ty>(c()); } }; }
+        expression<Ty> to()& { return { [this] () { return static_cast<Ty>(this->c()); } }; }
     };
 
     template<class Type>
@@ -109,12 +110,8 @@ namespace kaixo {
     struct var : expression<Type> {
         using type = Type;
 
-        using expression<Type>::expression;
-
         var() { this->c = []() { return Type{}; }; }
-        var(const Type& t) { (*this) = t; }
-        var(Type& t) { (*this) = t; }
-        var(Type&& t) { (*this) = std::move(t); }
+        using expression<Type>::expression;
 
         var& operator=(const Type& t) { this->c = [&]() { return t; }; return *this; }
         var& operator=(Type& t) { this->c = [&]() { return t; }; return *this; }
@@ -132,6 +129,7 @@ namespace kaixo {
     template<>
     struct expression<std::string> : expression_base<std::string> {
         using type = std::string;
+        using expression_base<type>::expression_base;
 
         lc_mem_fun(type, at);
         lc_mem_fun(type, operator[]);
@@ -181,6 +179,7 @@ namespace kaixo {
     template<class ...Args>
     struct expression<std::tuple<Args...>> : expression_base<std::tuple<Args...>> {
         using type = std::tuple<Args...>;
+        using expression_base<type>::expression_base;
 
         lc_mem_fun(type, swap);
 
@@ -198,6 +197,7 @@ namespace kaixo {
     template<class ...Args>
     struct expression<std::vector<Args...>> : expression_base<std::vector<Args...>> {
         using type = std::vector<Args...>;
+        using expression_base<type>::expression_base;
 
         lc_mem_fun(type, operator=);
         lc_mem_fun(type, assign);
@@ -235,6 +235,7 @@ namespace kaixo {
     template<class ...Args>
     struct expression<std::deque<Args...>> : expression_base<std::deque<Args...>> {
         using type = std::deque<Args...>;
+        using expression_base<type>::expression_base;
 
         lc_mem_fun(type, operator=);
         lc_mem_fun(type, assign);
@@ -272,6 +273,7 @@ namespace kaixo {
     template<class Arg, size_t N>
     struct expression<std::array<Arg, N>> : expression_base<std::array<Arg, N>> {
         using type = std::array<Arg, N>;
+        using expression_base<type>::expression_base;
 
         lc_mem_fun(type, operator=);
         lc_mem_fun(type, at);
@@ -321,7 +323,9 @@ namespace kaixo {
     var_op(< );
     var_op(<=> );
     var_op(&&);
+    var_op(&);
     var_op(|| );
+    var_op(| );
     var_op(<< );
     var_op(>> );
 

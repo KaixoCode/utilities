@@ -750,11 +750,6 @@ struct callable {
 
 #include "list_comprehension.hpp"
 
-template<class T, class V>
-auto contains(const T& container, V& v) {
-    return find(container.begin(), container.end(), v) != container.end();
-}
-
 int main()
 {
 
@@ -774,13 +769,22 @@ int main()
         //var<std::string> adjective, noun;
         //auto res = lc[adjective + " " + noun | adjective <- adjectives, noun <- nouns];
 
-
+        std::vector<std::string> strings{ "hello", "carrot", "pizza" };
+        var<std::tuple<std::string, int>> e;
+        auto r4 = lc[map(e.get<0>(), e.get<1>()) | e <- (strings, range(0, 100))];
 
         var<int> a, b, c;
         auto p = lc[(a, b, c) | c <- range(1, 11), b <- range(1, c), a <- range(1, b), a*a + b*b == c*c];
 
+        std::vector<int> ints1{ 5, 2, 7, 3, 1, 9 };
+        std::vector<int> ints2{ 4, 1, 8, 9, 3, 2 };
+        var<std::tuple<int, int>> f;
+        auto r5 = lc[max(f.get<0>(), f.get<1>()).to<int>() | f <- (ints1, ints2)];
 
 
+        std::string mystr = "HelloWorld";
+        var<char> g;
+        auto r6 = lc[tolower(g).to<char>() | g <- mystr];
 
         std::cout << "";
     }
