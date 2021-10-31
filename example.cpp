@@ -764,20 +764,21 @@ int main()
 
 
 
-        var<int> x, y;
-        auto wooflist = lc[x*y | x <- std::vector{ 2, 5, 10 }, y <- std::vector{ 8, 10, 11 }, x*y > 50];
+        //var<int> x, y;
+        //auto wooflist = lc[x*y | x <- std::vector{ 2, 5, 10 }, y <- std::vector{ 8, 10, 11 }, x*y > 50];
+        //
+        //
+        //
+        //auto nouns = { "hobo", "frog", "pope" };
+        //auto adjectives = { "lazy", "grouchy", "scheming" };
+        //var<std::string> adjective, noun;
+        //auto res = lc[adjective + " " + noun | adjective <- adjectives, noun <- nouns];
 
 
 
-        auto nouns = { "hobo", "frog", "pope" };
-        auto adjectives = { "lazy", "grouchy", "scheming" };
-        var<std::string> adjective, noun;
-        auto res = lc[adjective + " " + noun | adjective <- adjectives, noun <- nouns];
+        var<int> a, b, c;
+        auto p = lc[(a, b, c) | c <- range(1, 11), b <- range(1, c), a <- range(1, b), a*a + b*b == c*c];
 
-
-        std::string str{ "This Is A String!" };
-        var<char> c;
-        auto r = lc[c | c <- str, contains(range('A', 'Z'), c)];
 
 
 
