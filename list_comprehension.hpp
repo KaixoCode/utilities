@@ -5,6 +5,10 @@
 #include <map>
 
 namespace kaixo {
+
+    template<class Type>
+    using container_for = std::conditional_t<std::is_same_v<Type, char>, std::string, std::vector<Type>>;
+
     template<class Container, class ...Types>
     struct container_syntax;
 
@@ -13,6 +17,8 @@ namespace kaixo {
      * either another expression, a var, or a value.
      */
     template<class Type>
+    struct expression;
+    template<class Type>
     struct var;
     template<class Type>
     struct expression_base {
@@ -20,6 +26,12 @@ namespace kaixo {
         std::function<type()> c;
         explicit operator type() const { return c(); }
         type operator()() const { return c(); }
+
+        template<class Ty>
+        explicit operator expression<Ty>()&& { return { [c = c]() { return static_cast<Ty>(c()); } }; }
+
+        template<class Ty>
+        explicit operator expression<Ty>()& { return { [&]() { return static_cast<Ty>(c()); } }; }
     };
 
     template<class Type>
@@ -340,15 +352,15 @@ namespace kaixo {
     }
 
     template<class Type, class Container, class CType>
-    list_comprehension<container_syntax<std::vector<Type>, Type>, linked_container<CType, Container>>
+    list_comprehension<container_syntax<container_for<Type>, Type>, linked_container<CType, Container>>
         operator|(var<Type>& v, linked_container<CType, Container>&& c) {
-        return { container_syntax<std::vector<Type>, Type>{ expression<Type>{ [&]() { return v(); } } }, std::move(c), {} };
+        return { container_syntax<container_for<Type>, Type>{ expression<Type>{ [&]() { return v(); } } }, std::move(c), {} };
     }
 
     template<class Type, class Container, class CType>
-    list_comprehension<container_syntax<std::vector<Type>, Type>, linked_container<CType, Container>>
+    list_comprehension<container_syntax<container_for<Type>, Type>, linked_container<CType, Container>>
         operator|(const expression<Type>& v, linked_container<CType, Container>&& c) {
-        return { container_syntax<std::vector<Type>, Type>{ v }, std::move(c), {} };
+        return { container_syntax<container_for<Type>, Type>{ v }, std::move(c), {} };
     }
 
     /**
