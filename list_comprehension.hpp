@@ -111,6 +111,7 @@ namespace kaixo {
 
         using expression<Type>::expression;
 
+        var() { this->c = []() { return Type{}; }; }
         var(const Type& t) { (*this) = t; }
         var(Type& t) { (*this) = t; }
         var(Type&& t) { (*this) = std::move(t); }
@@ -342,29 +343,51 @@ namespace kaixo {
     template<class Type>
     struct range {
         using value_type = Type;
-        Type a, b;
+        range(Type&& x, Type&& y) { init(a, std::move(x)); init(b, std::move(y)); }
+        range(Type& x, Type&& y) { init(a, x); init(b, std::move(y)); }
+        range(Type&& x, Type& y) { init(a, std::move(x)); init(b, y); }
+        range(Type& x, Type& y) { init(a, x); init(b, y); }
+        range(Type&& x, const expression<Type>& y) { init(a, std::move(x)); init(b, y); }
+        range(Type& x, const expression<Type>& y) { init(a, x); init(b, y); }
+        range(Type&& x, var<Type>& y) { init(a, std::move(x)); init(b, y); }
+        range(Type& x, var<Type>& y) { init(a, x); init(b, y); }
+        range(var<Type>& x, Type&& y) { init(a, x); init(b, std::move(y)); }
+        range(const expression<Type>& x, Type&& y) { init(a, x); init(b, std::move(y)); }
+        range(var<Type>& x, Type& y) { init(a, x); init(b, y); }
+        range(const expression<Type>& x, Type& y) { init(a, x); init(b, y); }
+        range(var<Type>& x, var<Type>& y) { init(a, x); init(b, y); }
+        range(const expression<Type>& x, var<Type>& y) { init(a, x); init(b, y); }
+        range(var<Type>& x, const expression<Type>& y) { init(a, x); init(b, y); }
+        range(const expression<Type>& x, const expression<Type>& y) { init(a, x); init(b, y); }
+
+        expression<Type> a, b;
         struct iterator {
             using iterator_category = std::bidirectional_iterator_tag;
             using value_type = Type;
             using difference_type = std::ptrdiff_t;
             using pointer = Type*;
             using reference = Type&;
+            const range* r;
             Type cur;
-            bool normal = true;
-            iterator& operator++() { normal ? ++cur : --cur; return *this; }
-            iterator& operator--() { normal ? --cur : ++cur; return *this; }
-            iterator operator++(int) { return { normal ? cur + 1 : cur - 1 }; }
-            iterator operator--(int) { return { normal ? cur - 1 : cur + 1 }; }
+            iterator& operator++() { r->a() <= r->b() ? ++cur : --cur; return *this; }
+            iterator& operator--() { r->a() <= r->b() ? --cur : ++cur; return *this; }
+            iterator operator++(int) { return { r->a() <= r->b() ? cur + 1 : cur - 1 }; }
+            iterator operator--(int) { return { r->a() <= r->b() ? cur - 1 : cur + 1 }; }
             Type& operator*() { return cur; }
             Type* operator&() { return &cur; }
             bool operator==(const iterator& o) const { return o.cur == cur; }
         };
 
-        iterator begin() { return { a, a < b }; }
-        iterator end() { return { b, a < b }; }
-        iterator begin() const { return { a, a < b }; }
-        iterator end() const { return { b, a < b }; }
-        size_t size() const { return b - a; }
+        iterator begin() { return { this, a() }; }
+        iterator end() { return { this, b() }; }
+        iterator begin() const { return { this, a() }; }
+        iterator end() const { return { this, b() }; }
+        size_t size() const { return b() - a(); }
+    private:
+        void init(expression<Type>& a, var<Type>& t) { a.c = [&t]() { return t(); }; }
+        void init(expression<Type>& a, const expression<Type>& t) { a.c = t.c; }
+        void init(expression<Type>& a, Type&& t) { a.c = [t = std::move(t)]() { return t; }; }
+        void init(expression<Type>& a, const Type& t) { a.c = [&t]() { return t; }; }
     };
 
     template<class Type>
@@ -482,7 +505,8 @@ namespace kaixo {
                 if (_match) // If all matched, generate an entry, and add to result.
                     syntax.generate(result);
 
-                increment(its, index, sequence); // Increment the iterator
+                if (!check_end(its, index, sequence))
+                    increment(its, index, sequence); // Increment the iterator
                 while (check_end(its, index, sequence)) { // And check if it's now at the end.
                     set_begin(its, index, sequence); // Reset the iterator
                     index--;                         // And go to the next index to increment that one.
@@ -490,7 +514,8 @@ namespace kaixo {
                         done = true;
                         break;
                     }
-                    increment(its, index, sequence); // Otherwise increment the iterator and loop to check if also at the end.
+                    if (!check_end(its, index, sequence))
+                        increment(its, index, sequence); // Otherwise increment the iterator and loop to check if also at the end.
                 }
 
                 index = size - 1; // Reset index back to 0 for the next iteration.
@@ -505,7 +530,7 @@ namespace kaixo {
          */
         template<class T, std::size_t ...Is>
         void set_begin(T& tuple, std::index_sequence<Is...>) {
-            ((std::get<Is>(tuple) = std::get<Is>(containers).begin()), ...);
+            ((std::get<Is>(tuple) = std::get<Is>(containers).begin(), std::get<Is>(containers).variable.get() = *std::get<Is>(containers).begin()), ...);
         }
 
         template<class T, std::size_t ...Is>
@@ -522,7 +547,7 @@ namespace kaixo {
 
         template<class T, std::size_t ...Is>
         void set_values(T& tuple, std::index_sequence<Is...>) {
-            ((std::get<Is>(containers).variable.get() = std::forward<decltype(*std::get<Is>(tuple))>(*std::get<Is>(tuple))), ...);
+            ((std::get<Is>(containers).variable.get() = *std::get<Is>(tuple)), ...);
         }
 
         template<class T, std::size_t ...Is>
