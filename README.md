@@ -18,7 +18,7 @@ int main() {
 
     // Determine resulting container
     std::vector<std::string> strings{ "hello", "carrot", "pizza" };
-    var<std::string> e;
+    var<std::tuple<std::string, int>> e;
     auto r4 = lc[map(e.get<0>(), e.get<1>()) | e <- (strings, range(0, 100))]; 
     
     // Call std functions (need to call to<int>() because max returns const ref, which can't be stored in std::vector)
