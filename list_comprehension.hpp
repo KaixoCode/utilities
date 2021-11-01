@@ -35,17 +35,19 @@ namespace kaixo {
     struct expression_base {
         using type = Type;
         expression_base() = default;
-        expression_base(std::function<type()> f) : c(f) {};
-        expression_base(const std::decay_t<Type>& f) : c([&]() { return f; }) {};
-        expression_base(std::decay_t<Type>&& f) : c([f = std::move(f)]() { return f; }) {};
-        expression_base(std::decay_t<Type>& f) : c([&]() { return f; }) {};
+        expression_base(std::function<type()>&& f) : c(std::move(f)) {};
+        expression_base(const std::decay_t<Type>& f) : c([&]() mutable -> Type { return f; }) {};
+        expression_base(std::decay_t<Type>&& f) : c([f = std::move(f)]() mutable -> Type { return f; }) {};
+        expression_base(std::decay_t<Type>& f) : c([&]() mutable -> Type { return f; }) {};
+        expression_base(const expression_base& other) : c(other.c) {};
+        expression_base(expression_base&& other) : c(std::move(other.c)) {};
 
         std::function<type()> c;
         explicit operator type() const { return c(); }
         type operator()() const { return c(); }
 
         template<class Ty>
-        expression<Ty> to()&& { return { [c = this->c] () { return static_cast<Ty>(c()); } }; }
+        expression<Ty> to()&& { return { [c = std::move(this->c)] () { return static_cast<Ty>(c()); } }; }
 
         template<class Ty>
         expression<Ty> to()& { return { [this] () { return static_cast<Ty>(this->c()); } }; }
@@ -128,12 +130,11 @@ namespace kaixo {
 
 #define lc_mem_fun(y, x) \
     template<class ...Args> \
-    auto x(Args&& ...exprs) const& { \
+    auto x(Args&& ...exprs) & { \
         return kaixo::expression{ [this, ...args = expression_wrapper<Args>{ std::forward<Args>(exprs) }]() mutable { return this->c().y::x(args.get()...); } }; } \
     template<class ...Args> \
-    auto x(Args&& ...exprs) const&& { \
-        return kaixo::expression{ [c = this->c, ...args = expression_wrapper<Args>{ std::forward<Args>(exprs) }]() mutable { return c().y::x(args.get()...); } }; } \
-
+    auto x(Args&& ...exprs) && { \
+        return kaixo::expression{ [c = std::move(this->c), ...args = expression_wrapper<Args>{ std::forward<Args>(exprs) }]() mutable { return c().y::x(args.get()...); } }; } \
 
     template<class String>
     struct string_expression : expression_base<String> {
@@ -184,18 +185,6 @@ namespace kaixo {
         lc_mem_fun(type, find_last_not_of);
     };
 
-    template<>
-    struct expression<std::string> : string_expression<std::string> {
-        using type = std::string;
-        using string_expression<type>::string_expression;
-    };
-
-    template<>
-    struct expression<std::string&> : string_expression<std::string&> {
-        using type = std::string;
-        using string_expression<type&>::string_expression;
-    };
-
     template<class Tuple>
     struct tuple_expression : expression_base<Tuple> {
         using type = std::decay_t<Tuple>;
@@ -212,18 +201,6 @@ namespace kaixo {
         expression<std::decay_t<decltype(std::get<N>(std::declval<type>()))>>get()& {
             return { [this]() { return std::get<N>(this->c()); } };
         }
-    };
-
-    template<class ...Args>
-    struct expression<std::tuple<Args...>> : tuple_expression<std::tuple<Args...>> {
-        using type = std::tuple<Args...>;
-        using tuple_expression<type>::tuple_expression;
-    };
-
-    template<class ...Args>
-    struct expression<std::tuple<Args...>&> : tuple_expression<std::tuple<Args...>&> {
-        using type = std::tuple<Args...>;
-        using tuple_expression<type&>::tuple_expression;
     };
 
     template<class Vector>
@@ -263,96 +240,135 @@ namespace kaixo {
         lc_mem_fun(type, resize);
         lc_mem_fun(type, swap);
     };
+    
+    template<class Deque>
+    struct deque_expression : expression_base<Deque> {
+        using type = std::decay_t<Deque>;
+        using expression_base<Deque>::expression_base;
 
-    template<class ...Args>
-    struct expression<std::vector<Args...>> : vector_expression<std::vector<Args...>> {
-        using type = std::vector<Args...>;
-        using vector_expression<type>::vector_expression;
+        lc_mem_fun(type, operator=);
+        lc_mem_fun(type, assign);
+        lc_mem_fun(type, get_allocator);
+        lc_mem_fun(type, at);
+        lc_mem_fun(type, operator[]);
+        lc_mem_fun(type, front);
+        lc_mem_fun(type, back);
+        lc_mem_fun(type, data);
+        lc_mem_fun(type, begin);
+        lc_mem_fun(type, cbegin);
+        lc_mem_fun(type, end);
+        lc_mem_fun(type, cend);
+        lc_mem_fun(type, rbegin);
+        lc_mem_fun(type, crbegin);
+        lc_mem_fun(type, rend);
+        lc_mem_fun(type, crend);
+        lc_mem_fun(type, empty);
+        lc_mem_fun(type, size);
+        lc_mem_fun(type, max_size);
+        lc_mem_fun(type, reserve);
+        lc_mem_fun(type, capacity);
+        lc_mem_fun(type, shrink_to_fit);
+        lc_mem_fun(type, clear);
+        lc_mem_fun(type, insert);
+        lc_mem_fun(type, emplace);
+        lc_mem_fun(type, erase);
+        lc_mem_fun(type, push_back);
+        lc_mem_fun(type, emplace_back);
+        lc_mem_fun(type, pop_back);
+        lc_mem_fun(type, resize);
+        lc_mem_fun(type, swap);
+    };    
+    
+    template<class Array>
+    struct array_expression : expression_base<Array> {
+        using type = std::decay_t<Array>;
+        using expression_base<Array>::expression_base;
+
+        lc_mem_fun(type, operator=);
+        lc_mem_fun(type, at);
+        lc_mem_fun(type, operator[]);
+        lc_mem_fun(type, front);
+        lc_mem_fun(type, back);
+        lc_mem_fun(type, data);
+        lc_mem_fun(type, begin);
+        lc_mem_fun(type, cbegin);
+        lc_mem_fun(type, end);
+        lc_mem_fun(type, cend);
+        lc_mem_fun(type, rbegin);
+        lc_mem_fun(type, crbegin);
+        lc_mem_fun(type, rend);
+        lc_mem_fun(type, crend);
+        lc_mem_fun(type, empty);
+        lc_mem_fun(type, size);
+        lc_mem_fun(type, max_size);
+        lc_mem_fun(type, fill);
+        lc_mem_fun(type, swap);
     };
 
-    template<class ...Args>
-    struct expression<std::vector<Args...>&> : vector_expression<std::vector<Args...>&> {
-        using type = std::vector<Args...>;
-        using vector_expression<type&>::vector_expression;
+    template<class Map>
+    struct map_expression : expression_base<Map> {
+        using type = std::decay_t<Map>;
+        using expression_base<Map>::expression_base;
+
+        lc_mem_fun(type, operator=);
+        lc_mem_fun(type, get_allocator);
+        lc_mem_fun(type, at);
+        lc_mem_fun(type, operator[]);
+        lc_mem_fun(type, begin);
+        lc_mem_fun(type, cbegin);
+        lc_mem_fun(type, end);
+        lc_mem_fun(type, cend);
+        lc_mem_fun(type, rbegin);
+        lc_mem_fun(type, crbegin);
+        lc_mem_fun(type, rend);
+        lc_mem_fun(type, crend);
+        lc_mem_fun(type, empty);
+        lc_mem_fun(type, size);
+        lc_mem_fun(type, max_size);
+        lc_mem_fun(type, clear);
+        lc_mem_fun(type, insert);
+        lc_mem_fun(type, insert_or_assign);
+        lc_mem_fun(type, emplace);
+        lc_mem_fun(type, emplace_hint);
+        lc_mem_fun(type, try_emplace);
+        lc_mem_fun(type, erase);
+        lc_mem_fun(type, swap);
+        lc_mem_fun(type, extract);
+        lc_mem_fun(type, merge);
+        lc_mem_fun(type, count);
+        lc_mem_fun(type, find);
+        lc_mem_fun(type, contains);
+        lc_mem_fun(type, equal_range);
+        lc_mem_fun(type, lower_bound);
+        lc_mem_fun(type, upper_bound);
+        lc_mem_fun(type, key_comp);
+        lc_mem_fun(type, value_comp);
     };
 
-    //template<class ...Args>
-    //struct expression<std::deque<Args...>> : expression_base<std::deque<Args...>> {
-    //    using type = std::deque<Args...>;
-    //    using expression_base<type>::expression_base;
+#define COMMA ,
+#define make_expr(cls, expr, ...) \
+    template<__VA_ARGS__> struct expression<cls> : expr<cls> { using type = cls; using expr<type>::expr; }; \
+    template<__VA_ARGS__> struct expression<cls&> : expr<cls&> { using type = cls; using expr<type&>::expr; }; \
 
-    //    lc_mem_fun(type, operator=);
-    //    lc_mem_fun(type, assign);
-    //    lc_mem_fun(type, get_allocator);
-    //    lc_mem_fun(type, at);
-    //    lc_mem_fun(type, operator[]);
-    //    lc_mem_fun(type, front);
-    //    lc_mem_fun(type, back);
-    //    lc_mem_fun(type, data);
-    //    lc_mem_fun(type, begin);
-    //    lc_mem_fun(type, cbegin);
-    //    lc_mem_fun(type, end);
-    //    lc_mem_fun(type, cend);
-    //    lc_mem_fun(type, rbegin);
-    //    lc_mem_fun(type, crbegin);
-    //    lc_mem_fun(type, rend);
-    //    lc_mem_fun(type, crend);
-    //    lc_mem_fun(type, empty);
-    //    lc_mem_fun(type, size);
-    //    lc_mem_fun(type, max_size);
-    //    lc_mem_fun(type, reserve);
-    //    lc_mem_fun(type, capacity);
-    //    lc_mem_fun(type, shrink_to_fit);
-    //    lc_mem_fun(type, clear);
-    //    lc_mem_fun(type, insert);
-    //    lc_mem_fun(type, emplace);
-    //    lc_mem_fun(type, erase);
-    //    lc_mem_fun(type, push_back);
-    //    lc_mem_fun(type, emplace_back);
-    //    lc_mem_fun(type, pop_back);
-    //    lc_mem_fun(type, resize);
-    //    lc_mem_fun(type, swap);
-    //};
-
-    //template<class Arg, size_t N>
-    //struct expression<std::array<Arg, N>> : expression_base<std::array<Arg, N>> {
-    //    using type = std::array<Arg, N>;
-    //    using expression_base<type>::expression_base;
-
-    //    lc_mem_fun(type, operator=);
-    //    lc_mem_fun(type, at);
-    //    lc_mem_fun(type, operator[]);
-    //    lc_mem_fun(type, front);
-    //    lc_mem_fun(type, back);
-    //    lc_mem_fun(type, data);
-    //    lc_mem_fun(type, begin);
-    //    lc_mem_fun(type, cbegin);
-    //    lc_mem_fun(type, end);
-    //    lc_mem_fun(type, cend);
-    //    lc_mem_fun(type, rbegin);
-    //    lc_mem_fun(type, crbegin);
-    //    lc_mem_fun(type, rend);
-    //    lc_mem_fun(type, crend);
-    //    lc_mem_fun(type, empty);
-    //    lc_mem_fun(type, size);
-    //    lc_mem_fun(type, max_size);
-    //    lc_mem_fun(type, fill);
-    //    lc_mem_fun(type, swap);
-    //};
-
+    make_expr(std::string, string_expression);
+    make_expr(std::tuple<Args...>, tuple_expression, class ...Args);
+    make_expr(std::vector<Args...>, vector_expression, class ...Args);
+    make_expr(std::deque<Args...>, deque_expression, class ...Args);
+    make_expr(std::array<Arg COMMA N>, array_expression, class Arg, size_t N);
+    make_expr(std::map<Args...>, map_expression, class ...Args);
 
     /**
      * Macro to define operator overloads for the expression/var/value combinations.
      */
 #define var_op(x)\
     template<class A, class B> auto operator x(var<A>& a, var<B>& b) { return expression<decltype(a() x b())>{ [&a, &b]() { return a() x b(); } }; } \
-    template<class A, class B> auto operator x(const expression<A>& a, var<B>& b) { return expression<decltype(a() x b())>{ [a, &b]() { return a() x b(); } }; } \
-    template<class A, class B> auto operator x(var<A>& a, const expression<B>& b) { return expression<decltype(a() x b())>{ [&a, b]() { return a() x b(); } }; } \
-    template<class A, class B> auto operator x(const expression<A>& a, const expression<B>& b) { return expression<decltype(a() x b())>{ [a, b]() { return a() x b(); } }; } \
-    template<class A, class B> auto operator x(const expression<A>& a, const B& b) { return expression<decltype(a() x b)>{ [a, b]() { return a() x b; } }; } \
-    template<class A, class B> auto operator x(const A& a, const expression<B>& b) { return expression<decltype(a x b())>{ [a, b]() { return a x b(); } }; } \
-    template<class A, class B> auto operator x(var<A>& a, const B& b) { return expression<decltype(a() x b)>{ [&a, b]() { return a() x b; } }; } \
-    template<class A, class B> auto operator x(const A& a, var<B>& b) { return expression<decltype(a x b())>{ [a, &b]() { return a x b(); } }; }
+    template<class A, class B> auto operator x(const expression<A>& a, var<B>& b) { return expression<decltype(a() x b())>{ [a = a, &b]() { return a() x b(); } }; } \
+    template<class A, class B> auto operator x(var<A>& a, const expression<B>& b) { return expression<decltype(a() x b())>{ [&a, b = b]() { return a() x b(); } }; } \
+    template<class A, class B> auto operator x(const expression<A>& a, const expression<B>& b) { return expression<decltype(a() x b())>{ [a = a, b = b]() { return a() x b(); } }; } \
+    template<class A, class B> auto operator x(const expression<A>& a, const B& b) { return expression<decltype(a() x b)>{ [a = a, b = b]() { return a() x b; } }; } \
+    template<class A, class B> auto operator x(const A& a, const expression<B>& b) { return expression<decltype(a x b())>{ [a = a, b = b]() { return a x b(); } }; } \
+    template<class A, class B> auto operator x(var<A>& a, const B& b) { return expression<decltype(a() x b)>{ [&a, b = b]() { return a() x b; } }; } \
+    template<class A, class B> auto operator x(const A& a, var<B>& b) { return expression<decltype(a x b())>{ [a = a, &b]() { return a x b(); } }; }
 
     var_op(+);
     var_op(-);
@@ -375,7 +391,7 @@ namespace kaixo {
 
 #define u_var_op(x)\
     template<class A> auto operator x(var<A>& a) { return expression<decltype(x a())>{ [&a]() { return x a(); } }; } \
-    template<class A> auto operator x(const expression<A>& a) { return expression<decltype(x a())>{ [a]() { return x a(); } }; } \
+    template<class A> auto operator x(const expression<A>& a) { return expression<decltype(x a())>{ [a = a]() { return x a(); } }; } \
 
     u_var_op(-);
     u_var_op(+);
@@ -502,7 +518,7 @@ namespace kaixo {
     template<template<class...> class Container, class ...Type>
     container<typename Container<Type...>::value_type, Container<Type...>> operator-(Container<Type...>&& r) { return { std::move(r) }; }
     template<class Type, class CType, class Container>
-    linked_container<Type, container<CType, Container>> operator<(var<Type>& v, const container<CType, Container>& r) { return { v, r }; }
+    linked_container<Type, container<CType, Container>> operator<(var<Type>& v, container<CType, Container>&& r) { return { v, std::move(r) }; }
 
     template<class Type, class ...Tys>
     concept has_emplace_back = requires(Type t, Tys...tys) { t.emplace_back(tys...); };
@@ -549,15 +565,20 @@ namespace kaixo {
         std::tuple<LinkedContainers...> containers;
         std::vector<expression<bool>> constraints;
 
-        using return_type = std::conditional_t<(LinkedContainers::has_var || ...), expression<container>, container>;
+        constexpr static bool has_var = (LinkedContainers::has_var || ...);
 
-        return_type operator*() { return get(); }
+        container operator*() { return m_Get(); }
 
-        return_type get() {
-            if constexpr (std::same_as<return_type, container>)
-                return m_Get();
-            else
-                return { [this]() { return this->m_Get(); } };
+        expression<container> get_var() && {
+            return { [cpy = std::move(*this)]() mutable { return cpy.m_Get(); } };
+        }
+
+        expression<container> get_var()& {
+            return { [this] () { return this->m_Get(); } };
+        }
+
+        container get() {
+            return this->m_Get();
         }
 
     private:
@@ -588,8 +609,16 @@ namespace kaixo {
                         done = true;
                         break;
                     }
-                    if (!check_end(its, index, sequence))
+                    if (!check_end(its, index, sequence)) {
                         increment(its, index, sequence); // Otherwise increment the iterator and loop to check if also at the end.
+                        
+                        if constexpr (has_var) { // When containers contain variables, we must keep iterator up to date.
+                            if (!check_end(its, index, sequence)) {
+                                set_values(its, sequence);
+                                set_begin(its, index + 1, sequence);
+                            }
+                        }
+                    }
                 }
 
                 index = size - 1; // Reset index back to 0 for the next iteration.
@@ -793,7 +822,7 @@ namespace kaixo {
     template<class ContainerSyntax, class Container, class CType, class ...LinkedContainers>
     list_comprehension<ContainerSyntax, LinkedContainers..., linked_container<CType, Container>>
         operator,(list_comprehension<ContainerSyntax, LinkedContainers...>&& v, linked_container<CType, Container>&& c) {
-        return { v.syntax, std::tuple_cat(v.containers, std::tuple{ c }), v.constraints };
+        return { std::move(v.syntax), std::tuple_cat(v.containers, std::tuple{ c }), std::move(v.constraints) };
     }
 
     template<class ContainerSyntax, class ...LinkedContainers>
@@ -895,8 +924,13 @@ namespace kaixo {
      */
     struct lce {
         template<class ContainerSyntax, class ...LinkedContainers>
-        auto operator[](list_comprehension<ContainerSyntax, LinkedContainers...>&& l) { return l.get(); };
+        auto operator[](list_comprehension<ContainerSyntax, LinkedContainers...>&& l) { return std::move(l).get(); };
     } lc;
+
+    struct lcev {
+        template<class ContainerSyntax, class ...LinkedContainers>
+        auto operator[](list_comprehension<ContainerSyntax, LinkedContainers...>&& l) { return std::move(l).get_var(); };
+    } lcv;
 
 #define lc_std_fun(y, x) \
     template<class ...Args> \
