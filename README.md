@@ -31,6 +31,12 @@ int main() {
     std::string mystr = "HelloWorld";
     var<char> g;
     std::string r6 = lc[tolower(g).to<char>() | g <- mystr];
+    
+    // Nested list comprehension for lists of lists
+    var<int> x;
+    var<std::vector<int>> xs;
+    std::vector<std::vector<int>> xxs{ { 1,3,5,2,3,1,2,4,5 }, { 1,2,3,4,5,6,7,8,9 }, { 1,2,4,2,1,6,3,1,3,2,3,6 } };
+    auto r8 = lc[lc[x | x <- xs, x % 2 == 0] | xs <- xxs];
 }
 ```
 # axial_array
