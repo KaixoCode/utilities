@@ -27,6 +27,36 @@ namespace kaixo {
     concept has_begin_end = requires(Type a) { a.begin(), a.end(), a.size(); };
     template<class> struct return_type;
     template<class R, class...T> struct return_type<R(T...)> { using type = R; };
+    template<class Type>
+    concept callable = std::is_invocable_v<Type>;
+
+    template<class Ty>
+    struct function_storage {
+        size_t refs = 1;
+        virtual Ty call() const = 0;
+    };
+
+    template<class Ty>
+    struct lambda_storage : function_storage<decltype(std::declval<Ty>()())> {
+        Ty lambda;
+        Ty call() const { return lambda(); }
+    };
+
+    template<class Ty>
+    struct expr_storage {
+        function_storage<Ty>* storage;
+        expr_storage(callable auto t) : storage(new lambda_storage{ t }) {}
+        expr_storage(expr_storage&& other) : storage(other.storage) { other.storage = nullptr; }
+        expr_storage(const expr_storage& other) : storage(other.storage) { storage->ref_count++; }
+        ~expr_storage() { if (storage && --storage->ref_count == 0) delete storage; }
+        Ty operator()() const { return storage->call(); }
+    };
+
+    template<class Ty>
+    struct expr {
+        expr_storage<Ty> e;
+    };
+
 
     // Forward declarations
     template<class Container, class ...Types>
@@ -475,8 +505,8 @@ namespace kaixo {
         void init(expression<Type>& a, const Type& t) { a.c = [&t]() { return t; }; }
     };
 
-    template<class Type>
-    range(Type, Type)->range<Type>;
+    template<class Type, class T2>
+    range(Type, T2)->range<Type>;
 
     /**
      * Wrapper for a container, used when creating a cartesian product, works
@@ -534,12 +564,12 @@ namespace kaixo {
     template<template<class...> class Container, class ...Type>
     auto operator-(Container<Type...>& r) -> container<typename Container<Type...>::value_type, Container<Type...>&> { return { r }; }
 
+    template<template<class...> class Container, class ...Type>
+    auto operator-(Container<Type...>&& r) -> container<typename Container<Type...>::value_type, Container<Type...>> { return { std::move(r) }; }
+
     template<has_begin_end Type>
     auto operator-(var<Type>& r) -> container<typename Type::value_type, var<Type>&> { return { r }; }
 
-    template<template<class...> class Container, class ...Type>
-    auto operator-(Container<Type...>&& r) -> container<typename Container<Type...>::value_type, Container<Type...>> { return { std::move(r) }; }
-    
     template<class Type, class CType, class Container>
     auto operator<(var<Type>& v, container<CType, Container>&& r) -> linked_container<Type, container<CType, Container>> { return { v, std::move(r) }; }
 
