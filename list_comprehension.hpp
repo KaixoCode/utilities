@@ -13,44 +13,54 @@
 #include <iterator>
 #include <tuple>
 #include <map>
-#include "utils.hpp"
 
 namespace kaixo {
+
+    // Utils
     template<class Type>
     using container_for = std::conditional_t<std::is_same_v<Type, char>, std::string, std::vector<Type>>;
+    template<class Type, class ...Tys>
+    concept has_emplace_back = requires(Type t, Tys...tys) { t.emplace_back(tys...); };
+    template<class Type, class ...Tys>
+    concept has_try_emplace = requires(Type t, Tys...tys) { t.try_emplace(tys...); };
+    template<class Type>
+    concept has_begin_end = requires(Type a) { a.begin(), a.end(), a.size(); };
+    template<class> struct return_type;
+    template<class R, class...T> struct return_type<R(T...)> { using type = R; };
 
+    // Forward declarations
     template<class Container, class ...Types>
     struct container_syntax;
-
-    /**
-     * An expression is basically just nested lambdas that all execute some operator on
-     * either another expression, a var, or a value.
-     */
     template<class Type>
     struct expression;
-
     template<class Type>
     struct var;
+
+    /**
+     * Expression is an unevaluated bit of code, that can later be ran with certain values
+     * for all the variables used.
+     */
     template<class Type>
     struct expression_base {
         using type = Type;
+        
         expression_base() = default;
         expression_base(std::function<type()>&& f) : c(std::move(f)) {};
         expression_base(const std::decay_t<Type>& f) : c([&]() mutable -> Type { return f; }) {};
         expression_base(std::decay_t<Type>&& f) : c([f = std::move(f)]() mutable -> Type { return f; }) {};
         expression_base(std::decay_t<Type>& f) : c([&]() mutable -> Type { return f; }) {};
-        expression_base(const expression_base& other) : c(other.c) {};
-        expression_base(expression_base&& other) : c(std::move(other.c)) {};
 
-        std::function<type()> c;
-        explicit operator type() const { return c(); }
         type operator()() const { return c(); }
 
-        template<class Ty>
-        expression<Ty> to()&& { return { [c = std::move(this->c)] () { return static_cast<Ty>(c()); } }; }
+        template<class Ty> expression<Ty> to()&& { 
+            return { [c = std::move(this->c)] () { return static_cast<Ty>(c()); } };
+        }
 
-        template<class Ty>
-        expression<Ty> to()& { return { [this] () { return static_cast<Ty>(this->c()); } }; }
+        template<class Ty> expression<Ty> to()& {
+            return { [this] () { return static_cast<Ty>(this->c()); } }; 
+        }
+
+        std::function<type()> c;
     };
 
     template<class Type>
@@ -59,17 +69,29 @@ namespace kaixo {
         using expression_base<Type>::expression_base;
     };
 
-    template<class>
-    struct return_type;
-
-    template<class R, class...T>
-    struct return_type<R(T...)> {
-        using type = R;
-    };
-
     template<class Type>
     expression(Type)->expression<typename return_type<lambda_signature_t<Type>>::type>;
 
+    /**
+     * A var is an expression with a simple assignment, a var's lifetime must be longer than the
+     * list comprehension object that is generated, because it is stored as a reference.
+     */
+    template<class Type>
+    struct var : expression<Type&> {
+        using type = Type;
+        using expression<Type&>::expression;
+
+        var() { this->c = [a = Type{}]() mutable -> Type& { return a; }; }
+
+        var& operator=(const Type& t) { this->c = [&]() -> Type& { return t; }; return *this; }
+        var& operator=(Type& t) { this->c = [&]() -> Type& { return t; }; return *this; }
+        var& operator=(Type&& t) { this->c = [t = std::move(t)]() mutable -> Type& { return t; }; return *this; }
+    };
+
+    /**
+     * Expression wrapper is used to simplify templated functions by generalizing how
+     * to get the value, for an expression that requires the operator(). 
+     */
     template<class Type>
     struct expression_wrapper {
         Type value;
@@ -95,13 +117,13 @@ namespace kaixo {
     };
 
     template<class Type>
-    struct expression_wrapper<expression<Type>&&> {
+    struct expression_wrapper<expression<Type>> {
         expression<Type> value;
         auto get() { return value(); }
     };
 
     template<class Type>
-    struct expression_wrapper<expression<Type>> {
+    struct expression_wrapper<expression<Type>&&> {
         expression<Type> value;
         auto get() { return value(); }
     };
@@ -113,28 +135,14 @@ namespace kaixo {
     };
 
     /**
-     * A var is an expression with a simple assignment, a var's lifetime must be longer than the
-     * list comprehension object that is generated, because it is stored as a reference.
+     * Specializations of the expression class for standard classes 
+     * and containers that contain all their member functions.
      */
-    template<class Type>
-    struct var : expression<Type&> {
-        using type = Type;
-
-        var() { this->c = [a = Type{}]() mutable -> Type& { return a; }; }
-        using expression<Type&>::expression;
-
-        var& operator=(const Type& t) { this->c = [&]() -> Type& { return t; }; return *this; }
-        var& operator=(Type& t) { this->c = [&]() -> Type& { return t; }; return *this; }
-        var& operator=(Type&& t) { this->c = [t = std::move(t)]() mutable -> Type& { return t; }; return *this; }
-    };
-
 #define lc_mem_fun(y, x) \
-    template<class ...Args> \
-    auto x(Args&& ...exprs) & { \
-        return kaixo::expression{ [this, ...args = expression_wrapper<Args>{ std::forward<Args>(exprs) }]() mutable { return this->c().y::x(args.get()...); } }; } \
-    template<class ...Args> \
-    auto x(Args&& ...exprs) && { \
-        return kaixo::expression{ [c = std::move(this->c), ...args = expression_wrapper<Args>{ std::forward<Args>(exprs) }]() mutable { return c().y::x(args.get()...); } }; } \
+    template<class ...Args> auto x(Args&& ...exprs) & { return kaixo::expression{ [this, ...args = expression_wrapper<Args>{ \
+        std::forward<Args>(exprs) }]() mutable { return this->c().y::x(args.get()...); } }; } \
+    template<class ...Args> auto x(Args&& ...exprs) && { return kaixo::expression{ [c = std::move(this->c), ...args = expression_wrapper<Args>{ \
+        std::forward<Args>(exprs) }]() mutable { return c().y::x(args.get()...); } }; } \
 
     template<class String>
     struct string_expression : expression_base<String> {
@@ -356,19 +364,17 @@ namespace kaixo {
     make_expr(std::deque<Args...>, deque_expression, class ...Args);
     make_expr(std::array<Arg COMMA N>, array_expression, class Arg, size_t N);
     make_expr(std::map<Args...>, map_expression, class ...Args);
+#undef COMMA
 
-    /**
-     * Macro to define operator overloads for the expression/var/value combinations.
-     */
 #define var_op(x)\
-    template<class A, class B> auto operator x(var<A>& a, var<B>& b) { return expression<decltype(a() x b())>{ [&a, &b]() { return a() x b(); } }; } \
-    template<class A, class B> auto operator x(const expression<A>& a, var<B>& b) { return expression<decltype(a() x b())>{ [a = a, &b]() { return a() x b(); } }; } \
-    template<class A, class B> auto operator x(var<A>& a, const expression<B>& b) { return expression<decltype(a() x b())>{ [&a, b = b]() { return a() x b(); } }; } \
-    template<class A, class B> auto operator x(const expression<A>& a, const expression<B>& b) { return expression<decltype(a() x b())>{ [a = a, b = b]() { return a() x b(); } }; } \
-    template<class A, class B> auto operator x(const expression<A>& a, const B& b) { return expression<decltype(a() x b)>{ [a = a, b = b]() { return a() x b; } }; } \
-    template<class A, class B> auto operator x(const A& a, const expression<B>& b) { return expression<decltype(a x b())>{ [a = a, b = b]() { return a x b(); } }; } \
-    template<class A, class B> auto operator x(var<A>& a, const B& b) { return expression<decltype(a() x b)>{ [&a, b = b]() { return a() x b; } }; } \
-    template<class A, class B> auto operator x(const A& a, var<B>& b) { return expression<decltype(a x b())>{ [a = a, &b]() { return a x b(); } }; }
+    template<class A, class B> auto operator x(const var<A>& a, const var<B>& b) { return expression{ [&a, &b]() { return a() x b(); } }; } \
+    template<class A, class B> auto operator x(const expression<A>& a, const var<B>& b) { return expression{ [a, &b]() { return a() x b(); } }; } \
+    template<class A, class B> auto operator x(const var<A>& a, const expression<B>& b) { return expression{ [&a, b]() { return a() x b(); } }; } \
+    template<class A, class B> auto operator x(const expression<A>& a, const expression<B>& b) { return expression{ [a, b]() { return a() x b(); } }; } \
+    template<class A, class B> auto operator x(const expression<A>& a, const B& b) { return expression{ [a, b]() { return a() x b; } }; } \
+    template<class A, class B> auto operator x(const A& a, const expression<B>& b) { return expression{ [a, b]() { return a x b(); } }; } \
+    template<class A, class B> auto operator x(const var<A>& a, const B& b) { return expression{ [&a, b]() { return a() x b; } }; } \
+    template<class A, class B> auto operator x(const A& a, const var<B>& b) { return expression{ [a, &b]() { return a x b(); } }; }
 
     var_op(+);
     var_op(-);
@@ -407,24 +413,7 @@ namespace kaixo {
     template<class Type>
     struct range {
         using value_type = Type;
-        range(Type&& x, Type&& y) { init(a, std::move(x)); init(b, std::move(y)); }
-        range(Type& x, Type&& y) { init(a, x); init(b, std::move(y)); }
-        range(Type&& x, Type& y) { init(a, std::move(x)); init(b, y); }
-        range(Type& x, Type& y) { init(a, x); init(b, y); }
-        range(Type&& x, const expression<Type>& y) { init(a, std::move(x)); init(b, y); }
-        range(Type& x, const expression<Type>& y) { init(a, x); init(b, y); }
-        range(Type&& x, var<Type>& y) { init(a, std::move(x)); init(b, y); }
-        range(Type& x, var<Type>& y) { init(a, x); init(b, y); }
-        range(var<Type>& x, Type&& y) { init(a, x); init(b, std::move(y)); }
-        range(const expression<Type>& x, Type&& y) { init(a, x); init(b, std::move(y)); }
-        range(var<Type>& x, Type& y) { init(a, x); init(b, y); }
-        range(const expression<Type>& x, Type& y) { init(a, x); init(b, y); }
-        range(var<Type>& x, var<Type>& y) { init(a, x); init(b, y); }
-        range(const expression<Type>& x, var<Type>& y) { init(a, x); init(b, y); }
-        range(var<Type>& x, const expression<Type>& y) { init(a, x); init(b, y); }
-        range(const expression<Type>& x, const expression<Type>& y) { init(a, x); init(b, y); }
 
-        expression<Type> a, b;
         struct iterator {
             using iterator_category = std::bidirectional_iterator_tag;
             using value_type = Type;
@@ -442,13 +431,45 @@ namespace kaixo {
             bool operator==(const iterator& o) const { return o.cur == cur; }
         };
 
+        using const_iterator = iterator;
+        using reverse_iterator = std::reverse_iterator<iterator>;
+        using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+
+        range(Type&& x, Type&& y) { init(a, std::move(x)); init(b, std::move(y)); }
+        range(Type& x, Type&& y) { init(a, x); init(b, std::move(y)); }
+        range(Type&& x, Type& y) { init(a, std::move(x)); init(b, y); }
+        range(Type& x, Type& y) { init(a, x); init(b, y); }
+        range(Type&& x, const expression<Type>& y) { init(a, std::move(x)); init(b, y); }
+        range(Type& x, const expression<Type>& y) { init(a, x); init(b, y); }
+        range(Type&& x, const var<Type>& y) { init(a, std::move(x)); init(b, y); }
+        range(Type& x, const var<Type>& y) { init(a, x); init(b, y); }
+        range(const var<Type>& x, Type&& y) { init(a, x); init(b, std::move(y)); }
+        range(const expression<Type>& x, Type&& y) { init(a, x); init(b, std::move(y)); }
+        range(const var<Type>& x, Type& y) { init(a, x); init(b, y); }
+        range(const expression<Type>& x, Type& y) { init(a, x); init(b, y); }
+        range(const var<Type>& x, const var<Type>& y) { init(a, x); init(b, y); }
+        range(const expression<Type>& x, const var<Type>& y) { init(a, x); init(b, y); }
+        range(const var<Type>& x, const expression<Type>& y) { init(a, x); init(b, y); }
+        range(const expression<Type>& x, const expression<Type>& y) { init(a, x); init(b, y); }
+
         iterator begin() { return { this, a() }; }
         iterator end() { return { this, b() }; }
-        iterator begin() const { return { this, a() }; }
-        iterator end() const { return { this, b() }; }
+        const_iterator begin() const { return { this, a() }; }
+        const_iterator end() const { return { this, b() }; }
+        const_iterator cbegin() const { return begin(); }
+        const_iterator cend() const { return end(); }
+        reverse_iterator rbegin() { return end(); }
+        reverse_iterator rend() { return begin(); }
+        const_reverse_iterator rbegin() const { return end(); }
+        const_reverse_iterator rend() const { return begin(); }
+        const_reverse_iterator crbegin() const { return end(); }
+        const_reverse_iterator crend() const { return begin(); }
+
         size_t size() const { return b() - a(); }
     private:
-        void init(expression<Type>& a, var<Type>& t) { a.c = [&t]() { return t(); }; }
+        expression<Type> a, b;
+
+        void init(expression<Type>& a, const var<Type>& t) { a.c = [&t]() { return t(); }; }
         void init(expression<Type>& a, const expression<Type>& t) { a.c = t.c; }
         void init(expression<Type>& a, Type&& t) { a.c = [t = std::move(t)]() { return t; }; }
         void init(expression<Type>& a, const Type& t) { a.c = [&t]() { return t; }; }
@@ -456,11 +477,6 @@ namespace kaixo {
 
     template<class Type>
     range(Type, Type)->range<Type>;
-
-    template<class Type>
-    concept has_begin_end = requires(Type a) {
-        a.begin(), a.end(), a.size();
-    };
 
     /**
      * Wrapper for a container, used when creating a cartesian product, works
@@ -493,7 +509,11 @@ namespace kaixo {
         size_t size() const { return container.size(); }
     };
 
-    template<class Type, class VarType>
+    /**
+     * Specialization for storing a variable that results in a container.
+     * So we can store the variable as a reference.
+     */
+    template<class Type, has_begin_end VarType>
     struct linked_container<Type, container<typename VarType::value_type, var<VarType>&>> {
         using type = Type;
         constexpr static bool has_var = true;
@@ -512,19 +532,16 @@ namespace kaixo {
      * links that container to a variable.
      */
     template<template<class...> class Container, class ...Type>
-    container<typename Container<Type...>::value_type, Container<Type...>&> operator-(Container<Type...>& r) { return { r }; }
-    template<has_begin_end Type>
-    container<typename Type::value_type, var<Type>&> operator-(var<Type>& r) { return { r }; }
-    template<template<class...> class Container, class ...Type>
-    container<typename Container<Type...>::value_type, Container<Type...>> operator-(Container<Type...>&& r) { return { std::move(r) }; }
-    template<class Type, class CType, class Container>
-    linked_container<Type, container<CType, Container>> operator<(var<Type>& v, container<CType, Container>&& r) { return { v, std::move(r) }; }
+    auto operator-(Container<Type...>& r) -> container<typename Container<Type...>::value_type, Container<Type...>&> { return { r }; }
 
-    template<class Type, class ...Tys>
-    concept has_emplace_back = requires(Type t, Tys...tys) { t.emplace_back(tys...); };
+    template<has_begin_end Type>
+    auto operator-(var<Type>& r) -> container<typename Type::value_type, var<Type>&> { return { r }; }
+
+    template<template<class...> class Container, class ...Type>
+    auto operator-(Container<Type...>&& r) -> container<typename Container<Type...>::value_type, Container<Type...>> { return { std::move(r) }; }
     
-    template<class Type, class ...Tys>
-    concept has_try_emplace = requires(Type t, Tys...tys) { t.try_emplace(tys...); };
+    template<class Type, class CType, class Container>
+    auto operator<(var<Type>& v, container<CType, Container>&& r) -> linked_container<Type, container<CType, Container>> { return { v, std::move(r) }; }
 
     /**
      * This is the part before the '|', and defined what type of container the
@@ -553,119 +570,9 @@ namespace kaixo {
     };
 
     /**
-     * Everything combined into a single object, contains the container syntax, all
-     * the linked containers, and also some constraints, which are expressions that evaluate to 'bool'
-     */
-    template<class ContainerSyntax, class ...LinkedContainers>
-    struct list_comprehension {
-        using container = ContainerSyntax::container;
-        constexpr static auto size = sizeof...(LinkedContainers);
-        constexpr static auto sequence = std::make_index_sequence<size>{};
-        ContainerSyntax syntax;
-        std::tuple<LinkedContainers...> containers;
-        std::vector<expression<bool>> constraints;
-
-        constexpr static bool has_var = (LinkedContainers::has_var || ...);
-
-        container operator*() { return m_Get(); }
-
-        expression<container> get_var() && {
-            return { [cpy = std::move(*this)]() mutable { return cpy.m_Get(); } };
-        }
-
-        expression<container> get_var()& {
-            return { [this] () { return this->m_Get(); } };
-        }
-
-        container get() {
-            return this->m_Get();
-        }
-
-    private:
-        inline container m_Get() {
-            container result;
-
-            std::tuple<LinkedContainers::iterator...> its;
-            set_begin(its, sequence); // Initialize all iterators to begin
-
-            int index = size - 1;
-            bool done = false;
-            while (!done) { // This will loop through all the values in the cartesian product of the linked containers.
-                set_values(its, sequence); // Set all vars to the values that the iterators point to.
-
-                bool _match = true;
-                for (auto& c : constraints) // Check all constraints.
-                    _match &= c();
-
-                if (_match) // If all matched, generate an entry, and add to result.
-                    syntax.generate(result);
-
-                if (!check_end(its, index, sequence))
-                    increment(its, index, sequence); // Increment the iterator
-                while (check_end(its, index, sequence)) { // And check if it's now at the end.
-                    set_begin(its, index, sequence); // Reset the iterator
-                    index--;                         // And go to the next index to increment that one.
-                    if (index == -1) {               // If we're at the end, we're done.
-                        done = true;
-                        break;
-                    }
-                    if (!check_end(its, index, sequence)) {
-                        increment(its, index, sequence); // Otherwise increment the iterator and loop to check if also at the end.
-                        
-                        if constexpr (has_var) { // When containers contain variables, we must keep iterator up to date.
-                            if (!check_end(its, index, sequence)) {
-                                set_values(its, sequence);
-                                set_begin(its, index + 1, sequence);
-                            }
-                        }
-                    }
-                }
-
-                index = size - 1; // Reset index back to 0 for the next iteration.
-            }
-
-            return result;
-        }
-
-        /**
-         * Some helper functions because dealing with tuples
-         * is a living nightmare when also working with changing indices...
-         */
-        template<class T, std::size_t ...Is>
-        void set_begin(T& tuple, std::index_sequence<Is...>) {
-            ((std::get<Is>(tuple) = std::get<Is>(containers).begin(), std::get<Is>(containers).variable.get() = *std::get<Is>(containers).begin()), ...);
-        }
-
-        template<class T, std::size_t ...Is>
-        void set_begin(T& tuple, std::size_t i, std::index_sequence<Is...>) {
-            ((Is == i ? (std::get<Is>(tuple) = std::get<Is>(containers).begin(), true) : true), ...);
-        }
-
-        template<class T, std::size_t ...Is>
-        bool check_end(T& tuple, size_t i, std::index_sequence<Is...>) {
-            bool is_end = false;
-            ((Is == i ? (is_end = std::get<Is>(tuple) == std::get<Is>(containers).end(), true) : true), ...);
-            return is_end;
-        }
-
-        template<class T, std::size_t ...Is>
-        void set_values(T& tuple, std::index_sequence<Is...>) {
-            ((std::get<Is>(containers).variable.get() = *std::get<Is>(tuple)), ...);
-        }
-
-        template<class T, std::size_t ...Is>
-        void increment(T& tuple, std::size_t index, std::index_sequence<Is...>) {
-            ((Is == index ? (++std::get<Is>(tuple), true) : true), ...);
-        }
-
-        template<class T, std::size_t ...Is>
-        void set_as_end(T& tuple, std::size_t index, std::index_sequence<Is...>) {
-            ((Is == index ? (std::get<Is>(tuple) = std::get<Is>(containers).end(), true) : true), ...);
-        }
-    };
-
-    /**
-     * Operators for constructing a container syntax.
+     * Operators and functions for constructing a container syntax.
+     * Eiter a comma operator to use standard vector, or a function to choose
+     * the container.
      */
     template<class A, class B>
     container_syntax<std::vector<std::tuple<A, B>>, A, B> operator,(var<A>& a, var<B>& b) {
@@ -685,6 +592,16 @@ namespace kaixo {
     template<class A, class B>
     container_syntax<std::vector<std::tuple<A, B>>, A, B> operator,(const expression<A>& a, const expression<B>& b) {
         return { { a, b } };
+    }
+
+    template<class A, class ...Rest>
+    container_syntax<std::vector<std::tuple<Rest..., A>>, Rest..., A> operator,(container_syntax<std::vector<std::tuple<Rest...>>, Rest...>&& a, var<A>& b) {
+        return { std::tuple_cat(a.expressions, std::tuple{ expression<A>{ [&]() { return b(); } } }) };
+    }
+
+    template<class A, class ...Rest>
+    container_syntax<std::vector<std::tuple<Rest..., A>>, Rest..., A> operator,(container_syntax<std::vector<std::tuple<Rest...>>, Rest...>&& a, const expression<A>& b) {
+        return { std::tuple_cat(a.expressions, std::tuple{ b }) };
     }
 
     template<class ...Types>
@@ -785,15 +702,115 @@ namespace kaixo {
                 (std::is_lvalue_reference_v<Types> ? expression<typename std::decay_t<Types>::type>{ [&]() { return tys(); } } : tys)... } };
     }
 
-    template<class A, class ...Rest>
-    container_syntax<std::vector<std::tuple<Rest..., A>>, Rest..., A> operator,(container_syntax<std::vector<std::tuple<Rest...>>, Rest...>&& a, var<A>& b) {
-        return { std::tuple_cat(a.expressions, std::tuple{ expression<A>{ [&]() { return b(); } } }) };
-    }
+    /**
+     * Everything combined into a single object, contains the container syntax, all
+     * the linked containers, and also some constraints, which are expressions that evaluate to 'bool'
+     */
+    template<class ContainerSyntax, class ...LinkedContainers>
+    struct list_comprehension {
+        using container = ContainerSyntax::container;
+        constexpr static auto size = sizeof...(LinkedContainers);
+        constexpr static auto sequence = std::make_index_sequence<size>{};
+        constexpr static bool has_var = (LinkedContainers::has_var || ...);
+        
+        ContainerSyntax syntax;
+        std::tuple<LinkedContainers...> containers;
+        std::vector<expression<bool>> constraints;
 
-    template<class A, class ...Rest>
-    container_syntax<std::vector<std::tuple<Rest..., A>>, Rest..., A> operator,(container_syntax<std::vector<std::tuple<Rest...>>, Rest...>&& a, const expression<A>& b) {
-        return { std::tuple_cat(a.expressions, std::tuple{ b }) };
-    }
+        // Get result as an expression for later evaluation.
+        expression<container> get_var() && {
+            return { [cpy = std::move(*this)]() mutable { return cpy.m_Get(); } };
+        }
+
+        expression<container> get_var()& {
+            return { [this] () { return this->m_Get(); } };
+        }
+
+        container operator*() { return m_Get(); }
+        container get() { return this->m_Get(); }
+
+    private:
+        inline container m_Get() {
+            container result;
+
+            std::tuple<LinkedContainers::iterator...> its;
+            set_begin(its, sequence); // Initialize all iterators to begin
+
+            int index = size - 1;
+            bool done = false;
+            while (!done) { // This will loop through all the values in the cartesian product of the linked containers.
+                set_values(its, sequence); // Set all vars to the values that the iterators point to.
+
+                bool _match = true;
+                for (auto& c : constraints) // Check all constraints.
+                    _match &= c();
+
+                if (_match) // If all matched, generate an entry, and add to result.
+                    syntax.generate(result);
+
+                if (!check_end(its, index, sequence))
+                    increment(its, index, sequence); // Increment the iterator
+                while (check_end(its, index, sequence)) { // And check if it's now at the end.
+                    set_begin(its, index, sequence); // Reset the iterator
+                    index--;                         // And go to the next index to increment that one.
+                    if (index == -1) {               // If we're at the end, we're done.
+                        done = true;
+                        break;
+                    }
+                    if (!check_end(its, index, sequence)) {
+                        increment(its, index, sequence); // Otherwise increment the iterator and loop to check if also at the end.
+                        
+                        if constexpr (has_var) { // When containers contain variables, we must keep iterator up to date.
+                            if (!check_end(its, index, sequence)) {
+                                set_values(its, sequence);
+                                set_begin(its, index + 1, sequence);
+                            }
+                        }
+                    }
+                }
+
+                index = size - 1; // Reset index back to 0 for the next iteration.
+            }
+
+            return result;
+        }
+
+        /**
+         * Some helper functions because dealing with tuples
+         * is a living nightmare when also working with changing indices...
+         */
+        template<class T, std::size_t ...Is>
+        void set_begin(T& tuple, std::index_sequence<Is...>) {
+            ((std::get<Is>(tuple) = std::get<Is>(containers).begin(), std::get<Is>(containers).variable.get() = *std::get<Is>(containers).begin()), ...);
+        }
+
+        template<class T, std::size_t ...Is>
+        void set_begin(T& tuple, std::size_t i, std::index_sequence<Is...>) {
+            ((Is == i ? (std::get<Is>(tuple) = std::get<Is>(containers).begin(), true) : true), ...);
+        }
+
+        template<class T, std::size_t ...Is>
+        bool check_end(T& tuple, size_t i, std::index_sequence<Is...>) {
+            bool is_end = false;
+            ((Is == i ? (is_end = std::get<Is>(tuple) == std::get<Is>(containers).end(), true) : true), ...);
+            return is_end;
+        }
+
+        template<class T, std::size_t ...Is>
+        void set_values(T& tuple, std::index_sequence<Is...>) {
+            ((std::get<Is>(containers).variable.get() = *std::get<Is>(tuple)), ...);
+        }
+
+        template<class T, std::size_t ...Is>
+        void increment(T& tuple, std::size_t index, std::index_sequence<Is...>) {
+            ((Is == index ? (++std::get<Is>(tuple), true) : true), ...);
+        }
+
+        template<class T, std::size_t ...Is>
+        void set_as_end(T& tuple, std::size_t index, std::index_sequence<Is...>) {
+            ((Is == index ? (std::get<Is>(tuple) = std::get<Is>(containers).end(), true) : true), ...);
+        }
+    };
 
     /**
      * Operators for initializing a list comprehension object with a container syntax and the first linked container.
@@ -817,12 +834,14 @@ namespace kaixo {
     }
 
     /**
-     * Operators for expanding the initial list comprehension with linked containers or constraints.
+     * Operators for expanding the initial list comprehension with
+     * more linked containers or constraints.
      */
+
     template<class ContainerSyntax, class Container, class CType, class ...LinkedContainers>
     list_comprehension<ContainerSyntax, LinkedContainers..., linked_container<CType, Container>>
         operator,(list_comprehension<ContainerSyntax, LinkedContainers...>&& v, linked_container<CType, Container>&& c) {
-        return { std::move(v.syntax), std::tuple_cat(v.containers, std::tuple{ c }), std::move(v.constraints) };
+        return { std::move(v.syntax), std::tuple_cat(std::move(v.containers), std::tuple{ c }), std::move(v.constraints) };
     }
 
     template<class ContainerSyntax, class ...LinkedContainers>
@@ -840,7 +859,8 @@ namespace kaixo {
     }
 
     /**
-     * Used for parallel iteration of containers.
+     * Used for parallel iteration of containers. Stores multiple containers
+     * and defines an iterator that returns a tuple of references to the values.
      */
     template<has_begin_end... Containers>
     struct tuple_of_containers {
@@ -864,7 +884,7 @@ namespace kaixo {
 
         private:
             template<size_t ...Is>
-            value_type get(std::index_sequence<Is...>) {
+            value_type get(std::index_sequence<Is...>) { 
                 return { *std::get<Is>(iterators)... };
             }
 
@@ -886,9 +906,9 @@ namespace kaixo {
             }
         };
 
-        size_t size() const { return seq_size(std::make_index_sequence<sizeof...(Containers)>{}); }
         iterator begin() { return seq_begin(std::make_index_sequence<sizeof...(Containers)>{}); };
         iterator end() { return seq_end(std::make_index_sequence<sizeof...(Containers)>{}); };
+        size_t size() const { return seq_size(std::make_index_sequence<sizeof...(Containers)>{}); }
 
     private:
         template<size_t ...Is>
@@ -931,16 +951,21 @@ namespace kaixo {
         template<class ContainerSyntax, class ...LinkedContainers>
         auto operator[](list_comprehension<ContainerSyntax, LinkedContainers...>&& l) { return std::move(l).get_var(); };
     } lcv;
-
-#define lc_std_fun(y, x) \
-    template<class ...Args> \
-    auto x(Args&& ...exprs) { \
-        return kaixo::expression{ [...args = expression_wrapper<Args>{ std::forward<Args>(exprs) }]() mutable { return y x(args.get()...); } }; \
-    }
 }
 
-#define LC_ALGORITHMS
-#ifdef LC_ALGORITHMS
+/**
+ * Most std function definitions in 'expression' form.
+ * to disable a portion of this, just define KAIXO_LC_header as something other than 1.
+ */
+
+#define lc_std_fun(y, x) \
+    template<class ...Args> auto x(Args&& ...exprs) { return kaixo::expression{ \
+        [...args = expression_wrapper<Args>{ std::forward<Args>(exprs) }]() mutable { return y x(args.get()...); } }; } \
+
+#ifndef KAIXO_LC_ALGORITHMS
+#define KAIXO_LC_ALGORITHMS 1
+#endif
+#if KAIXO_LC_ALGORITHMS == 1
 #include <algorithm>
 namespace kaixo {
     lc_std_fun(std::, adjacent_find);
@@ -1022,8 +1047,10 @@ namespace kaixo {
 }
 #endif
 
-#define LC_ITERATOR
-#ifdef LC_ITERATOR
+#ifndef KAIXO_LC_ITERATOR
+#define KAIXO_LC_ITERATOR 1
+#endif
+#if KAIXO_LC_ITERATOR == 1
 #include <iterator>
 namespace kaixo {
     lc_std_fun(std::, advance);
@@ -1045,8 +1072,10 @@ namespace kaixo {
 }
 #endif
 
-#define LC_MEMORY
-#ifdef LC_MEMORY
+#ifndef KAIXO_LC_MEMORY
+#define KAIXO_LC_MEMORY 1
+#endif
+#if KAIXO_LC_MEMORY == 1
 #include <memory>
 #include <memory_resource>
 namespace kaixo {
@@ -1081,8 +1110,10 @@ namespace kaixo {
 }
 #endif
 
-#define LC_NUMERIC
-#ifdef LC_NUMERIC
+#ifndef KAIXO_LC_NUMERIC
+#define KAIXO_LC_NUMERIC 1
+#endif
+#if KAIXO_LC_NUMERIC == 1
 #include <numeric>
 namespace kaixo {
     lc_std_fun(std::, accumulate);
@@ -1190,8 +1221,10 @@ namespace kaixo {
 }
 #endif
 
-#define LC_STRING
-#ifdef LC_STRING
+#ifndef KAIXO_LC_STRING
+#define KAIXO_LC_STRING 1
+#endif
+#if KAIXO_LC_STRING == 1
 #include <string>
 #include <cstring>
 #include <cwctype>
