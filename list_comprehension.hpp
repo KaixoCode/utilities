@@ -31,32 +31,107 @@ namespace kaixo {
     concept callable = std::is_invocable_v<Type>;
 
     template<class Ty>
-    struct function_storage {
+    struct expr_storage_base {
         size_t refs = 1;
-        virtual Ty call() const = 0;
+        virtual Ty get() const = 0;
     };
 
-    template<class Ty>
-    struct lambda_storage : function_storage<decltype(std::declval<Ty>()())> {
+    template<class R, class Ty>
+    struct lambda_expr_storage : expr_storage_base<R> {
         Ty lambda;
-        Ty call() const { return lambda(); }
+        lambda_expr_storage(Ty t) : lambda(t) {}
+        R get() const { return lambda(); }
     };
 
     template<class Ty>
     struct expr_storage {
-        function_storage<Ty>* storage;
-        expr_storage(callable auto t) : storage(new lambda_storage{ t }) {}
+        expr_storage() : storage(nullptr) {}
+        expr_storage(callable auto t) : storage(new lambda_expr_storage<Ty, decltype(t)>{ t }) {}
         expr_storage(expr_storage&& other) : storage(other.storage) { other.storage = nullptr; }
-        expr_storage(const expr_storage& other) : storage(other.storage) { storage->ref_count++; }
-        ~expr_storage() { if (storage && --storage->ref_count == 0) delete storage; }
-        Ty operator()() const { return storage->call(); }
+        expr_storage(const expr_storage& other) : storage(other.storage) { storage->refs++; }
+        ~expr_storage() { clean(); }
+        void operator=(callable auto t) { clean(); storage = new lambda_expr_storage<Ty, decltype(t)>{ t }; }
+        void clean() { if (storage && --storage->refs == 0) delete storage; }
+        expr_storage_base<Ty>* storage;
     };
 
     template<class Ty>
-    struct expr {
-        expr_storage<Ty> e;
+    struct var_storage_base {
+        enum _state { v, r } state = v;
+        
+        var_storage_base(Ty&& val) : value(std::move(val)), state(v) {}
+        var_storage_base(Ty& val) : ref(&val), state(r) {}
+        var_storage_base(const Ty& val) : value(val), state(v) {}
+        ~var_storage_base() { clean(); }
+
+        void operator=(Ty& val) { clean(); ref = &val; state = r; };
+        void operator=(const Ty& val) { clean(); new (&value) Ty{ val }; state = v; };
+        void operator=(Ty&& val) { clean(); new (&value) Ty{ val }; state = v; };
+
+        size_t refs = 1;
+        
+        inline Ty& get() { return state == v ? value : *ref; };
+
+        inline void clean() { 
+            if constexpr (!std::is_trivially_destructible_v<Ty>)
+                if (state == v) value.~Ty();
+        }
+
+        union {
+            Ty value;
+            Ty* ref;
+        };
     };
 
+    template<class Ty>
+    struct var_storage {
+        var_storage() : storage(new var_storage_base{ Ty{} }) {}
+        var_storage(Ty&& t) : storage(new var_storage_base<Ty>{ std::move(t) }) {}
+        var_storage(Ty& t) : storage(new var_storage_base<Ty>{ t }) {}
+        var_storage(const Ty& t) : storage(new var_storage_base<Ty>{ t }) {}
+        var_storage(var_storage&& other) : storage(other.storage) { other.storage = nullptr; }
+        var_storage(const var_storage& other) : storage(other.storage) { storage->refs++; }
+        ~var_storage() { clean(); }
+
+        var_storage& operator=(Ty& val) { *storage = val; return *this; };
+        var_storage& operator=(const Ty& val) { *storage = val; return *this; };
+        var_storage& operator=(Ty&& val) { *storage = std::move(val); return *this; };
+
+        void clean() { if (storage && --storage->refs == 0) delete storage; }
+
+        var_storage_base<Ty>* storage;
+    };
+
+    template<class Ty, class Storage>
+    struct expr_base {
+        using type = Ty;
+
+        template<class ...Args> 
+        expr_base(Args&&...args) requires std::constructible_from<Storage, Args...> 
+            : storage(std::forward<Args>(args)...) {}
+
+        Ty operator()() const { return storage.storage->get(); }
+
+        template<class T>
+        expr_base& operator=(T&& t) { storage.operator=(std::forward<T>(t)); return *this; }
+
+    private:
+        Storage storage;
+    };
+
+    template<class Ty>
+    struct expr : expr_base<Ty, expr_storage<Ty>> {
+        using type = Ty;
+        using expr_base<Ty, expr_storage<Ty>>::expr_base;
+        using expr_base<Ty, expr_storage<Ty>>::operator=;
+    };
+
+    template<class Ty>
+    struct mvar : expr_base<Ty, var_storage<Ty>> {
+        using type = Ty;
+        using expr_base<Ty, var_storage<Ty>>::expr_base;
+        using expr_base<Ty, var_storage<Ty>>::operator=;
+    };
 
     // Forward declarations
     template<class Container, class ...Types>
