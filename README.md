@@ -40,6 +40,15 @@ int main() {
     
     // Using a used variable as a container
     auto r9 = lc[x | xs <- xxs, x <- xs];
+    
+    // Make a utility function
+    auto indices = [x = var<std::tuple<int, int>>{}](auto& data, const var<int>& a) mutable {
+        // Parallel iteration of value and index, constraint on value == argument, store index.
+        return lc[x.get<1>() | x <- (data, range(0, data.size())), a == x.get<0>()];
+    };
+
+    std::vector<int> datas{ 0, 1, 1, 0, 0, 1, 0 };
+    auto r12 = indices(datas, 1);
 }
 ```
 # axial_array
