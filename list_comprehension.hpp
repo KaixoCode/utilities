@@ -135,6 +135,8 @@ namespace kaixo {
      * Basis for an expr and var, has certain storage that will generate
      * the result, either variable or from expression stored in a lambda.
      */
+    template<class Ty>
+    struct var;
     struct is_an_expr {};
     template<class Ty, class Storage = expr_storage<Ty>>
     struct expr_base : is_an_expr {
@@ -148,6 +150,8 @@ namespace kaixo {
         expr_base(expr<Ty, Storage>& other) : storage(other.storage) {}
         expr_base(expr<Ty, Storage>&& other) : storage(std::move(other.storage)) {}
         expr_base(const expr<Ty, Storage>& other) : storage(other.storage) {}
+
+        expr_base(var<Ty> v) requires std::same_as<Storage, expr_storage<Ty>> : storage([v]() { return v(); }) {}
 
         template<class ...Args> 
         expr_base(Args&&...args)
@@ -450,76 +454,21 @@ namespace kaixo {
     u_var_op(&);
 
     /**
-     * Simple range class with a start and end, plus an iterator because
-     * list comprehension uses iterators to create the cartesian product of all sets.
+     * Simple tuple of vars.
      */
-    template<class Type>
-    struct range {
-        using value_type = Type;
+    template<class ...Args>
+    struct tuple_of_vars {
+        using type = std::tuple<Args...>;
+        std::tuple<var<Args>...> vars;
 
-        struct iterator {
-            using iterator_category = std::bidirectional_iterator_tag;
-            using value_type = Type;
-            using difference_type = std::ptrdiff_t;
-            using pointer = Type*;
-            using reference = Type&;
-            const range* r;
-            Type cur;
-            iterator& operator++() { r->a() <= r->b() ? ++cur : --cur; return *this; }
-            iterator& operator--() { r->a() <= r->b() ? --cur : ++cur; return *this; }
-            iterator operator++(int) { return { r, r->a() <= r->b() ? cur + 1 : cur - 1 }; }
-            iterator operator--(int) { return { r, r->a() <= r->b() ? cur - 1 : cur + 1 }; }
-            Type& operator*() { return cur; }
-            Type* operator&() { return &cur; }
-            bool operator==(const iterator& o) const { return o.cur == cur; }
-        };
-
-        using const_iterator = iterator;
-        using reverse_iterator = std::reverse_iterator<iterator>;
-        using const_reverse_iterator = std::reverse_iterator<const_iterator>;
-
-        range(Type&& x, Type&& y) { init(a, std::move(x)); init(b, std::move(y)); }
-        range(Type& x, Type&& y) { init(a, x); init(b, std::move(y)); }
-        range(Type&& x, Type& y) { init(a, std::move(x)); init(b, y); }
-        range(Type& x, Type& y) { init(a, x); init(b, y); }
-        range(Type&& x, expr<Type> y) { init(a, std::move(x)); init(b, y); }
-        range(Type& x, expr<Type> y) { init(a, x); init(b, y); }
-        range(Type&& x, var<Type> y) { init(a, std::move(x)); init(b, y); }
-        range(Type& x, var<Type> y) { init(a, x); init(b, y); }
-        range(var<Type> x, Type&& y) { init(a, x); init(b, std::move(y)); }
-        range(expr<Type> x, Type&& y) { init(a, x); init(b, std::move(y)); }
-        range(var<Type> x, Type& y) { init(a, x); init(b, y); }
-        range(expr<Type> x, Type& y) { init(a, x); init(b, y); }
-        range(var<Type> x, var<Type> y) { init(a, x); init(b, y); }
-        range(expr<Type> x, var<Type> y) { init(a, x); init(b, y); }
-        range(var<Type> x, expr<Type> y) { init(a, x); init(b, y); }
-        range(expr<Type> x, expr<Type> y) { init(a, x); init(b, y); }
-
-        iterator begin() { return { this, a() }; }
-        iterator end() { return { this, b() + 1 }; }
-        const_iterator begin() const { return { this, a() }; }
-        const_iterator end() const { return { this, b() + 1 }; }
-        const_iterator cbegin() const { return begin(); }
-        const_iterator cend() const { return end(); }
-        reverse_iterator rbegin() { return end(); }
-        reverse_iterator rend() { return begin(); }
-        const_reverse_iterator rbegin() const { return end(); }
-        const_reverse_iterator rend() const { return begin(); }
-        const_reverse_iterator crbegin() const { return end(); }
-        const_reverse_iterator crend() const { return begin(); }
-
-        size_t size() const { return b() - a(); }
-    private:
-        expr<Type> a, b;
-
-        void init(expr<Type>& a, var<Type> t) { a = [t]() { return t(); }; }
-        void init(expr<Type>& a, expr<Type> t) { a = [t]() { return t(); }; }
-        void init(expr<Type>& a, Type&& t) { a = [t = std::move(t)]() { return t; }; }
-        void init(expr<Type>& a, const Type& t) { a = [&t]() { return t; }; }
+        void operator=(type&& a) { vars = a; }
     };
 
-    template<class Type, class T2>
-    range(Type, T2)->range<Type>;
+    template<class A, class B>
+    tuple_of_vars<A, B> operator,(var<A> a, var<B> b) { return { { a, b } }; }
+
+    template<class A, class ...Args>
+    tuple_of_vars<Args..., A> operator,(tuple_of_vars<Args...> a, var<A> b) { return { std::tuple_cat(a.vars, std::tuple{ b }) }; }
 
     /**
      * Wrapper for a container, used when creating a cartesian product, works
@@ -541,9 +490,9 @@ namespace kaixo {
      */
     template<class Type, has_begin_end Container>
     struct linked_container {
-        using type = Type;
+        using type = typename Type::type;
         constexpr static bool has_var = false;
-        var<Type> variable;
+        Type variable;
         Container container;
         using iterator = decltype(container.begin());
 
@@ -558,9 +507,9 @@ namespace kaixo {
      */
     template<class Type, has_begin_end VarType>
     struct linked_container<Type, container<typename VarType::value_type, var<VarType>>> {
-        using type = Type;
+        using type = typename Type::type;
         constexpr static bool has_var = true;
-        var<Type> variable;
+        Type variable;
         container<typename VarType::value_type, var<VarType>> container;
         using iterator = decltype(container.begin()());
 
@@ -584,7 +533,10 @@ namespace kaixo {
     auto operator-(var<Type> r) -> container<typename Type::value_type, var<Type>> { return { r }; }
 
     template<class Type, class CType, class Container>
-    auto operator<(var<Type> v, container<CType, Container>&& r) -> linked_container<Type, container<CType, Container>> { return { v, std::move(r) }; }
+    auto operator<(var<Type> v, container<CType, Container>&& r) -> linked_container<var<Type>, container<CType, Container>> { return { v, std::move(r) }; }
+
+    template<class CType, class Container, class ...Args>
+    auto operator<(tuple_of_vars<Args...>&& v, container<CType, Container>&& r) -> linked_container<tuple_of_vars<Args...>, container<CType, Container>> { return { v, std::move(r) }; }
 
     /**
      * This is the part before the '|', and defined what type of container the
@@ -617,19 +569,15 @@ namespace kaixo {
      * Eiter a comma operator to use standard vector, or a function to choose
      * the container.
      */
-    template<class A, class B>
-    container_syntax<std::vector<std::tuple<A, B>>, A, B> operator,(var<A> a, var<B> b) {
-        return { { { [a]() { return a(); } }, { [b]() { return b(); } } } };
-    }
 
     template<class A, class B>
     container_syntax<std::vector<std::tuple<A, B>>, A, B> operator,(expr<A> a, var<B> b) {
-        return { { a, { [b]() { return b(); } } } };
+        return { { a, b } };
     }
 
     template<class A, class B>
     container_syntax<std::vector<std::tuple<A, B>>, A, B> operator,(var<A> a, expr<B> b) {
-        return { { { [a]() { return a(); } }, b } };
+        return { { a, b } };
     }
 
     template<class A, class B>
@@ -638,8 +586,13 @@ namespace kaixo {
     }
 
     template<class A, class ...Rest>
+    container_syntax<std::vector<std::tuple<Rest..., A>>, Rest..., A> operator,(tuple_of_vars<Rest...>&& a, expr<A> b) {
+        return { std::tuple_cat(a.vars, std::tuple{ b }) };
+    }
+
+    template<class A, class ...Rest>
     container_syntax<std::vector<std::tuple<Rest..., A>>, Rest..., A> operator,(container_syntax<std::vector<std::tuple<Rest...>>, Rest...>&& a, var<A> b) {
-        return { std::tuple_cat(a.expressions, std::tuple{ expr{ [b]() { return b(); } } }) };
+        return { std::tuple_cat(a.expressions, std::tuple{ b }) };
     }
 
     template<class A, class ...Rest>
@@ -873,6 +826,12 @@ namespace kaixo {
         return { container_syntax<container_for<std::decay_t<Type>>, Type>{ v }, std::move(c), {} };
     }
 
+    template<class Container, class CType, class...Args>
+    list_comprehension<container_syntax<std::vector<std::tuple<Args...>>, Args...>, linked_container<CType, Container>>
+        operator|(tuple_of_vars<Args...>&& v, linked_container<CType, Container>&& c) {
+        return { container_syntax<std::vector<std::tuple<Args...>>, Args...>{ v.vars }, std::move(c), {} };
+    }
+
     /**
      * Operators for expanding the initial list comprehension with
      * more linked containers or constraints.
@@ -991,6 +950,78 @@ namespace kaixo {
         template<class ContainerSyntax, class ...LinkedContainers>
         auto operator[](list_comprehension<ContainerSyntax, LinkedContainers...>&& l) { return std::move(l).get_var(); };
     } lcv;
+
+    /**
+     * Simple range class with a start and end, plus an iterator because
+     * list comprehension uses iterators to create the cartesian product of all sets.
+     */
+    template<class Type>
+    struct range {
+        using value_type = Type;
+
+        struct iterator {
+            using iterator_category = std::bidirectional_iterator_tag;
+            using value_type = Type;
+            using difference_type = std::ptrdiff_t;
+            using pointer = Type*;
+            using reference = Type&;
+            const range* r;
+            Type cur;
+            iterator& operator++() { r->a() <= r->b() ? ++cur : --cur; return *this; }
+            iterator& operator--() { r->a() <= r->b() ? --cur : ++cur; return *this; }
+            iterator operator++(int) { return { r, r->a() <= r->b() ? cur + 1 : cur - 1 }; }
+            iterator operator--(int) { return { r, r->a() <= r->b() ? cur - 1 : cur + 1 }; }
+            Type& operator*() { return cur; }
+            Type* operator&() { return &cur; }
+            bool operator==(const iterator& o) const { return o.cur == cur; }
+        };
+
+        using const_iterator = iterator;
+        using reverse_iterator = std::reverse_iterator<iterator>;
+        using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+
+        range(Type&& x, Type&& y) { init(a, std::move(x)); init(b, std::move(y)); }
+        range(Type& x, Type&& y) { init(a, x); init(b, std::move(y)); }
+        range(Type&& x, Type& y) { init(a, std::move(x)); init(b, y); }
+        range(Type& x, Type& y) { init(a, x); init(b, y); }
+        range(Type&& x, expr<Type> y) { init(a, std::move(x)); init(b, y); }
+        range(Type& x, expr<Type> y) { init(a, x); init(b, y); }
+        range(Type&& x, var<Type> y) { init(a, std::move(x)); init(b, y); }
+        range(Type& x, var<Type> y) { init(a, x); init(b, y); }
+        range(var<Type> x, Type&& y) { init(a, x); init(b, std::move(y)); }
+        range(expr<Type> x, Type&& y) { init(a, x); init(b, std::move(y)); }
+        range(var<Type> x, Type& y) { init(a, x); init(b, y); }
+        range(expr<Type> x, Type& y) { init(a, x); init(b, y); }
+        range(var<Type> x, var<Type> y) { init(a, x); init(b, y); }
+        range(expr<Type> x, var<Type> y) { init(a, x); init(b, y); }
+        range(var<Type> x, expr<Type> y) { init(a, x); init(b, y); }
+        range(expr<Type> x, expr<Type> y) { init(a, x); init(b, y); }
+
+        iterator begin() { return { this, a() }; }
+        iterator end() { return { this, b() + 1 }; }
+        const_iterator begin() const { return { this, a() }; }
+        const_iterator end() const { return { this, b() + 1 }; }
+        const_iterator cbegin() const { return begin(); }
+        const_iterator cend() const { return end(); }
+        reverse_iterator rbegin() { return end(); }
+        reverse_iterator rend() { return begin(); }
+        const_reverse_iterator rbegin() const { return end(); }
+        const_reverse_iterator rend() const { return begin(); }
+        const_reverse_iterator crbegin() const { return end(); }
+        const_reverse_iterator crend() const { return begin(); }
+
+        size_t size() const { return b() - a(); }
+    private:
+        expr<Type> a, b;
+
+        void init(expr<Type>& a, var<Type> t) { a = [t]() { return t(); }; }
+        void init(expr<Type>& a, expr<Type> t) { a = [t]() { return t(); }; }
+        void init(expr<Type>& a, Type&& t) { a = [t = std::move(t)]() { return t; }; }
+        void init(expr<Type>& a, const Type& t) { a = [&t]() { return t; }; }
+    };
+
+    template<class Type, class T2>
+    range(Type, T2)->range<Type>;
 }
 
 /**
