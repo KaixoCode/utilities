@@ -747,9 +747,6 @@ private:
 
 int main()
 {
-    var<int> a;
-    var<char> b;
-    auto r = lc[map(a, b) | (a, b) <- (range(0, inf), "ABCD"), !var{ std::set{ 'C', 'B' } }.contains(b)];
 
     std::cout << "";
 }
