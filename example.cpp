@@ -767,14 +767,13 @@ int main()
 
         // Determine resulting container
         std::vector<std::string> strings{ "hello", "carrot", "pizza" };
-        var<std::tuple<std::string, int>> e;
-        auto r4 = lc[map(e.get<0>(), e.get<1>()) | e <- (strings, range(0, 100))]; 
-    
+        var<std::string> e;
+        auto r4 = lc[map(e, a) | (e, a) <- (strings, range(0, 100))]; 
+
         // Call std functions
         std::vector<int> ints1{ 5, 2, 7, 3, 1, 9 };
         std::vector<int> ints2{ 4, 1, 8, 9, 3, 2 };
-        var<std::tuple<int, int>> f;
-        auto r5 = lc[max(f.get<0>(), f.get<1>()) | f <- (ints1, ints2)];
+        auto r5 = lc[max(a, b) | (a, b) <- (ints1, ints2)];
     
         // Automatically uses std::string when working with characters (to<char>() because tolower() returns int)
         std::string mystr = "HelloWorld";
@@ -791,9 +790,9 @@ int main()
         auto r9 = lc[x | xs <- xxs, x <- xs];
     
         // Make a utility function
-        auto indices = [x = var<std::tuple<int, int>>{}](auto& data, const var<int>& a) mutable {
+        auto indices = [x = var<int>{}, i = var<int>{}](auto& data, const var<int>& a) mutable {
             // Parallel iteration of value and index, constraint on value == argument, store index.
-            return lc[x.get<1>() | x <- (data, range(0, data.size())), a == x.get<0>()];
+            return lc[i | (x, i) <- (data, range(0, data.size())), a == x];
         };
 
         std::vector<int> datas{ 0, 1, 1, 0, 0, 1, 0 };

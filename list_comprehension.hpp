@@ -178,7 +178,7 @@ namespace kaixo {
 
     template<class Ty>
     struct var : expr<Ty&, var_storage<Ty>> {
-        using type = Ty&;
+        using type = Ty;
         using expr<Ty&, var_storage<Ty>>::expr;
         using expr<Ty&, var_storage<Ty>>::operator=;
 
@@ -602,96 +602,96 @@ namespace kaixo {
 
     template<class ...Types>
     container_syntax<std::vector<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
-        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> vector(Types&& ...tys) {
-        return { { expr{ [tys]() { return tys(); } }... } };
+        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> vector(Types ...tys) {
+        return { std::tuple{ tys... } };
     }
 
     template<class ...Types>
     container_syntax<std::list<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
         std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> list(Types&& ...tys) {
-        return { { expr{ [tys]() { return tys(); } }... } };
+        return { std::tuple{ tys... } };
     }
 
     template<class ...Types>
     container_syntax<std::forward_list<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
         std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> forward_list(Types&& ...tys) {
-        return { { expr{ [tys]() { return tys(); } }... } };
+        return { std::tuple{ tys... } };
     }
 
     template<class ...Types>
     container_syntax<std::deque<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
         std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> deque(Types&& ...tys) {
-        return { { expr{ [tys]() { return tys(); } }... } };
+        return { std::tuple{ tys... } };
     }
     
     template<class ...Types>
     container_syntax<std::stack<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
         std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> stack(Types&& ...tys) {
-        return { { expr{ [tys]() { return tys(); } }... } };
+        return { std::tuple{ tys... } };
     }
     
     template<class ...Types>
     container_syntax<std::queue<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
         std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> queue(Types&& ...tys) {
-        return { { expr{ [tys]() { return tys(); } }... } };
+        return { std::tuple{ tys... } };
     }
     
     template<class ...Types>
     container_syntax<std::priority_queue<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
         std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> priority_queue(Types&& ...tys) {
-        return { { expr{ [tys]() { return tys(); } }... } };
+        return { std::tuple{ tys... } };
     }
 
     template<class ...Types>
     container_syntax<std::set<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
         std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> set(Types&& ...tys) {
-        return { { expr{ [tys]() { return tys(); } }... } };
+        return { std::tuple{ tys... } };
     }
 
     template<class ...Types>
     container_syntax<std::multiset<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
         std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> multiset(Types&& ...tys) {
-        return { { expr{ [tys]() { return tys(); } }... } };
+        return { std::tuple{ tys... } };
     }
 
     template<class ...Types>
     container_syntax<std::unordered_set<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
         std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> unordered_set(Types&& ...tys) {
-        return { { expr{ [tys]() { return tys(); } }... } };
+        return { std::tuple{ tys... } };
     }
     
     template<class ...Types>
     container_syntax<std::unordered_multiset<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
         std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> unordered_multiset(Types&& ...tys) {
-        return { { expr{ [tys]() { return tys(); } }... } };
+        return { std::tuple{ tys... } };
     }
 
     template<class Ty, class ...Types>
     container_syntax<std::map<typename std::decay_t<Ty>::type, std::conditional_t<sizeof...(Types) == 1, 
         std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>, std::tuple<typename std::decay_t<Types>::type...>>>, 
-        typename std::decay_t<Ty>::type, typename std::decay_t<Types>::type...> map(Ty&& ty, Types&& ...tys) {
-        return { { expr{ [ty]() { return ty(); } }, expr{ [tys]() { return tys(); } }... } };
+        typename std::decay_t<Ty>::type, typename std::decay_t<Types>::type...> map(Ty ty, Types ...tys) {
+        return { { expr{ ty }, expr{ tys }... } };
     }
 
     template<class Ty, class ...Types>
     container_syntax<std::multimap<typename std::decay_t<Ty>::type, std::conditional_t<sizeof...(Types) == 1,
         std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>, std::tuple<typename std::decay_t<Types>::type...>>>,
         typename std::decay_t<Ty>::type, typename std::decay_t<Types>::type...> multimap(Ty&& ty, Types&& ...tys) {
-        return { { expr{ [ty]() { return ty(); } }, expr{ [tys]() { return tys(); } }... } };
+        return { { expr{ ty }, expr{ tys }... } };
     }
 
     template<class Ty, class ...Types>
     container_syntax<std::unordered_map<typename std::decay_t<Ty>::type, std::conditional_t<sizeof...(Types) == 1,
         std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>, std::tuple<typename std::decay_t<Types>::type...>>>,
         typename std::decay_t<Ty>::type, typename std::decay_t<Types>::type...> unordered_map(Ty&& ty, Types&& ...tys) {
-        return { { expr{ [ty]() { return ty(); } }, expr{ [tys]() { return tys(); } }... } };
+        return { { expr{ ty }, expr{ tys }... } };
     }
     
     template<class Ty, class ...Types>
     container_syntax<std::unordered_multimap<typename std::decay_t<Ty>::type, std::conditional_t<sizeof...(Types) == 1,
         std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>, std::tuple<typename std::decay_t<Types>::type...>>>,
         typename std::decay_t<Ty>::type, typename std::decay_t<Types>::type...> unordered_multimap(Ty&& ty, Types&& ...tys) {
-        return { { expr{ [ty]() { return ty(); } }, expr{ [tys]() { return tys(); } }... } };
+        return { { expr{ ty }, expr{ tys }... } };
     }
 
     /**
