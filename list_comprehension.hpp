@@ -560,6 +560,7 @@ namespace kaixo {
         std::tuple<var<Args>...> vars;
 
         void operator=(type&& a) { vars = a; }
+        void operator=(const type& a) { vars = a; }
     };
 
     template<class A, class B>
@@ -1152,9 +1153,9 @@ namespace kaixo {
         range(expr<Type> x, infinity& y) { init(a, x); init(b, y); }
 
         iterator begin() { return { a() }; }
-        iterator end() { return { b() + 1 }; }
+        iterator end() { return { b() }; }
         const_iterator begin() const { return { a() }; }
-        const_iterator end() const { return { b() + 1 }; }
+        const_iterator end() const { return { b() }; }
         const_iterator cbegin() const { return begin(); }
         const_iterator cend() const { return end(); }
         reverse_iterator rbegin() { return end(); }
