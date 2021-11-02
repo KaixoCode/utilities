@@ -41,7 +41,7 @@ int main() {
     auto r9 = lc[x | xs <- xxs, x <- xs];
     
     // Make a utility function
-    auto indices = [x = var<int>{}, i = var<int>{}](auto& data, const var<int>& a) mutable {
+    auto indices = [x = var<int>{}, i = var<int>{}](auto& data, var<int> a) mutable {
         // Parallel iteration of value and index, constraint on value == argument, store index.
         return lc[i | (x, i) <- (data, range(0, data.size())), a == x];
     };
