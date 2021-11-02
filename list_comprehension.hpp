@@ -14,7 +14,6 @@
 #include <tuple>
 #include <map>
 #include <optional>
-#include "utils.hpp"
 
 namespace kaixo {
 
@@ -208,7 +207,7 @@ namespace kaixo {
     };
 
     template<class Type>
-    expr(Type)->expr<typename return_type<lambda_signature_t<Type>>::type>;
+    expr(Type)->expr<decltype(std::declval<Type>()())>;
 
     template<class Type>
     var(Type)->var<Type>;
