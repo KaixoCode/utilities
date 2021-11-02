@@ -36,8 +36,8 @@ namespace kaixo {
      */
     template<class Ty>
     struct expr_storage_base {
-        bool cache_value = false;
-        std::optional<std::remove_reference_t<Ty>> evaluated;
+        //bool cache_value = false;
+        //std::optional<std::remove_reference_t<Ty>> evaluated;
         size_t refs = 1;
         virtual Ty get() = 0;
     };
@@ -47,14 +47,14 @@ namespace kaixo {
         Ty lambda;
         lambda_expr_storage(Ty t) : lambda(t) {}
         R get() { 
-            if (!this->cache_value)
+            //if (!this->cache_value)
                 return lambda();
 
-            else {
-                if (!this->evaluated)
-                    this->evaluated = lambda();
-                return this->evaluated.value();
-            }
+            //else {
+            //    if (!this->evaluated)
+            //        this->evaluated = lambda();
+            //    return this->evaluated.value();
+            //}
         }
     };
 
@@ -87,11 +87,28 @@ namespace kaixo {
         ~var_storage_base() { clean(); }
 
         template<class T> requires (!std::is_reference_v<T>)
-        void operator=(T& val) { clean(); ref = &val; state = r; }
+        inline void operator=(T& val) {
+            if constexpr (!std::is_trivially_destructible_v<Ty>)
+                clean(); 
+            ref = &val; 
+            state = r; 
+        }
+
         template<class T> requires (!std::is_reference_v<T>)
-        void operator=(T&& val) { clean(); new (&value) Ty{ val }; state = v; }
+        inline void operator=(T&& val) { 
+            if constexpr (!std::is_trivially_destructible_v<Ty>)
+                clean();
+            new (&value) Ty{ val };
+            state = v; 
+        }
+
         template<class T> requires (!std::is_reference_v<T>)
-        void operator=(const T& val) { clean(); new (&value) Ty{ val }; state = v; }
+        inline void operator=(const T& val) { 
+            if constexpr (!std::is_trivially_destructible_v<Ty>)
+                clean();
+            new (&value) Ty{ val };
+            state = v; 
+        }
 
         size_t refs = 1;
         
@@ -120,10 +137,10 @@ namespace kaixo {
         ~var_storage() { clean(); }
 
         template<class Arg>
-        var_storage& operator=(Arg&& arg) { *storage = std::forward<Arg>(arg); return *this; };
+        inline var_storage& operator=(Arg&& arg) { *storage = std::forward<Arg>(arg); return *this; };
 
 
-        void clean() { if (storage && --storage->refs == 0) delete storage; }
+        inline void clean() { if (storage && --storage->refs == 0) delete storage; }
 
         var_storage_base<Ty>* storage;
     };
@@ -157,13 +174,13 @@ namespace kaixo {
         expr_base(Args&&...args)
             : storage(std::forward<Args>(args)...) {}
 
-        Ty operator()() const { return storage.storage->get(); }
+        inline Ty operator()() const { return storage.storage->get(); }
 
         template<class T>
-        expr_base& operator=(T&& t) { storage.operator=(std::forward<T>(t)); return *this; }
+        inline expr_base& operator=(T&& t) { storage.operator=(std::forward<T>(t)); return *this; }
 
-        template<class Ty> expr<Ty> to() {
-            return { [e = expr<type>{ *this }] () { return static_cast<Ty>(e()); } };
+        template<class Ty> inline expr<Ty> to() {
+            return expr{ [e = expr<type>{ *this }] () { return static_cast<Ty>(e()); } };
         }
 
         Storage storage;
@@ -187,7 +204,7 @@ namespace kaixo {
         var(const var& other) : expr<Ty&, var_storage<Ty>>(other.storage) {}
 
         template<class T>
-        var& operator=(T&& t) { this->storage.operator=(std::forward<T>(t)); return *this; }
+        inline var& operator=(T&& t) { this->storage.operator=(std::forward<T>(t)); return *this; }
     };
 
     template<class Type>
@@ -209,15 +226,15 @@ namespace kaixo {
     template<class Type> requires std::derived_from<std::decay_t<Type>, is_an_expr>
     struct expr_wrapper<Type> {
         std::decay_t<Type> value;
-        typename std::decay_t<Type>::type get() {
-            return value(); 
+        inline typename std::decay_t<Type>::type get() {
+            return value();
         }
     };
 
     template<class Type> requires (!std::derived_from<std::decay_t<Type>, is_an_expr>)
     struct expr_wrapper<Type> {
         Type value;
-        Type get() {
+        inline Type get() {
             return value;
         }
     };
@@ -333,6 +350,49 @@ namespace kaixo {
         lc_mem_fun(type, swap);
     };
 
+    template<class List, class Storage = expr_storage<List>>
+    struct list_expression : expr_base<List, Storage> {
+        using type = std::decay_t<List>;
+        using expr_base<List, Storage>::expr_base;
+        using expr_base<List, Storage>::operator=;
+
+        lc_mem_fun(type, operator=);
+        lc_mem_fun(type, assign);
+        lc_mem_fun(type, get_allocator);
+        lc_mem_fun(type, front);
+        lc_mem_fun(type, back);
+        lc_mem_fun(type, begin);
+        lc_mem_fun(type, cbegin);
+        lc_mem_fun(type, end);
+        lc_mem_fun(type, cend);
+        lc_mem_fun(type, rbegin);
+        lc_mem_fun(type, crbegin);
+        lc_mem_fun(type, rend);
+        lc_mem_fun(type, crend);
+        lc_mem_fun(type, empty);
+        lc_mem_fun(type, size);
+        lc_mem_fun(type, max_size);
+        lc_mem_fun(type, clear);
+        lc_mem_fun(type, insert);
+        lc_mem_fun(type, emplace);
+        lc_mem_fun(type, erase);
+        lc_mem_fun(type, push_back);
+        lc_mem_fun(type, push_front);
+        lc_mem_fun(type, emplace_back);
+        lc_mem_fun(type, emplace_front);
+        lc_mem_fun(type, pop_back);
+        lc_mem_fun(type, pop_front);
+        lc_mem_fun(type, resize);
+        lc_mem_fun(type, swap);
+        lc_mem_fun(type, merge);
+        lc_mem_fun(type, splice);
+        lc_mem_fun(type, remove);
+        lc_mem_fun(type, remove_if);
+        lc_mem_fun(type, reverse);
+        lc_mem_fun(type, unique);
+        lc_mem_fun(type, sort);
+    };
+
     template<class Array, class Storage = expr_storage<Array>>
     struct array_expression : expr_base<Array, Storage> {
         using type = std::decay_t<Array>;
@@ -409,6 +469,7 @@ namespace kaixo {
     make_expr(std::string, string_expression);
     make_expr(std::tuple<Args...>, tuple_expression, class ...Args,);
     make_expr(std::vector<Args...>, vector_expression, class ...Args,);
+    make_expr(std::list<Args...>, list_expression, class ...Args,);
     make_expr(std::array<Arg COMMA N>, array_expression, class Arg, size_t N,);
     make_expr(std::map<Args...>, map_expression, class ...Args,);
 #undef COMMA
@@ -603,67 +664,67 @@ namespace kaixo {
     template<class ...Types>
     container_syntax<std::vector<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
         std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> vector(Types ...tys) {
-        return { std::tuple{ tys... } };
+        return { std::tuple{ expr{ tys }... } };
     }
 
     template<class ...Types>
     container_syntax<std::list<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
-        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> list(Types&& ...tys) {
-        return { std::tuple{ tys... } };
+        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> list(Types ...tys) {
+        return { std::tuple{ expr{ tys }... } };
     }
 
     template<class ...Types>
     container_syntax<std::forward_list<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
-        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> forward_list(Types&& ...tys) {
-        return { std::tuple{ tys... } };
+        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> forward_list(Types ...tys) {
+        return { std::tuple{ expr{ tys }... } };
     }
 
     template<class ...Types>
     container_syntax<std::deque<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
-        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> deque(Types&& ...tys) {
-        return { std::tuple{ tys... } };
+        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> deque(Types ...tys) {
+        return { std::tuple{ expr{ tys }... } };
     }
     
     template<class ...Types>
     container_syntax<std::stack<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
-        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> stack(Types&& ...tys) {
-        return { std::tuple{ tys... } };
+        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> stack(Types ...tys) {
+        return { std::tuple{ expr{ tys }... } };
     }
     
     template<class ...Types>
     container_syntax<std::queue<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
-        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> queue(Types&& ...tys) {
-        return { std::tuple{ tys... } };
+        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> queue(Types ...tys) {
+        return { std::tuple{ expr{ tys }... } };
     }
     
     template<class ...Types>
     container_syntax<std::priority_queue<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
-        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> priority_queue(Types&& ...tys) {
-        return { std::tuple{ tys... } };
+        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> priority_queue(Types ...tys) {
+        return { std::tuple{ expr{ tys }... } };
     }
 
     template<class ...Types>
     container_syntax<std::set<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
-        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> set(Types&& ...tys) {
-        return { std::tuple{ tys... } };
+        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> set(Types ...tys) {
+        return { std::tuple{ expr{ tys }... } };
     }
 
     template<class ...Types>
     container_syntax<std::multiset<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
-        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> multiset(Types&& ...tys) {
-        return { std::tuple{ tys... } };
+        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> multiset(Types ...tys) {
+        return { std::tuple{ expr{ tys }... } };
     }
 
     template<class ...Types>
     container_syntax<std::unordered_set<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
-        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> unordered_set(Types&& ...tys) {
-        return { std::tuple{ tys... } };
+        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> unordered_set(Types ...tys) {
+        return { std::tuple{ expr{ tys }... } };
     }
     
     template<class ...Types>
     container_syntax<std::unordered_multiset<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
-        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> unordered_multiset(Types&& ...tys) {
-        return { std::tuple{ tys... } };
+        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> unordered_multiset(Types ...tys) {
+        return { std::tuple{ expr{ tys }... } };
     }
 
     template<class Ty, class ...Types>
@@ -676,21 +737,21 @@ namespace kaixo {
     template<class Ty, class ...Types>
     container_syntax<std::multimap<typename std::decay_t<Ty>::type, std::conditional_t<sizeof...(Types) == 1,
         std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>, std::tuple<typename std::decay_t<Types>::type...>>>,
-        typename std::decay_t<Ty>::type, typename std::decay_t<Types>::type...> multimap(Ty&& ty, Types&& ...tys) {
+        typename std::decay_t<Ty>::type, typename std::decay_t<Types>::type...> multimap(Ty ty, Types ...tys) {
         return { { expr{ ty }, expr{ tys }... } };
     }
 
     template<class Ty, class ...Types>
     container_syntax<std::unordered_map<typename std::decay_t<Ty>::type, std::conditional_t<sizeof...(Types) == 1,
         std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>, std::tuple<typename std::decay_t<Types>::type...>>>,
-        typename std::decay_t<Ty>::type, typename std::decay_t<Types>::type...> unordered_map(Ty&& ty, Types&& ...tys) {
+        typename std::decay_t<Ty>::type, typename std::decay_t<Types>::type...> unordered_map(Ty ty, Types ...tys) {
         return { { expr{ ty }, expr{ tys }... } };
     }
     
     template<class Ty, class ...Types>
     container_syntax<std::unordered_multimap<typename std::decay_t<Ty>::type, std::conditional_t<sizeof...(Types) == 1,
         std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>, std::tuple<typename std::decay_t<Types>::type...>>>,
-        typename std::decay_t<Ty>::type, typename std::decay_t<Types>::type...> unordered_multimap(Ty&& ty, Types&& ...tys) {
+        typename std::decay_t<Ty>::type, typename std::decay_t<Types>::type...> unordered_multimap(Ty ty, Types ...tys) {
         return { { expr{ ty }, expr{ tys }... } };
     }
 
@@ -711,19 +772,24 @@ namespace kaixo {
 
         // Get result as an expression for later evaluation.
         expr<container> get_var() && {
-            return { [cpy = std::move(*this)]() mutable { return cpy.m_Get(); } };
+            return expr{ [cpy = std::move(*this)]() mutable { return cpy.m_Get(0); } };
         }
 
         expr<container> get_var()& {
-            return { [this] () { return this->m_Get(); } };
+            return expr{ [this] () { return this->m_Get(0); } };
         }
 
-        container operator*() { return m_Get(); }
-        container get() { return this->m_Get(); }
+        container operator*() { return m_Get(0); }
+        container get() { return this->m_Get(0); }
+        container take(std::size_t n) { return this->m_Get(n); }
 
     private:
-        inline container m_Get() {
+        inline container m_Get(std::size_t n) {
             container result;
+
+            // Check whether container has any content 
+            if (std::get<0>(containers).size() == 0)
+                return result;
 
             std::tuple<LinkedContainers::iterator...> its;
             set_begin(its, sequence); // Initialize all iterators to begin
@@ -737,11 +803,13 @@ namespace kaixo {
                 for (auto& c : constraints) // Check all constraints.
                     _match &= c();
 
-                if (_match) // If all matched, generate an entry, and add to result.
+                if (_match) { // If all matched, generate an entry, and add to result.
                     syntax.generate(result);
+                    if (n && result.size() == n)
+                        break;
+                }
 
-                if (!check_end(its, index, sequence))
-                    increment(its, index, sequence); // Increment the iterator
+                increment(its, index, sequence); // Increment the iterator
                 while (check_end(its, index, sequence)) { // And check if it's now at the end.
                     set_begin(its, index, sequence); // Reset the iterator
                     index--;                         // And go to the next index to increment that one.
@@ -749,6 +817,7 @@ namespace kaixo {
                         done = true;
                         break;
                     }
+
                     if (!check_end(its, index, sequence)) {
                         increment(its, index, sequence); // Otherwise increment the iterator and loop to check if also at the end.
                         
@@ -772,35 +841,35 @@ namespace kaixo {
          * is a living nightmare when also working with changing indices...
          */
         template<class T, std::size_t ...Is>
-        void set_begin(T& tuple, std::index_sequence<Is...>) {
+        inline void set_begin(T& tuple, std::index_sequence<Is...>) {
             ((void(std::get<Is>(tuple) = std::get<Is>(containers).begin()),
-              void(std::get<Is>(containers).variable = *std::get<Is>(containers).begin())), ...);
+              std::get<Is>(containers).size() ? (std::get<Is>(containers).variable = *std::get<Is>(containers).begin(), true) : true), ...);
         }
 
         template<class T, std::size_t ...Is>
-        void set_begin(T& tuple, std::size_t i, std::index_sequence<Is...>) {
+        inline void set_begin(T& tuple, std::size_t i, std::index_sequence<Is...>) {
             ((Is == i ? (std::get<Is>(tuple) = std::get<Is>(containers).begin(), true) : true), ...);
         }
 
         template<class T, std::size_t ...Is>
-        bool check_end(T& tuple, size_t i, std::index_sequence<Is...>) {
+        inline bool check_end(T& tuple, size_t i, std::index_sequence<Is...>) {
             bool is_end = false;
             ((Is == i ? (is_end = std::get<Is>(tuple) == std::get<Is>(containers).end(), true) : true), ...);
             return is_end;
         }
 
         template<class T, std::size_t ...Is>
-        void set_values(T& tuple, std::index_sequence<Is...>) {
-            ((std::get<Is>(containers).variable = *std::get<Is>(tuple)), ...);
+        inline void set_values(T& tuple, std::index_sequence<Is...>) {
+            (void(std::get<Is>(containers).variable = *std::get<Is>(tuple)), ...);
         }
 
         template<class T, std::size_t ...Is>
-        void increment(T& tuple, std::size_t index, std::index_sequence<Is...>) {
+        inline void increment(T& tuple, std::size_t index, std::index_sequence<Is...>) {
             ((Is == index ? (++std::get<Is>(tuple), true) : true), ...);
         }
 
         template<class T, std::size_t ...Is>
-        void set_as_end(T& tuple, std::size_t index, std::index_sequence<Is...>) {
+        inline void set_as_end(T& tuple, std::size_t index, std::index_sequence<Is...>) {
             ((Is == index ? (std::get<Is>(tuple) = std::get<Is>(containers).end(), true) : true), ...);
         }
     };
@@ -817,7 +886,7 @@ namespace kaixo {
     template<class Type, class Container, class CType>
     list_comprehension<container_syntax<container_for<std::decay_t<Type>>, Type>, linked_container<CType, Container>>
         operator|(var<Type> v, linked_container<CType, Container>&& c) {
-        return { container_syntax<container_for<std::decay_t<Type>>, Type>{ expr<Type>{ [v]() { return v(); } } }, std::move(c), {} };
+        return { container_syntax<container_for<std::decay_t<Type>>, Type>{ expr{ v } }, std::move(c), {} };
     }
 
     template<class Type, class Container, class CType>
@@ -951,6 +1020,12 @@ namespace kaixo {
         auto operator[](list_comprehension<ContainerSyntax, LinkedContainers...>&& l) { return std::move(l).get_var(); };
     } lcv;
 
+
+    struct infinity {
+        template<class T> requires (std::floating_point<T> || std::integral<T>)
+            operator T() { return std::numeric_limits<T>::max(); }
+    } inf;
+
     /**
      * Simple range class with a start and end, plus an iterator because
      * list comprehension uses iterators to create the cartesian product of all sets.
@@ -965,12 +1040,11 @@ namespace kaixo {
             using difference_type = std::ptrdiff_t;
             using pointer = Type*;
             using reference = Type&;
-            const range* r;
             Type cur;
-            iterator& operator++() { r->a() <= r->b() ? ++cur : --cur; return *this; }
-            iterator& operator--() { r->a() <= r->b() ? --cur : ++cur; return *this; }
-            iterator operator++(int) { return { r, r->a() <= r->b() ? cur + 1 : cur - 1 }; }
-            iterator operator--(int) { return { r, r->a() <= r->b() ? cur - 1 : cur + 1 }; }
+            iterator& operator++() { ++cur; return *this; }
+            iterator& operator--() { --cur; return *this; }
+            iterator operator++(int) { return { cur + 1 }; }
+            iterator operator--(int) { return { cur - 1 }; }
             Type& operator*() { return cur; }
             Type* operator&() { return &cur; }
             bool operator==(const iterator& o) const { return o.cur == cur; }
@@ -996,11 +1070,15 @@ namespace kaixo {
         range(expr<Type> x, var<Type> y) { init(a, x); init(b, y); }
         range(var<Type> x, expr<Type> y) { init(a, x); init(b, y); }
         range(expr<Type> x, expr<Type> y) { init(a, x); init(b, y); }
+        range(Type&& x, infinity& y) { init(a, std::move(x)); init(b, y); }
+        range(Type& x, infinity& y) { init(a, x); init(b, y); }
+        range(var<Type> x, infinity& y) { init(a, x); init(b, y); }
+        range(expr<Type> x, infinity& y) { init(a, x); init(b, y); }
 
-        iterator begin() { return { this, a() }; }
-        iterator end() { return { this, b() + 1 }; }
-        const_iterator begin() const { return { this, a() }; }
-        const_iterator end() const { return { this, b() + 1 }; }
+        iterator begin() { return { a() }; }
+        iterator end() { return { b() + 1 }; }
+        const_iterator begin() const { return { a() }; }
+        const_iterator end() const { return { b() + 1 }; }
         const_iterator cbegin() const { return begin(); }
         const_iterator cend() const { return end(); }
         reverse_iterator rbegin() { return end(); }
@@ -1014,14 +1092,16 @@ namespace kaixo {
     private:
         expr<Type> a, b;
 
-        void init(expr<Type>& a, var<Type> t) { a = [t]() { return t(); }; }
-        void init(expr<Type>& a, expr<Type> t) { a = [t]() { return t(); }; }
+        void init(expr<Type>& a, infinity& t) { a = [&]() { return (Type)t; }; }
+        void init(expr<Type>& a, var<Type> t) { a = [t]() mutable { return t(); }; }
+        void init(expr<Type>& a, expr<Type> t) { a = t; }
         void init(expr<Type>& a, Type&& t) { a = [t = std::move(t)]() { return t; }; }
         void init(expr<Type>& a, const Type& t) { a = [&t]() { return t; }; }
     };
 
     template<class Type, class T2>
     range(Type, T2)->range<Type>;
+
 }
 
 /**

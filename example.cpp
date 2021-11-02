@@ -769,7 +769,7 @@ int main()
         std::vector<std::string> strings{ "hello", "carrot", "pizza" };
         var<std::string> e;
         auto r4 = lc[map(e, a) | (e, a) <- (strings, range(0, 100))]; 
-
+    
         // Call std functions
         std::vector<int> ints1{ 5, 2, 7, 3, 1, 9 };
         std::vector<int> ints2{ 4, 1, 8, 9, 3, 2 };
@@ -790,7 +790,7 @@ int main()
         auto r9 = lc[x | xs <- xxs, x <- xs];
     
         // Make a utility function
-        auto indices = [x = var<int>{}, i = var<int>{}](auto& data, const var<int>& a) mutable {
+        auto indices = [x = var<int>{}, i = var<int>{}](auto& data, var<int> a) mutable {
             // Parallel iteration of value and index, constraint on value == argument, store index.
             return lc[i | (x, i) <- (data, range(0, data.size())), a == x];
         };
