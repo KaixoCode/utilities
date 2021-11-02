@@ -48,7 +48,10 @@ int main() {
     };
 
     std::vector<int> datas{ 0, 1, 1, 0, 0, 1, 0 };
-    auto r12 = indices(datas, 1);
+    auto r10 = indices(datas, 1);
+    
+    // Parallel iteration with names for each instead of tuple
+    auto r11 = lc[(a + b + c) | (a, b, c) <- (range(0, 10), range(0, 10), range(0, 10))];
 }
 ```
 # axial_array
