@@ -751,16 +751,20 @@ struct C {
     C(C&& v) : v(v.v) { puts("move"); }
     C(const C& v) : v(v.v) { puts("copy"); }
     ~C() { puts("destroy"); }
-    int operator+(int a) { return v + a; }
+    C& operator++() { v++; return *this; }
+    bool operator==(const C& o) const { return o.v == v; }
     int v;
 };
 
 int main()
 {
-    std::array<C, 10> cs{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
-    var<C> c;
-    auto res = lc[list(c) | c <- cs, c + 1 == 4];
 
+    var<int> a, b, c;
+
+    std::map<std::string, int> mymap{ { "apple", 1 }, { "carrot", 3 } };
+    var<std::string> key;
+    var<int> value;
+    auto r1 = lc[value | (key, value) <- mymap];
 
     std::cout << "";
 }
