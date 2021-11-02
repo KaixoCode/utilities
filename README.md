@@ -55,6 +55,12 @@ int main() {
     // Split a tuple from a container
     std::vector<std::tuple<int, int, int>> q{ { 0, 1, 1 }, { 2, 3, 3 } };
     auto r12 = lc[a + b + c | (a, b, c) <- q];
+    
+    // Get the key and value from a map
+    std::map<std::string, int> q{ { "apple", 1 }, { "carrot", 3 } };
+    var<std::string> key;
+    var<int> value;
+    auto r1 = lc[value | (key, value) <- q];
 }
 ```
 # axial_array
