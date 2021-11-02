@@ -461,6 +461,43 @@ namespace kaixo {
         lc_mem_fun(type, value_comp);
     };
 
+    template<class Set, class Storage = expr_storage<Set>>
+    struct set_expression : expr_base<Set, Storage> {
+        using type = std::decay_t<Set>;
+        using expr_base<Set, Storage>::expr_base;
+        using expr_base<Set, Storage>::operator=;
+
+        lc_mem_fun(type, operator=);
+        lc_mem_fun(type, get_allocator);
+        lc_mem_fun(type, begin);
+        lc_mem_fun(type, cbegin);
+        lc_mem_fun(type, end);
+        lc_mem_fun(type, cend);
+        lc_mem_fun(type, rbegin);
+        lc_mem_fun(type, crbegin);
+        lc_mem_fun(type, rend);
+        lc_mem_fun(type, crend);
+        lc_mem_fun(type, empty);
+        lc_mem_fun(type, size);
+        lc_mem_fun(type, max_size);
+        lc_mem_fun(type, clear);
+        lc_mem_fun(type, insert);
+        lc_mem_fun(type, emplace);
+        lc_mem_fun(type, emplace_hint);
+        lc_mem_fun(type, erase);
+        lc_mem_fun(type, swap);
+        lc_mem_fun(type, extract);
+        lc_mem_fun(type, merge);
+        lc_mem_fun(type, count);
+        lc_mem_fun(type, find);
+        lc_mem_fun(type, contains);
+        lc_mem_fun(type, equal_range);
+        lc_mem_fun(type, lower_bound);
+        lc_mem_fun(type, upper_bound);
+        lc_mem_fun(type, key_comp);
+        lc_mem_fun(type, value_comp);
+    };
+
 #define COMMA ,
 #define make_expr(cls, e, ...) \
     template<__VA_ARGS__ class Storage> struct expr<cls, Storage> : e<cls, Storage> { using type = cls; using e<cls, Storage>::e; }; \
@@ -470,6 +507,7 @@ namespace kaixo {
     make_expr(std::tuple<Args...>, tuple_expression, class ...Args,);
     make_expr(std::vector<Args...>, vector_expression, class ...Args,);
     make_expr(std::list<Args...>, list_expression, class ...Args,);
+    make_expr(std::set<Args...>, set_expression, class ...Args,);
     make_expr(std::array<Arg COMMA N>, array_expression, class Arg, size_t N,);
     make_expr(std::map<Args...>, map_expression, class ...Args,);
 #undef COMMA
@@ -926,6 +964,20 @@ namespace kaixo {
         return v;
     }
 
+    struct literalview {
+        using value_type = char;
+        using iterator = char*;
+
+        literalview(const char* d) : data(d) {}
+       
+        char* begin() { return const_cast<char*>(data.data()); }
+        char* end() { return const_cast<char*>(data.data() + data.size()); }
+        size_t size() const { return data.size(); }
+    
+    private: 
+        std::string_view data;
+    };
+
     /**
      * Used for parallel iteration of containers. Stores multiple containers
      * and defines an iterator that returns a tuple of references to the values.
@@ -1001,9 +1053,24 @@ namespace kaixo {
         return { { { std::forward<A>(a) }, { std::forward<B>(b) } } };
     }
 
+    template<has_begin_end B>
+    tuple_of_containers<literalview, B> operator,(const char* a, B&& b) {
+        return { { literalview{ a }, { std::forward<B>(b) } } };
+    }
+
+    template<has_begin_end A>
+    tuple_of_containers<A, literalview> operator,(A&& a, const char* b) {
+        return { { { std::forward<A>(a) }, literalview{ b } } };
+    }
+
     template<has_begin_end A, has_begin_end ...Rest>
     tuple_of_containers<Rest..., A> operator,(tuple_of_containers<Rest...>&& a, A&& b) {
         return { std::tuple_cat(a.containers, std::tuple{ std::forward<A>(b) }) };
+    }
+
+    template<has_begin_end ...Rest>
+    tuple_of_containers<Rest..., literalview> operator,(tuple_of_containers<Rest...>&& a, const char* b) {
+        return { std::tuple_cat(a.containers, std::tuple{ literalview{ b } }) };
     }
 
     /**
