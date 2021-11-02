@@ -1,5 +1,5 @@
 # list comprehension
- List comprehension in C++. 
+ List comprehension in C++. Works by creating `expr<Result>` objects, which are basically lambdas that return the result of some expression, so the result can be evaluated later for some values of `var<Type>` used in the expression. a var holds either a value or a reference.
 ```cpp
 using namespace kaixo;
 int main() {
