@@ -747,6 +747,13 @@ private:
 
 int main()
 {
+    std::vector<std::vector<std::vector<int>>> xxxs{ { { 1, 2 }, { 3, 4 } }, { { 5, 6 }, { 7, 8 } }, { { 9, 10 }, { 11, 12 } } };
+    var<int> x;
+    var<std::vector<int>> xs;
+    var<std::vector<std::vector<int>>> xxs;
+    //auto r = lc[lcv[lcv[x | x <- xs] | xs <- xxs] | xxs <- xxxs];
+    auto r = lc[x | xxs <- xxxs, xs <- xxs, x <- xs];
+
 
     std::cout << "";
 }

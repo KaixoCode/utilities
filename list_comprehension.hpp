@@ -824,6 +824,9 @@ namespace kaixo {
         inline container m_Get(std::size_t n) {
             container result;
 
+            bool needs_reset[sizeof...(LinkedContainers)];
+            std::fill(std::begin(needs_reset), std::end(needs_reset), false);
+
             // Check whether container has any content 
             if (std::get<0>(containers).size() == 0)
                 return result;
@@ -858,11 +861,16 @@ namespace kaixo {
                     if (!check_end(its, index, sequence)) {
                         increment(its, index, sequence); // Otherwise increment the iterator and loop to check if also at the end.
                         
-                        if constexpr (has_var) { // When containers contain variables, we must keep iterator up to date.
-                            if (!check_end(its, index, sequence)) {
-                                set_values(its, sequence);
-                                set_begin(its, index + 1, sequence);
-                            }
+                        needs_reset[index + 1] = true;
+                    }
+                }
+                if constexpr (has_var) {
+                    //for (int i = sizeof...(LinkedContainers) - 1; i >= 0; i--) {
+                    for (int i = 0; i < sizeof...(LinkedContainers); i++) {
+                        if (needs_reset[i]) {
+                            set_values(its, sequence);
+                            set_begin(its, i, sequence);
+                            needs_reset[i] = false;
                         }
                     }
                 }
