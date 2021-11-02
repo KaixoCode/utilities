@@ -35,37 +35,28 @@ namespace kaixo {
      */
     template<class Ty>
     struct expr_storage_base {
-        //bool cache_value = false;
-        //std::optional<std::remove_reference_t<Ty>> evaluated;
         size_t refs = 1;
         virtual Ty get() = 0;
     };
 
-    template<class R, class Ty>
+    template<class R, std::invocable<> Ty>
     struct lambda_expr_storage : expr_storage_base<R> {
         Ty lambda;
         lambda_expr_storage(Ty t) : lambda(t) {}
         R get() { 
-            //if (!this->cache_value)
-                return lambda();
-
-            //else {
-            //    if (!this->evaluated)
-            //        this->evaluated = lambda();
-            //    return this->evaluated.value();
-            //}
+            return lambda();
         }
     };
 
     template<class Ty>
     struct expr_storage {
-        template<class T>
+        template<std::invocable<> T>
         expr_storage(T t) : storage(new lambda_expr_storage<Ty, decltype(t)>{ t }) {}
         expr_storage() : storage(nullptr) {}
         expr_storage(expr_storage&& other) : storage(other.storage) { other.storage = nullptr; }
         expr_storage(const expr_storage& other) : storage(other.storage) { storage->refs++; }
         ~expr_storage() { clean(); }
-        template<class T>
+        template<std::invocable<> T>
         void operator=(T t) { clean(); storage = new lambda_expr_storage<Ty, decltype(t)>{ t }; }
         void clean() { if (storage && --storage->refs == 0) delete storage; }
         expr_storage_base<Ty>* storage;
@@ -78,8 +69,9 @@ namespace kaixo {
      */
     template<class Ty>
     struct var_storage_base {
-        enum _state { v, r } state = v;
+        enum _state { n, v, r } state = n;
         
+        var_storage_base() : ref(nullptr), state(n) {}
         var_storage_base(Ty&& val) : value(std::move(val)), state(v) {}
         var_storage_base(Ty& val) : ref(&val), state(r) {}
         var_storage_base(const Ty& val) : value(val), state(v) {}
@@ -111,7 +103,12 @@ namespace kaixo {
 
         size_t refs = 1;
         
-        inline Ty& get() { return state == v ? value : *ref; };
+        inline Ty& get() {
+            if constexpr (std::is_default_constructible_v<Ty>)
+                if (state == n)
+                    new (&value) Ty, state = v;
+            return state == v ? value : *ref; 
+        };
 
         inline void clean() { 
             if constexpr (!std::is_trivially_destructible_v<Ty>)
@@ -127,7 +124,7 @@ namespace kaixo {
     template<class Ty>
     struct var_storage {
         using value_type = std::decay_t<Ty>;
-        var_storage() : storage(new var_storage_base{ Ty{} }) {}
+        var_storage() : storage(new var_storage_base<Ty>{ }) {}
         var_storage(value_type&& t) : storage(new var_storage_base<Ty>{ std::move(t) }) {}
         var_storage(value_type& t) : storage(new var_storage_base<Ty>{ t }) {}
         var_storage(const value_type& t) : storage(new var_storage_base<Ty>{ t }) {}
@@ -137,7 +134,6 @@ namespace kaixo {
 
         template<class Arg>
         inline var_storage& operator=(Arg&& arg) { *storage = std::forward<Arg>(arg); return *this; };
-
 
         inline void clean() { if (storage && --storage->refs == 0) delete storage; }
 
@@ -167,8 +163,6 @@ namespace kaixo {
         expr_base(expr<Ty, Storage>&& other) : storage(std::move(other.storage)) {}
         expr_base(const expr<Ty, Storage>& other) : storage(other.storage) {}
 
-        expr_base(var<Ty> v) requires std::same_as<Storage, expr_storage<Ty>> : storage([v]() { return v(); }) {}
-
         template<class ...Args> 
         expr_base(Args&&...args)
             : storage(std::forward<Args>(args)...) {}
@@ -188,13 +182,15 @@ namespace kaixo {
     template<class Ty, class Storage>
     struct expr : expr_base<Ty, Storage> {
         using type = Ty;
+        using value_type = Ty;
         using expr_base<Ty, Storage>::expr_base;
         using expr_base<Ty, Storage>::operator=;
     };
 
     template<class Ty>
     struct var : expr<Ty&, var_storage<Ty>> {
-        using type = Ty;
+        using type = Ty&;
+        using value_type = Ty;
         using expr<Ty&, var_storage<Ty>>::expr;
         using expr<Ty&, var_storage<Ty>>::operator=;
 
@@ -204,6 +200,10 @@ namespace kaixo {
 
         template<class T>
         inline var& operator=(T&& t) { this->storage.operator=(std::forward<T>(t)); return *this; }
+
+        operator expr<Ty&>() {
+            return expr<Ty&> { [v = *this] () mutable->Ty& { return v(); } };
+        }
     };
 
     template<class Type>
@@ -499,8 +499,8 @@ namespace kaixo {
 
 #define COMMA ,
 #define make_expr(cls, e, ...) \
-    template<__VA_ARGS__ class Storage> struct expr<cls, Storage> : e<cls, Storage> { using type = cls; using e<cls, Storage>::e; }; \
-    template<__VA_ARGS__ class Storage> struct expr<cls&, Storage> : e<cls&, Storage> { using type = cls; using e<cls&, Storage>::e; }; \
+    template<__VA_ARGS__ class Storage> struct expr<cls, Storage> : e<cls, Storage> { using type = cls; using value_type = cls; using e<cls, Storage>::e; }; \
+    template<__VA_ARGS__ class Storage> struct expr<cls&, Storage> : e<cls&, Storage> { using type = cls; using value_type = cls; using e<cls&, Storage>::e; }; \
 
     make_expr(std::string, string_expression);
     make_expr(std::tuple<Args...>, tuple_expression, class ...Args,);
@@ -621,11 +621,12 @@ namespace kaixo {
      * creates a container from some class that defines a begin() and end(), and the '<'
      * links that container to a variable.
      */
-    template<template<class...> class Container, class ...Type>
-    auto operator-(Container<Type...>& r) -> container<typename Container<Type...>::value_type, Container<Type...>&> { return { r }; }
 
-    template<template<class...> class Container, class ...Type>
-    auto operator-(Container<Type...>&& r) -> container<typename Container<Type...>::value_type, Container<Type...>> { return { std::move(r) }; }
+    template<has_begin_end Container>
+    auto operator-(Container& r) -> container<typename Container::value_type, Container&> { return { r }; }
+
+    template<has_begin_end Container>
+    auto operator-(Container&& r) -> container<typename Container::value_type, Container> { return { std::move(r) }; }
 
     template<has_begin_end Type>
     auto operator-(var<Type> r) -> container<typename Type::value_type, var<Type>> { return { r }; }
@@ -669,12 +670,12 @@ namespace kaixo {
      */
 
     template<class A, class B>
-    container_syntax<std::vector<std::tuple<A, B>>, A, B> operator,(expr<A> a, var<B> b) {
+    container_syntax<std::vector<std::tuple<A, B>>, A, B&> operator,(expr<A> a, var<B> b) {
         return { { a, b } };
     }
 
     template<class A, class B>
-    container_syntax<std::vector<std::tuple<A, B>>, A, B> operator,(var<A> a, expr<B> b) {
+    container_syntax<std::vector<std::tuple<A, B>>, A&, B> operator,(var<A> a, expr<B> b) {
         return { { a, b } };
     }
 
@@ -684,7 +685,7 @@ namespace kaixo {
     }
 
     template<class A, class ...Rest>
-    container_syntax<std::vector<std::tuple<Rest..., A>>, Rest..., A> operator,(tuple_of_vars<Rest...>&& a, expr<A> b) {
+    container_syntax<std::vector<std::tuple<Rest..., A>>, Rest&..., A> operator,(tuple_of_vars<Rest...>&& a, expr<A> b) {
         return { std::tuple_cat(a.vars, std::tuple{ b }) };
     }
 
@@ -699,97 +700,97 @@ namespace kaixo {
     }
 
     template<class ...Types>
-    container_syntax<std::vector<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
-        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> vector(Types ...tys) {
-        return { std::tuple{ expr{ tys }... } };
+    container_syntax<std::vector<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::value_type...>>,
+        std::tuple<typename std::decay_t<Types>::value_type...>>>, typename std::decay_t<Types>::type...> vector(Types ...tys) {
+        return { std::tuple{ (expr<typename std::decay_t<Types>::type>)tys... } };
     }
 
     template<class ...Types>
-    container_syntax<std::list<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
-        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> list(Types ...tys) {
-        return { std::tuple{ expr{ tys }... } };
+    container_syntax<std::list<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::value_type...>>,
+        std::tuple<typename std::decay_t<Types>::value_type...>>>, typename std::decay_t<Types>::type...> list(Types ...tys) {
+        return { std::tuple{ (expr<typename std::decay_t<Types>::type>)tys... } };
     }
 
     template<class ...Types>
-    container_syntax<std::forward_list<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
-        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> forward_list(Types ...tys) {
-        return { std::tuple{ expr{ tys }... } };
+    container_syntax<std::forward_list<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::value_type...>>,
+        std::tuple<typename std::decay_t<Types>::value_type...>>>, typename std::decay_t<Types>::type...> forward_list(Types ...tys) {
+        return { std::tuple{ (expr<typename std::decay_t<Types>::type>)tys... } };
     }
 
     template<class ...Types>
-    container_syntax<std::deque<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
-        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> deque(Types ...tys) {
-        return { std::tuple{ expr{ tys }... } };
+    container_syntax<std::deque<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::value_type...>>,
+        std::tuple<typename std::decay_t<Types>::value_type...>>>, typename std::decay_t<Types>::type...> deque(Types ...tys) {
+        return { std::tuple{ (expr<typename std::decay_t<Types>::type>)tys... } };
     }
     
     template<class ...Types>
-    container_syntax<std::stack<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
-        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> stack(Types ...tys) {
-        return { std::tuple{ expr{ tys }... } };
+    container_syntax<std::stack<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::value_type...>>,
+        std::tuple<typename std::decay_t<Types>::value_type...>>>, typename std::decay_t<Types>::type...> stack(Types ...tys) {
+        return { std::tuple{ (expr<typename std::decay_t<Types>::type>)tys... } };
     }
     
     template<class ...Types>
-    container_syntax<std::queue<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
-        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> queue(Types ...tys) {
-        return { std::tuple{ expr{ tys }... } };
+    container_syntax<std::queue<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::value_type...>>,
+        std::tuple<typename std::decay_t<Types>::value_type...>>>, typename std::decay_t<Types>::type...> queue(Types ...tys) {
+        return { std::tuple{ (expr<typename std::decay_t<Types>::type>)tys... } };
     }
     
     template<class ...Types>
-    container_syntax<std::priority_queue<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
-        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> priority_queue(Types ...tys) {
-        return { std::tuple{ expr{ tys }... } };
+    container_syntax<std::priority_queue<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::value_type...>>,
+        std::tuple<typename std::decay_t<Types>::value_type...>>>, typename std::decay_t<Types>::type...> priority_queue(Types ...tys) {
+        return { std::tuple{ (expr<typename std::decay_t<Types>::type>)tys... } };
     }
 
     template<class ...Types>
-    container_syntax<std::set<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
-        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> set(Types ...tys) {
-        return { std::tuple{ expr{ tys }... } };
+    container_syntax<std::set<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::value_type...>>,
+        std::tuple<typename std::decay_t<Types>::value_type...>>>, typename std::decay_t<Types>::type...> set(Types ...tys) {
+        return { std::tuple{ (expr<typename std::decay_t<Types>::type>)tys... } };
     }
 
     template<class ...Types>
-    container_syntax<std::multiset<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
-        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> multiset(Types ...tys) {
-        return { std::tuple{ expr{ tys }... } };
+    container_syntax<std::multiset<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::value_type...>>,
+        std::tuple<typename std::decay_t<Types>::value_type...>>>, typename std::decay_t<Types>::type...> multiset(Types ...tys) {
+        return { std::tuple{ (expr<typename std::decay_t<Types>::type>)tys... } };
     }
 
     template<class ...Types>
-    container_syntax<std::unordered_set<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
-        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> unordered_set(Types ...tys) {
-        return { std::tuple{ expr{ tys }... } };
+    container_syntax<std::unordered_set<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::value_type...>>,
+        std::tuple<typename std::decay_t<Types>::value_type...>>>, typename std::decay_t<Types>::type...> unordered_set(Types ...tys) {
+        return { std::tuple{ (expr<typename std::decay_t<Types>::type>)tys... } };
     }
     
     template<class ...Types>
-    container_syntax<std::unordered_multiset<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>,
-        std::tuple<typename std::decay_t<Types>::type...>>>, typename std::decay_t<Types>::type...> unordered_multiset(Types ...tys) {
-        return { std::tuple{ expr{ tys }... } };
+    container_syntax<std::unordered_multiset<std::conditional_t<sizeof...(Types) == 1, std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::value_type...>>,
+        std::tuple<typename std::decay_t<Types>::value_type...>>>, typename std::decay_t<Types>::type...> unordered_multiset(Types ...tys) {
+        return { std::tuple{ (expr<typename std::decay_t<Types>::type>)tys... } };
     }
 
     template<class Ty, class ...Types>
-    container_syntax<std::map<typename std::decay_t<Ty>::type, std::conditional_t<sizeof...(Types) == 1, 
-        std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>, std::tuple<typename std::decay_t<Types>::type...>>>, 
+    container_syntax<std::map<typename std::decay_t<Ty>::value_type, std::conditional_t<sizeof...(Types) == 1,
+        std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::value_type...>>, std::tuple<typename std::decay_t<Types>::value_type...>>>,
         typename std::decay_t<Ty>::type, typename std::decay_t<Types>::type...> map(Ty ty, Types ...tys) {
-        return { { expr{ ty }, expr{ tys }... } };
+        return { { (expr<typename std::decay_t<Ty>::type>)ty, (expr<typename std::decay_t<Types>::type>)tys... } };
     }
 
     template<class Ty, class ...Types>
-    container_syntax<std::multimap<typename std::decay_t<Ty>::type, std::conditional_t<sizeof...(Types) == 1,
-        std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>, std::tuple<typename std::decay_t<Types>::type...>>>,
+    container_syntax<std::multimap<typename std::decay_t<Ty>::value_type, std::conditional_t<sizeof...(Types) == 1,
+        std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::value_type...>>, std::tuple<typename std::decay_t<Types>::value_type...>>>,
         typename std::decay_t<Ty>::type, typename std::decay_t<Types>::type...> multimap(Ty ty, Types ...tys) {
-        return { { expr{ ty }, expr{ tys }... } };
+        return { { (expr<typename std::decay_t<Ty>::type>)ty, (expr<typename std::decay_t<Types>::type>)tys... } };
     }
 
     template<class Ty, class ...Types>
-    container_syntax<std::unordered_map<typename std::decay_t<Ty>::type, std::conditional_t<sizeof...(Types) == 1,
-        std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>, std::tuple<typename std::decay_t<Types>::type...>>>,
+    container_syntax<std::unordered_map<typename std::decay_t<Ty>::value_type, std::conditional_t<sizeof...(Types) == 1,
+        std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::value_type...>>, std::tuple<typename std::decay_t<Types>::value_type...>>>,
         typename std::decay_t<Ty>::type, typename std::decay_t<Types>::type...> unordered_map(Ty ty, Types ...tys) {
-        return { { expr{ ty }, expr{ tys }... } };
+        return { {(expr<typename std::decay_t<Ty>::type>)ty, (expr<typename std::decay_t<Types>::type>)tys... } };
     }
     
     template<class Ty, class ...Types>
-    container_syntax<std::unordered_multimap<typename std::decay_t<Ty>::type, std::conditional_t<sizeof...(Types) == 1,
-        std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::type...>>, std::tuple<typename std::decay_t<Types>::type...>>>,
+    container_syntax<std::unordered_multimap<typename std::decay_t<Ty>::value_type, std::conditional_t<sizeof...(Types) == 1,
+        std::tuple_element_t<0, std::tuple<typename std::decay_t<Types>::value_type...>>, std::tuple<typename std::decay_t<Types>::value_type...>>>,
         typename std::decay_t<Ty>::type, typename std::decay_t<Types>::type...> unordered_multimap(Ty ty, Types ...tys) {
-        return { { expr{ ty }, expr{ tys }... } };
+        return { { (expr<typename std::decay_t<Ty>::type>)ty, (expr<typename std::decay_t<Types>::type>)tys... } };
     }
 
     /**
@@ -888,7 +889,8 @@ namespace kaixo {
         template<class T, std::size_t ...Is>
         inline void set_begin(T& tuple, std::index_sequence<Is...>) {
             ((void(std::get<Is>(tuple) = std::get<Is>(containers).begin()),
-              std::get<Is>(containers).size() ? (std::get<Is>(containers).variable = *std::get<Is>(containers).begin(), true) : true), ...);
+              std::get<Is>(containers).size() ? (std::get<Is>(containers).variable = *std::get<Is>(containers).begin(), true) : true), 
+                ...);
         }
 
         template<class T, std::size_t ...Is>
@@ -929,9 +931,9 @@ namespace kaixo {
     }
 
     template<class Type, class Container, class CType>
-    list_comprehension<container_syntax<container_for<std::decay_t<Type>>, Type>, linked_container<CType, Container>>
+    list_comprehension<container_syntax<container_for<std::decay_t<Type>>, Type&>, linked_container<CType, Container>>
         operator|(var<Type> v, linked_container<CType, Container>&& c) {
-        return { container_syntax<container_for<std::decay_t<Type>>, Type>{ expr{ v } }, std::move(c), {} };
+        return { container_syntax<container_for<std::decay_t<Type>>, Type&>{ v }, std::move(c), {} };
     }
 
     template<class Type, class Container, class CType>
@@ -941,9 +943,9 @@ namespace kaixo {
     }
 
     template<class Container, class CType, class...Args>
-    list_comprehension<container_syntax<std::vector<std::tuple<Args...>>, Args...>, linked_container<CType, Container>>
+    list_comprehension<container_syntax<std::vector<std::tuple<Args...>>, Args&...>, linked_container<CType, Container>>
         operator|(tuple_of_vars<Args...>&& v, linked_container<CType, Container>&& c) {
-        return { container_syntax<std::vector<std::tuple<Args...>>, Args...>{ v.vars }, std::move(c), {} };
+        return { container_syntax<std::vector<std::tuple<Args...>>, Args&...>{ v.vars }, std::move(c), {} };
     }
 
     /**

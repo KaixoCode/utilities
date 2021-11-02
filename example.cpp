@@ -745,14 +745,21 @@ private:
 
 #include "list_comprehension.hpp"
 
+struct C {
+    C() = delete;
+    C(int v) : v(v) { puts("create"); };
+    C(C&& v) : v(v.v) { puts("move"); }
+    C(const C& v) : v(v.v) { puts("copy"); }
+    ~C() { puts("destroy"); }
+    int operator+(int a) { return v + a; }
+    int v;
+};
+
 int main()
 {
-    std::vector<std::vector<std::vector<int>>> xxxs{ { { 1, 2 }, { 3, 4 } }, { { 5, 6 }, { 7, 8 } }, { { 9, 10 }, { 11, 12 } } };
-    var<int> x;
-    var<std::vector<int>> xs;
-    var<std::vector<std::vector<int>>> xxs;
-    //auto r = lc[lcv[lcv[x | x <- xs] | xs <- xxs] | xxs <- xxxs];
-    auto r = lc[x | xxs <- xxxs, xs <- xxs, x <- xs];
+    std::array<C, 10> cs{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+    var<C> c;
+    auto res = lc[list(c) | c <- cs, c + 1 == 4];
 
 
     std::cout << "";
