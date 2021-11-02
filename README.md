@@ -18,7 +18,7 @@ int main() {
 
     // Determine resulting container
     std::vector<std::string> strings{ "hello", "carrot", "pizza" };
-    var<std::tuple<std::string, int>> e;
+    var<std::string> e;
     auto r4 = lc[map(e, a) | (e, a) <- (strings, range(0, 100))]; 
     
     // Call std functions
