@@ -740,17 +740,10 @@ private:
 
 #include <list>
 
-struct callable {
-    template<class ...Tys>
-    void operator()(Tys&&...args) {}
-};
-
 #include <functional>
 
 
 #include "list_comprehension.hpp"
-
-
 
 
 
@@ -760,21 +753,7 @@ int main()
 
     {
 
-
-
-
-
-        //var<int> x, y;
-        //auto wooflist = lc[x*y | x <- std::vector{ 2, 5, 10 }, y <- std::vector{ 8, 10, 11 }, x*y > 50];
-        //
-        //
-        //
-        //auto nouns = { "hobo", "frog", "pope" };
-        //auto adjectives = { "lazy", "grouchy", "scheming" };
-        //var<std::string> adjective, noun;
-        //auto res = lc[adjective + " " + noun | adjective <- adjectives, noun <- nouns];
-
-
+        
         // Simple list comprehension with ranges and a constraint.
         var<int> a, b, c;
         auto r1 = lc[(a, b, c) | c <- range(1, 11), b <- range(1, c), a <- range(1, b), a*a + b*b == c*c];
@@ -820,11 +799,6 @@ int main()
 
         std::vector<int> datas{ 0, 1, 1, 0, 0, 1, 0 };
         auto r12 = indices(datas, 1);
-
-        [x = var<int>{}] () mutable {
-            return lc[x | x <- range(0, 10)];
-        };
-
         
         std::cout << "";
     }
