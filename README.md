@@ -60,7 +60,7 @@ int main() {
     std::map<std::string, int> q{ { "apple", 1 }, { "carrot", 3 } };
     var<std::string> key;
     var<int> value;
-    auto r1 = lc[value | (key, value) <- q];
+    auto r13 = lc[value | (key, value) <- q];
 }
 ```
 # axial_array
