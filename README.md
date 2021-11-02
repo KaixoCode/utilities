@@ -51,6 +51,10 @@ int main() {
     
     // Parallel iteration with names for each instead of tuple
     auto r11 = lc[(a + b + c) | (a, b, c) <- (range(0, 10), range(0, 10), range(0, 10))];
+    
+    // Split a tuple from a container
+    std::vector<std::tuple<int, int, int>> q{ { 0, 1, 1 }, { 2, 3, 3 } };
+    auto r12 = lc[a + b + c | (a, b, c) <- q];
 }
 ```
 # axial_array
