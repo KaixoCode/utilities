@@ -77,8 +77,7 @@ namespace kaixo {
         var_storage_base(const Ty& val) : value(val), state(v) {}
         ~var_storage_base() { clean(); }
 
-        template<class T> requires (!std::is_reference_v<T>)
-        inline void operator=(T& val) {
+        inline void operator=(Ty& val) {
             if constexpr (!std::is_trivially_destructible_v<Ty>)
                 clean(); 
             ref = &val; 
@@ -89,7 +88,7 @@ namespace kaixo {
         inline void operator=(T&& val) { 
             if constexpr (!std::is_trivially_destructible_v<Ty>)
                 clean();
-            new (&value) Ty{ val };
+            new (&value) Ty{ std::move(val) };
             state = v; 
         }
 
@@ -199,7 +198,7 @@ namespace kaixo {
         var(const var& other) : expr<Ty&, var_storage<Ty>>(other.storage) {}
 
         template<class T>
-        inline var& operator=(T&& t) { this->storage.operator=(std::forward<T>(t)); return *this; }
+        inline var& operator=(T&& t) { this->storage.storage->operator=(std::forward<T>(t)); return *this; }
 
         operator expr<Ty&>() {
             return expr<Ty&> { [v = *this] () mutable->Ty& { return v(); } };
@@ -867,7 +866,6 @@ namespace kaixo {
                     }
                 }
                 if constexpr (has_var) {
-                    //for (int i = sizeof...(LinkedContainers) - 1; i >= 0; i--) {
                     for (int i = 0; i < sizeof...(LinkedContainers); i++) {
                         if (needs_reset[i]) {
                             set_values(its, sequence);
@@ -890,7 +888,7 @@ namespace kaixo {
         template<class T, std::size_t ...Is>
         inline void set_begin(T& tuple, std::index_sequence<Is...>) {
             ((void(std::get<Is>(tuple) = std::get<Is>(containers).begin()),
-              std::get<Is>(containers).size() ? (std::get<Is>(containers).variable = *std::get<Is>(containers).begin(), true) : true), 
+              has_var && std::get<Is>(containers).size() ? (std::get<Is>(containers).variable = *std::get<Is>(containers).begin(), true) : true),
                 ...);
         }
 

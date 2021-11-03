@@ -758,14 +758,10 @@ struct C {
 
 int main()
 {
-
-    var<int> a, b, c;
-
-    std::map<std::string, int> mymap{ { "apple", 1 }, { "carrot", 3 } };
+    std::map<std::string, int> q{ { "apple", 1 }, { "carrot", 3 } };
     var<std::string> key;
     var<int> value;
-    auto r1 = lc[value | (key, value) <- mymap];
-
+    auto r13 = lc[value | (key, value) <- q];
     std::cout << "";
 }
 
