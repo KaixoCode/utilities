@@ -57,10 +57,10 @@ int main() {
     auto r12 = lc[a + b + c | (a, b, c) <- q];
     
     // Get the key and value from a map
-    std::map<std::string, int> q{ { "apple", 1 }, { "carrot", 3 } };
+    std::map<std::string, int> mymap{ { "apple", 1 }, { "carrot", 3 } };
     var<std::string> key;
     var<int> value;
-    auto r13 = lc[value | (key, value) <- q];
+    auto r13 = lc[value | (key, value) <- mymap];
 }
 ```
 # axial_array
