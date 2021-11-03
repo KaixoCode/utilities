@@ -6,7 +6,7 @@ int main() {
     
     // Simple list comprehension with ranges and a constraint.
     var<int> a, b, c;
-    auto r1 = lc[(a, b, c) | c <- range(1, 11), b <- range(1, c), a <- range(1, b), a*a + b*b == c*c];
+    auto r1 = lc[(a, b, c) | c <- range(1, 11), b <- range(1, c+1), a <- range(1, b+1), a*a + b*b == c*c];
 
     // Parallel iteration
     var<std::tuple<int, int>> d;
