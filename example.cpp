@@ -1125,9 +1125,6 @@ public:
         const value_type& operator*() { return *this->m_Base->m_Value; }
     };
 
-    using reverse_iterator = std::reverse_iterator<iterator>;
-    using const_reverse_iterator = std::reverse_iterator<const_iterator>;
-
     hash_map() { resize(16); }
     hash_map(std::initializer_list<value_type> il) {
         resize(16); // Insert everything from list
@@ -1171,16 +1168,10 @@ public:
     size_type buckets() const { return m_Buckets; }
     iterator begin() { return iterator{ m_Nodes, m_Buckets }; }
     iterator end() { return iterator{ m_Nodes + m_Buckets, 0 }; }
-    reverse_iterator rbegin() { return reverse_iterator{ end() }; }
-    reverse_iterator rend() { return reverse_iterator{ begin() }; }
-    const_reverse_iterator rbegin() const { return const_reverse_iterator{ end() }; }
-    const_reverse_iterator rend() const { return const_reverse_iterator{ begin() }; }
-    const_iterator begin() const { return iterator{ m_Nodes, m_Buckets }; }
-    const_iterator end() const { return iterator{ m_Nodes + m_Buckets, 0 }; }
-    const_iterator cbegin() const { return iterator{ m_Nodes, m_Buckets }; }
-    const_iterator cend() const { return iterator{ m_Nodes + m_Buckets, 0 }; }
-    const_reverse_iterator crbegin() const { return const_reverse_iterator{ end() }; }
-    const_reverse_iterator crend() const { return const_reverse_iterator{ begin() }; }
+    const_iterator begin() const { return const_iterator{ m_Nodes, m_Buckets }; }
+    const_iterator end() const { return const_iterator{ m_Nodes + m_Buckets, 0 }; }
+    const_iterator cbegin() const { return const_iterator{ m_Nodes, m_Buckets }; }
+    const_iterator cend() const { return const_iterator{ m_Nodes + m_Buckets, 0 }; }
     Ty& operator[](const Ky& key) { return m_Nodes[hash(key)]->find_or_insert(key, m_Size)->second; }
     Ty& puts(const Ky& key, const Ty& val) { return m_Nodes[hash(key)]->puts({ key, val }, m_Size)->second; }
     Ty& puts(const value_type& val) { return m_Nodes[hash(val.first)]->puts(val, m_Size)->second; }
@@ -1209,18 +1200,165 @@ private:
     }
 };
 
+template<class Ty>
+class linked_list {
+public:
+    using value_type = Ty;
+    using reference = Ty&;
+    using const_reference = const Ty&;
+    using pointer = Ty*;
+    using const_pointer = const Ty*;
+    using difference_type = std::ptrdiff_t;
+    using size_type = std::size_t;
+
+    struct node {
+        value_type value;
+        node* next = nullptr;
+
+        ~node() { delete next; }
+
+        reference push(const_reference val) { return next ? next->push(val) : (next = new node{ val })->value; };
+
+        template<class ...Args>
+        reference emplace(Args&& ...args) {
+            return next
+                ? next->emplace(std::forward<Args>(args)...)
+                : (next = new node{ { std::forward<Args>(args)... } })->value;
+        };
+    };
+
+    class const_iterator {
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using value_type = typename linked_list::value_type;
+        using difference_type = typename linked_list::difference_type;
+        using pointer = typename linked_list::const_pointer;
+        using reference = const value_type&;
+
+        const_iterator() {}
+        const_iterator(node* n) : m_Node(n) {}
+
+        const_iterator& operator++() { m_Node = m_Node->next; return *this; }
+        const_iterator operator++(int) { const_iterator _t = *this; m_Node = m_Node->next; return _t; }
+        reference operator*() { return m_Node->value; }
+
+        bool operator==(const const_iterator& other) const { return m_Node == other.m_Node; }
+
+    private:
+        node* m_Node = nullptr;
+
+        friend class linked_list;
+    };
+
+    class iterator : public const_iterator {
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using value_type = typename linked_list::value_type;
+        using difference_type = typename linked_list::difference_type;
+        using pointer = typename linked_list::const_pointer;
+        using reference = value_type&;
+        
+        using const_iterator::const_iterator;
+
+        iterator& operator++() { this->m_Node = this->m_Node->next; return *this; }
+        iterator operator++(int) { iterator _t = *this; this->m_Node = this->m_Node->next; return _t; }
+        reference operator*() { return this->m_Node->value; }
+
+        bool operator==(const iterator& other) const { return this->m_Node == other.m_Node; }
+
+        friend class linked_list;
+    };
+
+    iterator begin() { return { m_Start }; }
+    iterator end() { return { nullptr }; }
+    const_iterator begin() const { return { m_Start }; }
+    const_iterator end() const { return { nullptr }; }
+    const_iterator cbegin() const { return { m_Start }; }
+    const_iterator cend() const { return { nullptr }; }
+
+    reference front() const { return m_Start->value; }
+
+    iterator erase_after(const_iterator pos) { 
+        auto _b = pos.m_Node->next;
+        if (_b) {
+            pos.m_Node->next = pos.m_Node->next->next;
+            delete _b;
+            m_Size--;
+        }
+        return { pos.m_Node->next };
+    }
+
+    iterator erase_after(const_iterator first, const_iterator last) {
+        while (first != last) erase_after(first), ++first;
+        return last;
+    }
+
+    void push_front(const Ty& val) { m_Size++, m_Start = new node{ val, m_Start }; }
+    void push_front(Ty&& val) { m_Size++, m_Start = new node{ std::move(val), m_Start }; }
+    void pop_front() { 
+        auto _b = m_Start;
+        if (_b) {
+            m_Start = m_Start->next;
+            delete _b;
+            m_Size--;
+        }
+    }
+
+    template<class ...Args>
+    reference emplace_front(Args&& ...args) { return (m_Size++, m_Start = new node{ { std::forward<Args>(args)... }, m_Start })->value; }
+
+    iterator insert_after(const_iterator pos, const Ty& val) { return m_Insert(pos, val); }
+    iterator insert_after(const_iterator pos, Ty&& val) { return m_Insert(pos, std::move(val)); }
+
+    iterator insert_after(const_iterator pos, size_type count, const Ty& val) {
+        while (count--) m_Insert(pos, val);
+        return pos;
+    }
+
+    template<class It>
+    iterator insert_after(const_iterator pos, It first, It last) {
+        while (first != last) m_Insert(pos, *first), ++first;
+        return pos;
+    }
+
+    iterator insert_after(const_iterator pos, std::initializer_list<Ty> il) {
+        for (auto& i : il) m_Insert(pos, i);
+        return pos;
+    }
+
+    template<class ...Args>
+    iterator emplace_after(const_iterator pos, Args&& ...args) { return m_Insert(pos, std::forward<Args>(args)...); }
+
+private:
+    node* m_Start = nullptr;
+    size_type m_Size = 0;
+
+    template<class ...Args>
+    iterator m_Insert(const_iterator& pos, Args&& ...args) {
+        auto _b = pos.m_Node->next;
+        pos.m_Node->next = new node{ { std::forward<Args>(args)... } };
+        pos.m_Node->next->next = _b;
+        pos = pos.m_Node->next;
+        m_Size++;
+        return pos.m_Node;
+    }
+};
+
+
 
 void main() {
+    linked_list<int> _list;
+    _list.push_front(1);
+    _list.insert_after(_list.begin(), 2);
+    _list.insert_after(_list.begin(), 3);
+
+    for (auto& i : _list)
+        std::cout << i;
+
     hash_map<std::string, int> _map;
     _map["hello"] = 10;
     _map["world"] = 12;
     _map["0"] = 13;
-
-    hash_map<std::string, int>::iterator it1;
-    hash_map<std::string, int>::iterator it2 = it1;
-    hash_map<std::string, int>::iterator it3 = std::move(it1);
-    it1 = it2;
-    it1 = std::move(it2);
 
     int val1 = _map["hello"];
     int val2 = _map["world"];
