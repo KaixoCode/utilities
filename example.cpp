@@ -1000,13 +1000,22 @@ public:
 template<class Ky, class Ty>
 class hash_map {
 public:
+    using key_type = Ky;
+    using mapped_type = Ty;
     using value_type = std::pair<const Ky, Ty>;
     using size_type = std::size_t;
+    using difference_type = std::ptrdiff_t;
+    using reference = value_type&;
+    using const_reference = const value_type&;
+    using pointer = value_type*;
+    using const_pointer = const value_type*;
 
+private:
     class node {
     public:
         node() = default;
         node(const Ky& key) : m_Value(new value_type{ key, {} }) {}
+        node(const value_type& val) : m_Value(new value_type{ val }) {}
 
         value_type* find(const Ky& key) {
             if (!m_Value) return nullptr;
@@ -1023,7 +1032,8 @@ public:
                 if (m_Next) {   // Move the next node over to this one
                     m_Value = m_Next->m_Value;
                     m_Next = m_Next->m_Next;
-                    m_Next->m_Value = m_Next->m_Next = nullptr;
+                    m_Next->m_Value = nullptr;
+                    m_Next->m_Next = nullptr;
                     delete m_Next; // Delete the next
                 }
             }
@@ -1038,6 +1048,13 @@ public:
             return m_Next->find_or_insert(key, size);
         }
 
+        value_type* puts(const value_type& val, size_type& size) {
+            if (!m_Value) return size++, m_Value = new value_type{ val };
+            if (val.first == m_Value->first) return m_Value->second = val.second, m_Value;
+            if (!m_Next) return m_Next = new node{ val }, size++, m_Next->m_Value;
+            return m_Next->puts(val, size);
+        }
+
         ~node() {
             if (m_Value) delete m_Value;
             if (m_Next) delete m_Next;
@@ -1050,16 +1067,23 @@ public:
         friend class hash_map::iterator;
     };
 
+public:
     class iterator {
     public:
+        using iterator_category = std::forward_iterator_tag;
+        using value_type = hash_map::value_type;
+        using difference_type = hash_map::difference_type;
+        using reference = hash_map::reference;
+        using pointer = hash_map::pointer;
+
+        iterator() : m_Nodes(nullptr), m_Size(0) {};
         iterator(node** n, size_type size) : m_Nodes(n), m_Size(size) {
             if (!m_Size) m_Base = *m_Nodes; // If no size, we're at the end
             else do if ((*m_Nodes)->m_Value) { // if linked list has value
                 m_Base = (*m_Nodes);      // Set base node
                 break;
-            } while (++m_Nodes, --m_Size); // Keep incrementing til m_Size == 0
-            // If no base base set, it's empty, so set to end
-            if (!m_Base) m_Base = *m_Nodes;
+            } while (++m_Nodes, --m_Size); // Keep incrementing till m_Size == 0
+            if (!m_Base) m_Base = *m_Nodes; // If no base base set, it's empty
         }
 
         iterator& operator++() {
@@ -1073,26 +1097,95 @@ public:
             return *this;
         }
 
-        bool operator==(const iterator& other) const { return m_Base == other.m_Base; }
-        value_type& operator*() { return *m_Base->m_Value; }
+        iterator operator++(int) {
+            iterator _next = *this;
+            ++(*this);
+            return _next;
+        }
 
+        void swap(iterator& other) { 
+            std::swap(other.m_Base, m_Base);
+            std::swap(other.m_Nodes, m_Nodes);
+            std::swap(other.m_Size, m_Size);
+        }
+
+        bool operator==(const iterator& other) const { return m_Base == other.m_Base; }
+        bool operator!=(const iterator& other) const { return m_Base != other.m_Base; }
+        value_type& operator*() { return *m_Base->m_Value; }
+        value_type* operator->() { return m_Base->m_Value; }
+
+    protected:
         node* m_Base = nullptr;
         node** m_Nodes;
         size_type m_Size;
     };
 
-    hash_map() { resize(16); }
+    class const_iterator : public iterator {
+    public:
+        const value_type& operator*() { return *this->m_Base->m_Value; }
+    };
 
-    ~hash_map() { // Delete array of nodes
-        for (size_type i = 0; i < m_Buckets; i++) delete m_Nodes[i];
-        delete[] m_Nodes;
+    using reverse_iterator = std::reverse_iterator<iterator>;
+    using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+
+    hash_map() { resize(16); }
+    hash_map(std::initializer_list<value_type> il) {
+        resize(16); // Insert everything from list
+        for (auto& i : il) puts(i);
     }
 
+    hash_map(const hash_map& other) {
+        resize(other.buckets());
+        for (auto& i : other) puts(i);
+    }
+
+    hash_map(hash_map&& other) : m_Nodes(other.m_Nodes),
+        m_Buckets(other.m_Buckets), m_Size(other.m_Size) {
+        other.m_Buckets = 0;
+        other.m_Size = 0;
+        other.m_Nodes = nullptr;
+    }
+
+    hash_map& operator=(const hash_map& other) {
+        cleanup();
+        resize(other.buckets());
+        for (auto& i : other) puts(i);
+        return *this;
+    }
+
+    hash_map& operator=(hash_map&& other) {
+        cleanup();
+        m_Nodes = other.m_Nodes;
+        m_Buckets = other.m_Buckets;
+        m_Size = other.m_Size;
+        other.m_Buckets = 0;
+        other.m_Size = 0;
+        other.m_Nodes = nullptr;
+        return *this;
+    }
+
+    ~hash_map() { cleanup(); }
+
+    bool empty() const { return m_Size != 0; }
     size_type size() const { return m_Size; }
+    size_type buckets() const { return m_Buckets; }
     iterator begin() { return iterator{ m_Nodes, m_Buckets }; }
     iterator end() { return iterator{ m_Nodes + m_Buckets, 0 }; }
+    reverse_iterator rbegin() { return reverse_iterator{ end() }; }
+    reverse_iterator rend() { return reverse_iterator{ begin() }; }
+    const_reverse_iterator rbegin() const { return const_reverse_iterator{ end() }; }
+    const_reverse_iterator rend() const { return const_reverse_iterator{ begin() }; }
+    const_iterator begin() const { return iterator{ m_Nodes, m_Buckets }; }
+    const_iterator end() const { return iterator{ m_Nodes + m_Buckets, 0 }; }
+    const_iterator cbegin() const { return iterator{ m_Nodes, m_Buckets }; }
+    const_iterator cend() const { return iterator{ m_Nodes + m_Buckets, 0 }; }
+    const_reverse_iterator crbegin() const { return const_reverse_iterator{ end() }; }
+    const_reverse_iterator crend() const { return const_reverse_iterator{ begin() }; }
     Ty& operator[](const Ky& key) { return m_Nodes[hash(key)]->find_or_insert(key, m_Size)->second; }
+    Ty& puts(const Ky& key, const Ty& val) { return m_Nodes[hash(key)]->puts({ key, val }, m_Size)->second; }
+    Ty& puts(const value_type& val) { return m_Nodes[hash(val.first)]->puts(val, m_Size)->second; }
     Ty& at(const Ky& key) { return m_Nodes[hash(key)]->find(key)->second; }
+    const Ty& at(const Ky& key) const { return m_Nodes[hash(key)]->find(key)->second; }
     void erase(const Ky& key) { m_Nodes[hash(key)]->erase(key, m_Size); }
 
     void resize(size_type buckets) {
@@ -1101,30 +1194,40 @@ public:
         node** _new = new node*[buckets]; // Allocated new array
         for (size_type i = 0; i < m_Buckets; i++) _new[i] = m_Nodes[i]; 
         for (size_type i = m_Buckets; i < buckets; i++) _new[i] = new node;
-        m_Buckets = buckets;    // Update the actual size
         delete[] m_Nodes; // Delete the original array
-        m_Nodes = _new;   // Assign the new array
+        m_Buckets = buckets, m_Nodes = _new;// Update size, assign new array
     }
 
 private:
-    size_type m_Size = 0;
-    size_type m_Buckets = 0;
+    size_type m_Size = 0, m_Buckets = 0;
     node** m_Nodes = nullptr;
 
     size_t hash(const Ky& key) const { return std::hash<Ky>{}(key) & (m_Buckets - 1); }
+    void cleanup() { // Delete array of nodes
+        for (size_type i = 0; i < m_Buckets; i++) delete m_Nodes[i];
+        delete[] m_Nodes;
+    }
 };
 
 
 void main() {
-
     hash_map<std::string, int> _map;
     _map["hello"] = 10;
     _map["world"] = 12;
     _map["0"] = 13;
 
+    hash_map<std::string, int>::iterator it1;
+    hash_map<std::string, int>::iterator it2 = it1;
+    hash_map<std::string, int>::iterator it3 = std::move(it1);
+    it1 = it2;
+    it1 = std::move(it2);
+
     int val1 = _map["hello"];
     int val2 = _map["world"];
     int val3 = _map["0"];
+    _map.puts("0", 1032);
+
+    _map = { { "hello", 1 }, { "world", 2 } };
 
     for (auto& i : _map)
     {
