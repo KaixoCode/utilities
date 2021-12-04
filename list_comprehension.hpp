@@ -199,10 +199,6 @@ namespace kaixo {
 
         template<class T>
         inline var& operator=(T&& t) { this->storage.storage->operator=(std::forward<T>(t)); return *this; }
-
-        operator expr<Ty&>() {
-            return expr<Ty&> { [v = *this] () mutable->Ty& { return v(); } };
-        }
     };
 
     template<class Type>
@@ -567,6 +563,12 @@ namespace kaixo {
 
     template<class A, class ...Args>
     tuple_of_vars<Args..., A> operator,(tuple_of_vars<Args...> a, var<A> b) { return { std::tuple_cat(a.vars, std::tuple{ b }) }; }
+
+    template<class A, class ...Args>
+    tuple_of_vars<A, Args...> operator,(var<A> b, tuple_of_vars<Args...> a) { return { std::tuple_cat(std::tuple{ b }, a.vars) }; }
+    
+    template<class ...As, class ...Args>
+    tuple_of_vars<As..., Args...> operator,(tuple_of_vars<As...> b, tuple_of_vars<Args...> a) { return { std::tuple_cat(b.vars, a.vars) }; }
 
     /**
      * Wrapper for a container, used when creating a cartesian product, works
@@ -986,6 +988,10 @@ namespace kaixo {
         std::string_view data;
     };
 
+    literalview operator""lv(const char* d, size_t) {
+        return literalview{ d };
+    }
+
     /**
      * Used for parallel iteration of containers. Stores multiple containers
      * and defines an iterator that returns a tuple of references to the values.
@@ -997,7 +1003,7 @@ namespace kaixo {
 
         struct iterator {
             using iterator_category = std::forward_iterator_tag;
-            using value_type = std::tuple<typename std::decay_t<Containers>::value_type&...>;
+            using value_type = decltype(std::tuple_cat(std::tuple{ *std::declval<typename std::decay_t<Containers>::iterator>() }...));
             using difference_type = std::ptrdiff_t;
             using pointer = value_type*;
             using reference = value_type&;
@@ -1013,7 +1019,7 @@ namespace kaixo {
         private:
             template<size_t ...Is>
             value_type get(std::index_sequence<Is...>) { 
-                return { *std::get<Is>(iterators)... };
+                return { std::tuple_cat(std::tuple{ *std::get<Is>(iterators) }...) };
             }
 
             template<size_t ...Is>
@@ -1041,8 +1047,8 @@ namespace kaixo {
     private:
         template<size_t ...Is>
         size_t seq_size(std::index_sequence<Is...>) const {
-            size_t _size = 0;
-            ((std::get<Is>(containers).size() > _size ? (_size = std::get<Is>(containers).size(), false) : false), ...);
+            size_t _size = std::get<0>(containers).size();
+            ((std::get<Is>(containers).size() < _size ? (_size = std::get<Is>(containers).size(), false) : false), ...);
             return _size;
         }
 
@@ -1079,6 +1085,21 @@ namespace kaixo {
     template<has_begin_end ...Rest>
     tuple_of_containers<Rest..., literalview> operator,(tuple_of_containers<Rest...>&& a, const char* b) {
         return { std::tuple_cat(a.containers, std::tuple{ literalview{ b } }) };
+    }
+
+    template<has_begin_end A, has_begin_end ...Rest>
+    tuple_of_containers<A, Rest...> operator,(A&& b, tuple_of_containers<Rest...>&& a) {
+        return { std::tuple_cat(std::tuple<A>{ std::forward<A>(b) }, a.containers) };
+    }
+
+    template<has_begin_end ...Rest>
+    tuple_of_containers<Rest..., literalview> operator,(const char* b, tuple_of_containers<Rest...>&& a) {
+        return { std::tuple_cat(std::tuple{ literalview{ b } }, a.containers) };
+    }
+
+    template<has_begin_end ...As, has_begin_end ...Rest>
+    tuple_of_containers<Rest..., As...> operator,(tuple_of_containers<Rest...>&& a, tuple_of_containers<As...>&& b) {
+        return { std::tuple_cat(a.containers,  b.containers) };
     }
 
     /**

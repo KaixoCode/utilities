@@ -756,69 +756,410 @@ struct C {
     int v;
 };
 
-int main()
-{
-    // Simple list comprehension with ranges and a constraint.
-    var<int> a, b, c;
-    auto r1 = lc[(a, b, c) | c <- range(1, 11), b <- range(1, c + 1), a <- range(1, b + 1), a*a + b*b == c*c];
+struct binary {
+    using size_type = size_t;
 
-    // Parallel iteration
-    var<std::tuple<int, int>> d;
-    auto r2 = lc[d | d <- (range(0, 10), range(0, 10))];
-    
-    // Iteration on some container
-    std::vector<int> data{ 1, 2, 3, 4, 5 };
-    auto r3 = lc[a + b | a <- data, b <- range(0, 10)];
+    template<std::integral Ty>
+    binary(Ty data)
+        : data(reinterpret_cast<uint8_t*>(&data), reinterpret_cast<uint8_t*>(&data) + sizeof Ty)
+    {}
 
-    // Determine resulting container
-    std::vector<std::string> strings{ "hello", "carrot", "pizza" };
-    var<std::string> e;
-    auto r4 = lc[map(e, a) | (e, a) <- (strings, range(0, 100))]; 
-    
-    // Call std functions
-    std::vector<int> ints1{ 5, 2, 7, 3, 1, 9 };
-    std::vector<int> ints2{ 4, 1, 8, 9, 3, 2 };
-    auto r5 = lc[max(a, b) | (a, b) <- (ints1, ints2)];
-    
-    // Automatically uses std::string when working with characters (to<char>() because tolower() returns int)
-    std::string mystr = "HelloWorld";
-    var<char> g;
-    std::string r6 = lc[tolower(g).to<char>() | g <- mystr];
-    
-    // Nested list comprehension for lists of lists
-    var<int> x;
-    var<std::vector<int>> xs;
-    std::vector<std::vector<int>> xxs{ { 1,3,5,2,3,1,2,4,5 }, { 1,2,3,4,5,6,7,8,9 }, { 1,2,4,2,1,6,3,1,3,2,3,6 } };
-    auto r8 = lc[lcv[x | x <- xs, x % 2 == 0] | xs <- xxs];
-    
-    // Using a used variable as a container
-    auto r9 = lc[x | xs <- xxs, x <- xs];
-    
-    // Make a utility function
-    auto indices = [x = var<int>{}, i = var<int>{}](auto& data, var<int> a) mutable {
-        // Parallel iteration of value and index, constraint on value == argument, store index.
-        return lc[i | (x, i) <- (data, range(0, data.size())), a == x];
+    struct bit {
+        operator bool () { return (byte >> index) & 1U; }
+        bit& operator=(bool v) {
+            byte ^= (-v ^ byte) & (1u << index);
+            return *this; 
+        }
+        uint8_t& byte;
+        uint8_t index;
     };
 
-    std::vector<int> datas{ 0, 1, 1, 0, 0, 1, 0 };
-    auto r10 = indices(datas, 1);
+    struct iterator {
+        using value_type = bit;
+
+        iterator& operator++() { index++; return *this; }
+        bit operator*() { return bin->at(index); }
+        bool operator==(const iterator& o) const { return o.index == index; }
+
+        size_type index;
+        binary* bin;
+    };
+
+    bit operator[](size_t index) {
+        if (index < size())
+            resize(index);
+        return at(index);
+    }
+
+    bit at(size_t index) {
+        return { data[index / 8], static_cast<uint8_t>(index % 8) };
+    }
+
+    size_type size() const { return data.size() * 8; }
+    void resize(size_t size) { data.resize((size + 7) / 8); }
+
+    iterator begin() { return { 0, this }; }
+    iterator end() { return { size(), this }; }
+
+private:
+    std::vector<uint8_t> data;
+};
+
+template<class Ty>
+class const_array_list_iterator : std::vector<Ty*>::const_iterator {
+    using m_Base = std::vector<Ty*>::const_iterator;
+public:
+    using iterator_concept = m_Base::iterator_concept;
+    using iterator_category = m_Base::iterator_category;
+    using value_type = Ty;
+    using difference_type = m_Base::difference_type;
+    using pointer = Ty*;
+    using reference = Ty&;
+
+    auto& operator*() { return *m_Base::operator*(); }
+    auto operator->() { return *m_Base::operator->(); }
+};
+
+template<class Ty>
+struct array_list_iterator : std::vector<Ty*>::iterator {
+    using m_Base = std::vector<Ty*>::iterator;
+public:
+    using iterator_concept = m_Base::iterator_concept;
+    using iterator_category = m_Base::iterator_category;
+    using value_type = Ty;
+    using difference_type = m_Base::difference_type;
+    using pointer = Ty*;
+    using reference = Ty&;
+
+    auto& operator*() { return *m_Base::operator*(); }
+    auto operator->() { return *m_Base::operator->(); }
+};
+
+template<class Ty>
+struct array_list {
+    using value_type = Ty;
+    using pointer = Ty*;
+    using const_pointer = const Ty*;
+    using reference = Ty&;
+    using const_reference = const Ty&;
+    using size_type = std::size_t;
+    using difference_type = std::ptrdiff_t;
+
+    using iterator = array_list_iterator<Ty>;
+    using const_iterator = const_array_list_iterator<Ty>;
+    using reverse_iterator = std::reverse_iterator<iterator>;
+    using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+
+    constexpr array_list() {}
+    constexpr array_list(std::initializer_list<Ty> l) {}
+    constexpr array_list(const array_list& other) : m_Arr(other.m_Arr) {}
+    constexpr array_list(array_list&& other) : m_Arr(std::move(other.m_Arr)) {}
+    array_list& operator=(const array_list& other) { m_Arr = other.m_Arr; }
+    array_list& operator=(array_list&& other) { m_Arr = std::move(other.m_Arr); }
+
+    constexpr reference at(size_type pos) { return *m_Arr.at(pos); }
+    constexpr const_reference at(size_type pos) const { return *m_Arr.at(pos); }
+    constexpr reference operator[](size_type pos) { return *m_Arr[pos]; }
+    constexpr const_reference operator[](size_type pos) const { return *m_Arr[pos]; }
+    constexpr reference front() { return *m_Arr.front(); }
+    constexpr const_reference front() const { return *m_Arr.front(); }
+    constexpr reference back() { return *m_Arr.back(); }
+    constexpr const_reference back() const { return *m_Arr.back(); }
+
+    constexpr iterator begin() { return { m_Arr.begin() }; }
+    constexpr const_iterator begin() const { return { m_Arr.begin() }; }
+    constexpr iterator end() { return { m_Arr.end() }; }
+    constexpr const_iterator end() const { return { m_Arr.end() }; }
+    constexpr const_iterator cbegin() const { return { m_Arr.cbegin() }; }
+    constexpr const_iterator cend() const { return { m_Arr.cend() }; }
+    constexpr iterator rbegin() { return { m_Arr.rbegin() }; }
+    constexpr const_iterator rbegin() const { return { m_Arr.rbegin() }; }
+    constexpr iterator rend() { return { m_Arr.rend() }; }
+    constexpr const_iterator rend() const { return { m_Arr.rend() }; }
+    constexpr const_iterator crbegin() const { return { m_Arr.crbegin() }; }
+    constexpr const_iterator crend() const { return { m_Arr.crend() }; }
+
+    constexpr bool empty() const { return m_Arr.empty(); }
+    constexpr size_type size() const { return m_Arr.size(); }
+    constexpr size_type max_size() const { return m_Arr.max_size(); }
+    constexpr void reserve(size_type n) { m_Arr.reserve(n); }
+    constexpr size_type capacity() const { return m_Arr.capacity(); }
+    constexpr void shrink_to_fit() { m_Arr.shrink_to_fit(); }
+
+    constexpr void clear() { m_Arr.clear(); }
+    constexpr void insert(iterator pos, const Ty& val) { m_Arr.insert(pos, new Ty{ val }); }
+    constexpr void insert(const_iterator pos, const Ty& val) { m_Arr.insert(pos, new Ty{ val }); }
+    constexpr void insert(iterator pos, Ty&& val) { m_Arr.insert(pos, new Ty{ std::move(val) }); }
+    constexpr void insert(const_iterator pos, Ty&& val) { m_Arr.insert(pos, new Ty{ std::move(val) }); }
     
-    // Parallel iteration with names for each instead of tuple
-    auto r11 = lc[(a + b + c) | (a, b, c) <- (range(0, 10), range(0, 10), range(0, 10))];
+    template<class... Args>
+    constexpr iterator emplace(const_iterator pos, Args&&... args) {
+        return m_Arr.emplace(pos, new Ty{ std::forward<Args>(args)... });
+    }
+
+    constexpr iterator erase(const_iterator pos) {
+        delete *pos;
+        return m_Arr.erase(pos);
+    }
+
+    constexpr void push_back(const Ty& val) { m_Arr.push_back(new Ty{ val }); }
+    constexpr void push_back(Ty&& val) { m_Arr.push_back(new Ty{ std::move(val) }); }
     
-    // Split a tuple from a container
-    std::vector<std::tuple<int, int, int>> q{ { 0, 1, 1 }, { 2, 3, 3 } };
-    auto r12 = lc[a + b + c | (a, b, c) <- q];
-    
-    // Get the key and value from a map
-    std::map<std::string, int> mymap{ { "apple", 1 }, { "carrot", 3 } };
-    var<std::string> key;
-    var<int> value;
-    auto r13 = lc[value | (key, value) <- mymap];
-}
+    template<class... Args>
+    constexpr reference emplace_back(Args&&... args) {
+        return m_Arr.emplace_back(new Ty{ std::forward<Args>(args)... });
+    }
+
+    constexpr void pop_back() { delete m_Arr.back(); m_Arr.pop_back(); }
+    constexpr void swap(array_list& other) { m_Arr.swap(other.m_Arr); }
+
+private:
+    std::vector<Ty*> m_Arr;
+};
+
+#include <map>
+#include <variant>
+
+template<class Ty, class ...Tys>
+concept OneOf = (std::same_as<Ty, Tys> || ...);
+
+class Json
+{
+public:
+    using Floating = double;
+    using Integral = int64_t;
+    using Unsigned = uint64_t;
+    using String   = std::string;
+    using Boolean  = bool;
+    using Array    = std::vector<Json>;
+    using Object   = std::map<String, Json, std::less<void>>;
+    using Null     = std::nullptr_t;
+
+private:
+    using JsonValue = std::variant<Floating, Integral, Unsigned, String, Boolean, Array, Object, Null>;
+    struct Type { enum { Floating, Integral, Unsigned, String, Boolean, Array, Object, Null }; };
+    JsonValue m_Value;
+
+    template<class Ty> struct Alias { using Type = Ty; };
+    template<std::signed_integral Ty> struct Alias<Ty> { using Type = Integral; };
+    template<std::unsigned_integral Ty> struct Alias<Ty> { using Type = Unsigned; };
+
+public:
+    template<class Ty = Null>
+    Json(const Ty& ty = {}) : m_Value(static_cast<Alias<Ty>::Type>(ty)) {}
+
+    template<class Ty> Ty get() const { return static_cast<Ty>(std::get<Alias<Ty>::Type>(m_Value)); }
+    template<class Ty> Ty& ref() { return std::get<Ty>(m_Value); }
+    template<class Ty> const Ty& ref() const { return std::get<Ty>(m_Value); }
+
+    Json& operator[](std::string_view index) 
+    { 
+        if (m_Value.index() == Type::Null) m_Value = Object{};
+        else if (m_Value.index() != Type::Object) throw std::exception("Not an object.");
+        auto _it = ref<Object>().find(index);
+        if (_it == ref<Object>().end()) return ref<Object>()[std::string{ index }];
+        else return _it->second;
+    }
+};
+
+#include <bit>
 
 
-void nothing() {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+template<class Ky, class Ty>
+class hash_map {
+public:
+    using value_type = std::pair<const Ky, Ty>;
+    using size_type = std::size_t;
+
+    class node {
+    public:
+        node() = default;
+        node(const Ky& key) : m_Value(new value_type{ key, {} }) {}
+
+        value_type* find(const Ky& key) {
+            if (!m_Value) return nullptr;
+            if (key == m_Value->first) return m_Value;
+            if (m_Next) return m_Next->find(key);
+            return nullptr;
+        }
+
+        void erase(const Ky& key, size_type& size) {
+            if (!m_Value) return;
+            if (key == m_Value->first) {
+                size--;
+                delete m_Value; // Delete the value
+                if (m_Next) {   // Move the next node over to this one
+                    m_Value = m_Next->m_Value;
+                    m_Next = m_Next->m_Next;
+                    m_Next->m_Value = m_Next->m_Next = nullptr;
+                    delete m_Next; // Delete the next
+                }
+            }
+            else if (!m_Next) return;
+            else m_Next->erase(key, size);
+        }
+
+        value_type* find_or_insert(const Ky& key, size_type& size) {
+            if (!m_Value) return size++, m_Value = new value_type{ key, {} };
+            if (key == m_Value->first) return m_Value;
+            if (!m_Next) return m_Next = new node{ key }, size++, m_Next->m_Value;
+            return m_Next->find_or_insert(key, size);
+        }
+
+        ~node() {
+            if (m_Value) delete m_Value;
+            if (m_Next) delete m_Next;
+        }
+
+    private:
+        value_type* m_Value = nullptr;
+        node* m_Next = nullptr;
+
+        friend class hash_map::iterator;
+    };
+
+    class iterator {
+    public:
+        iterator(node** n, size_type size) : m_Nodes(n), m_Size(size) {
+            if (!m_Size) m_Base = *m_Nodes; // If no size, we're at the end
+            else do if ((*m_Nodes)->m_Value) { // if linked list has value
+                m_Base = (*m_Nodes);      // Set base node
+                break;
+            } while (++m_Nodes, --m_Size); // Keep incrementing til m_Size == 0
+            // If no base base set, it's empty, so set to end
+            if (!m_Base) m_Base = *m_Nodes;
+        }
+
+        iterator& operator++() {
+            if (m_Base->m_Next) m_Base = m_Base->m_Next; // First try linked list
+            else while (m_Size--) // Otherwise find next linked list with content
+                if (!m_Size) m_Base = *++m_Nodes; // If no size left, we're at the end
+                else if ((*++m_Nodes)->m_Value) { // check if value
+                    m_Base = (*m_Nodes); // Set new base node
+                    break;
+                }
+            return *this;
+        }
+
+        bool operator==(const iterator& other) const { return m_Base == other.m_Base; }
+        value_type& operator*() { return *m_Base->m_Value; }
+
+        node* m_Base = nullptr;
+        node** m_Nodes;
+        size_type m_Size;
+    };
+
+    hash_map() { resize(16); }
+
+    ~hash_map() { // Delete array of nodes
+        for (size_type i = 0; i < m_Buckets; i++) delete m_Nodes[i];
+        delete[] m_Nodes;
+    }
+
+    size_type size() const { return m_Size; }
+    iterator begin() { return iterator{ m_Nodes, m_Buckets }; }
+    iterator end() { return iterator{ m_Nodes + m_Buckets, 0 }; }
+    Ty& operator[](const Ky& key) { return m_Nodes[hash(key)]->find_or_insert(key, m_Size)->second; }
+    Ty& at(const Ky& key) { return m_Nodes[hash(key)]->find(key)->second; }
+    void erase(const Ky& key) { m_Nodes[hash(key)]->erase(key, m_Size); }
+
+    void resize(size_type buckets) {
+        if (buckets < m_Buckets) return;  // Only resize if specified bigger
+        buckets = std::bit_ceil(buckets); // Round up to nearest power of 2
+        node** _new = new node*[buckets]; // Allocated new array
+        for (size_type i = 0; i < m_Buckets; i++) _new[i] = m_Nodes[i]; 
+        for (size_type i = m_Buckets; i < buckets; i++) _new[i] = new node;
+        m_Buckets = buckets;    // Update the actual size
+        delete[] m_Nodes; // Delete the original array
+        m_Nodes = _new;   // Assign the new array
+    }
+
+private:
+    size_type m_Size = 0;
+    size_type m_Buckets = 0;
+    node** m_Nodes = nullptr;
+
+    size_t hash(const Ky& key) const { return std::hash<Ky>{}(key) & (m_Buckets - 1); }
+};
+
+
+void main() {
+
+    hash_map<std::string, int> _map;
+    _map["hello"] = 10;
+    _map["world"] = 12;
+    _map["0"] = 13;
+
+    int val1 = _map["hello"];
+    int val2 = _map["world"];
+    int val3 = _map["0"];
+
+    for (auto& i : _map)
+    {
+        std::cout << i.first << ", " << i.second << '\n';
+    }
+
+    _map.erase("hello");
+
+    int val4 = _map["hello"];
+
+
+    array_list<int> ints;
+    ints.push_back(0);
+    ints.push_back(1);
+    ints.push_back(2);
+    ints.push_back(3);
+
+    for (auto& i : ints) {
+        std::cout << i << std::endl;
+    }
+
+    std::vector<bool> a;
+
+    a[0] = 1;
+
+    pa_function<int(int, int, int)> f = [](int a, int b, int c) { return a + b + c; };
+
+
+    binary bin = 913951935;
+    for (auto i : bin) {
+        std::cout << i << std::endl;
+    }
+
+
+    constexpr auto size = sizeof binary::bit;
     std::array<int, 2>;
     axial_array<int, 3> _a1{ 1, 2, 3, 4, 5 };
     axial_array<int, 3> _a2{ 5, 4, 3, 2, 1 };

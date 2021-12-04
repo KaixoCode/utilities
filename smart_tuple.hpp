@@ -60,7 +60,7 @@ namespace kaixo {
         template<std::size_t... Is>
         inline value get(std::size_t index, std::index_sequence<Is...>) {
             if (index >= sizeof...(Tys))
-                throw std::out_of_range{ "Index if out of range for this tuple." };
+                throw std::out_of_range{ "Index is out of range for this tuple." };
 
             value _value = index;
             return ((index == Is ? (_value.data = (void*)&std::get<Is>(*this), _value) : _value), ...);
