@@ -1345,8 +1345,195 @@ private:
 };
 
 
+class Lexer
+{
+public:
+    enum TokenType
+    {
+        SYMBOL, KEYWORD, OPERATOR
+    };
+
+    struct LexerBase
+    {
+        enum State { Matching, Accepting, Error } state = Matching;
+
+        TokenType type;
+        bool capture = true; // Add to final token list when matched.
+
+        bool TryNext(char c) 
+        {
+            // If we're in an Error state, always return false
+            if (state == Error) return false;
+            state = Next(c); // Otherwise try next character
+            return state != Error; // Success if not in error state
+        }
+
+        virtual State Next(char c) = 0;
+        virtual void Reset() { state = Matching; };
+    };
+
+    // Matches a specific word
+    struct WordLexer : public LexerBase
+    {
+        WordLexer(const std::string& word) : word(word) {};
+
+        size_t index = 0; // Current index in word
+        std::string word; // Word to match
+        State Next(char c) override
+        {
+            // If character matches and not past word end
+            if (index < word.size() && word[index] == c)
+                if (index == word.size() - 1) return Accepting; // Final character = Accepting
+                else return index++, Matching; // Otherwise just a match
+            return Error; // else error
+        }
+
+        void Reset() override { index = 0; LexerBase::Reset(); }
+    };
+
+    // Generalization for multiple word lexers
+    struct WordsLexer : public LexerBase
+    {
+        WordsLexer(std::initializer_list<const char*> words) 
+            : words(words.begin(), words.end()) {}
+
+        std::vector<WordLexer> words; // list of words to match
+
+        State Next(char c) override
+        {
+            State state = Error;  // Initially Error
+            for (auto& i : words) // Go over all words
+                if (i.TryNext(c)) // Try next character
+                {
+                    if (i.state == Accepting) // If one is accepting
+                        return Accepting;     // return that.
+                    state = Matching; // Otherwise mark as matching.
+                }
+            return state; // Return state, Error if no matches.
+        }
+
+        void Reset() 
+        {
+            // Recurse down to all words.
+            for (auto& i : words)
+                i.Reset();
+            LexerBase::Reset();
+        }
+    };
+
+    struct KeywordLexer : public WordsLexer
+    {
+        KeywordLexer() : WordsLexer({ "if", "else", "for", "while" }) { type = KEYWORD; }
+    };
+
+    struct OperatorLexer : public WordsLexer
+    {
+        OperatorLexer() : WordsLexer({ "+", "-", "*", "/" }) { type = OPERATOR; }
+    };
+
+    struct SymbolLexer : public LexerBase
+    {
+        SymbolLexer() { type = SYMBOL; }
+
+        State Next(char c) override
+        {
+            // Accepting as long as alpha numerical
+            if (std::isalnum(c)) return Accepting;
+            return Error;
+        }
+    };
+
+    struct WhitespaceLexer : public LexerBase
+    {
+        WhitespaceLexer() { capture = false; }
+
+        State Next(char c) override
+        {
+            // Accepting as long as whitespace
+            if (std::isspace(c)) return Accepting;
+            return Error;
+        }
+    };
+
+    // All the lexers, ordered from low to high precedence
+    std::unique_ptr<LexerBase> lexers[4] {
+        std::make_unique<SymbolLexer>(),
+        std::make_unique<KeywordLexer>(),
+        std::make_unique<OperatorLexer>(),
+        std::make_unique<WhitespaceLexer>(),
+    };
+
+    struct Token 
+    {
+        TokenType type;
+        std::string val;
+    };
+
+    /**
+     * Tokenize a string.
+     * @param in input string
+     * @return vector of Tokens
+     */
+    std::vector<Token> Tokenize(const std::string& in) 
+    {
+        std::vector<Token> tokens;
+        size_t pindex = 0;  // Previous index
+        size_t index = 0;   // Current index
+        size_t lmindex = 0; // Index of last accepting match
+        
+        int lastMatch = -1; // Index of last matching type
+
+        while (index < in.size()) // Loop until we're at the end of the input
+        {
+            size_t amount = 0; // Keep track of match count.
+            for (size_t i = 0; i < sizeof(lexers)/sizeof(lexers[0]); i++)
+                if (lexers[i]->TryNext(in[index])) // Try next character
+                {
+                    amount++; // Match, so add to count
+
+                    // If state is accepting, remember match
+                    if (lexers[i]->state == LexerBase::Accepting)
+                        lastMatch = i, lmindex = index; 
+                }
+            
+            // If no more matches, use last match if exists
+            if (amount == 0 && lastMatch != -1)
+            {
+                // If type should be captured, add to tokens
+                if (lexers[lastMatch]->capture)
+                    tokens.push_back({ lexers[lastMatch]->type, 
+                        in.substr(pindex, lmindex + 1 - pindex) });
+    
+                // Reset the state in all lexers
+                for (auto& i : lexers)
+                    i->Reset();
+
+                pindex = lmindex + 1; // Reset the index back to.
+                index = lmindex + 1;  // last matched index.
+                lastMatch = -1;  // Reset last match
+            }
+            else
+                index++;
+        }
+
+        return tokens;
+    }
+
+
+};
+
+
 
 void main() {
+
+    Lexer lexer;
+
+    std::string text = "x+z*zebra ";
+    auto res = lexer.Tokenize(text);
+
+
+
+
     linked_list<int> _list;
     _list.push_front(1);
     _list.insert_after(_list.begin(), 2);
