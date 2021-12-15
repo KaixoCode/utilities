@@ -23,7 +23,7 @@ namespace kaixo
     class Lexer
     {
     public:
-        enum State { Matching, Accepting, Error };
+        enum State { Error, Matching, Accepting };
 
         struct TokenLexer
         {
@@ -72,18 +72,13 @@ namespace kaixo
             {
                 State state = Error;  // Initially Error
                 for (auto& i : words) // Go over all words
-                    if (i.TryNext(c)) // Try next character
-                    {
-                        if (i.state == Accepting) // If one is accepting
-                            return Accepting;     // return that.
-                        state = Matching; // Otherwise mark as matching.
-                    }
+                    if (i.TryNext(c) && i.state > state)
+                        state = i.state;
                 return state; // Return state, Error if no matches.
             }
 
             void Reset()
-            {
-                // Recurse down to all words.
+            {   // Recurse down to all words.
                 for (auto& i : words)
                     i.Reset();
                 TokenLexer::Reset();
