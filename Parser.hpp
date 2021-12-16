@@ -321,7 +321,6 @@ namespace MyLang
         struct SelectionStatement;
         struct CompoundStatement;
         struct AssignStatement;
-        struct PrimaryExpression;
         struct Expression;
 
         struct CompoundStatement
