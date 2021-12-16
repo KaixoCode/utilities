@@ -9,6 +9,10 @@
 #include <optional>
 #include <variant>
 #include <ranges>
+#include <iostream>
+#include <iomanip>
+
+constexpr static inline std::string ntabs(size_t n) { return std::string(n*4, ' '); }
 
 namespace kaixo
 {
@@ -339,6 +343,13 @@ namespace MyLang
 
                 return {};
             }
+
+            void Print(size_t inset = 0)
+            {
+                std::cout << ntabs(inset - 1) << "{\n";
+                for (auto& i : statements) i.Print(inset);
+                std::cout << ntabs(inset - 1) << "}\n";
+            }
         };
 
         struct SelectionStatement
@@ -368,6 +379,16 @@ namespace MyLang
 
                 return {};
             }
+
+            void Print(size_t inset = 0)
+            {
+                std::cout << ntabs(inset) << "if ( ";
+                expr->Print();
+                std::cout << ") then\n";
+                thenstmnt->Print(inset + 1);
+                std::cout << ntabs(inset) << "else\n";
+                elsestmnt->Print(inset + 1);
+            }
         };
 
         struct AssignStatement
@@ -391,10 +412,18 @@ namespace MyLang
 
                 return {};
             }
+
+            void Print(size_t inset = 0)
+            {
+                std::cout << ntabs(inset) << identifier << " := ";
+                expr->Print();
+                std::cout << '\n';
+            }
         };
 
         struct Statement
         {
+            enum { Selection, Compound, Assign };
             PtrVariant<SelectionStatement, CompoundStatement, AssignStatement> value;
 
             static std::optional<Statement> Parse(TokenVector& tokens)
@@ -412,6 +441,16 @@ namespace MyLang
                 }
 
                 return {};
+            }
+
+            void Print(size_t inset = 0)
+            {
+                switch (value.index())
+                {
+                case Selection: value.get<Selection>().Print(inset); break;
+                case Compound: value.get<Compound>().Print(inset); break;
+                case Assign: value.get<Assign>().Print(inset); break;
+                }
             }
         };
 
@@ -455,14 +494,14 @@ namespace MyLang
                 enum Type { Constant = 0, Identifier = 1, Operator = 2 };
                 ExprPart(Expression::Constant v) : value(v) {}
                 ExprPart(const std::string& v) : value(v) {}
-                ExprPart(Expression::Operator v) : value(v) {}
+                ExprPart(Token v) : value(v) {}
 
-                template<Type N> auto& get() { return *std::get<N>(value); }
+                template<Type N> auto& get() { return std::get<N>(value); }
 
                 Type index() { return static_cast<Type>(value.index()); }
                 template<Type N> bool is() { return index() == N; }
 
-                std::variant<Expression::Constant, std::string, Expression::Operator> value;
+                std::variant<Expression::Constant, std::string, Token> value;
             };
 
             // An expression is built up out of ExprParts
@@ -511,6 +550,7 @@ namespace MyLang
 
                 // If unary operator, check before recurse
                 bool _unaryAdd = false;
+                Token* opertr;
                 if (IsUnary(op))
                 {
                     if (tokens.Empty()) return {};
@@ -520,6 +560,7 @@ namespace MyLang
                     {
                         // If is operator, we need to add the operator later, and save state
                         _unaryAdd = true;
+                        opertr = &now;
                         tokens.SetState(current);
                     }
                 }
@@ -529,7 +570,7 @@ namespace MyLang
                 auto res = ParseExpression(tokens, next); // Get parts
 
                 // If we need to add the operator, do it now after recurse (postfix)
-                if (_unaryAdd) res.emplace_back(op);
+                if (_unaryAdd) res.emplace_back(*opertr);
 
                 // Only if not unary operator
                 if (!IsUnary(op))
@@ -547,7 +588,7 @@ namespace MyLang
 
                         // Insert result from recursion before adding operator (postfix)
                         res.insert(res.end(), nextres.begin(), nextres.end()); // First this
-                        res.emplace_back(op); // Then operator
+                        res.emplace_back(now);    // Then operator
                         tokens.SetState(current); // Set the state
                     }
                 }
@@ -565,6 +606,17 @@ namespace MyLang
 
                 tokens.SetState(current);
                 return expr;
+            }
+
+            void Print(size_t inset = 0)
+            {
+                std::cout << ntabs(inset);
+                for (auto& i : parts) switch (i.index()) 
+                {
+                case ExprPart::Constant: std::cout << i.get<ExprPart::Constant>().value << ' '; break;
+                case ExprPart::Identifier: std::cout << i.get<ExprPart::Identifier>() << ' '; break;
+                case ExprPart::Operator: std::cout << i.get<ExprPart::Operator>().val << ' '; break;
+                }
             }
         };
 
@@ -587,6 +639,8 @@ namespace MyLang
 
                 return {};
             }
+
+            void Print(size_t inset = 0) { for (auto& i : statements) i.Print(inset); }
         };
     };
 }
