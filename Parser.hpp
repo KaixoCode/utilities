@@ -11,6 +11,8 @@
 #include <ranges>
 #include <iostream>
 #include <iomanip>
+#include <map>
+#include <numeric>
 
 constexpr static inline std::string ntabs(size_t n) { return std::string(n*4, ' '); }
 
@@ -233,6 +235,42 @@ namespace kaixo
             return assign->size();
         }
     };
+
+    class Context
+    {
+    public:
+
+        class HashMap
+        {
+        public:
+            using ValueType = std::pair<std::string, uint8_t>;
+            constexpr static size_t size = 1000;
+            constexpr static std::size_t A = 127;
+
+            HashMap() { std::fill_n(m_Data, size, nullptr); }
+
+            uint8_t& operator[](std::string_view v)
+            {
+                size_t _h = Hash(v);
+                while (m_Data[_h] && m_Data[_h]->first != v) _h = Rehash(_h);
+                return (!m_Data[_h] ? m_Data[_h] = new ValueType{ v, 0 } : m_Data[_h])->second;
+            }
+
+            size_t Hash(std::string_view v) const
+            {
+                size_t hash = 0;
+                for (auto& c : v) hash = (A * hash + c) % size;
+                return hash;
+            }
+
+            size_t Rehash(std::size_t hash) const { return (++hash) % size; }
+
+        private:
+            ValueType* m_Data[size];
+        };
+
+        HashMap identifiers;
+    };
 }
 
 namespace MyLang
@@ -284,22 +322,25 @@ namespace MyLang
         {
             IdentifierLexer() { type = IDENTIFIER; }
 
-            State Next(char c) override { return std::isalnum(c) ? Accepting : Error; }
+            bool first = true;
+
+            State Next(char c) override 
+            { 
+                return (std::isalnum(c) || c == '_') && (!first || !std::isdigit(c)) ? first = false, Accepting : Error;
+            }
+
+            void Reset() override { first = true; TokenLexer::Reset(); }
         };
 
-        // Matches any single 1 or 0
+        // Matches any string of 1s and 0s
         struct ConstantLexer : public TokenLexer
         {
             ConstantLexer() { type = CONSTANT; }
 
-            bool first = true;
-
             State Next(char c) override
-            {   // Only match on first and if 0 or 1, otherwise Error state
-                return first && (c == '0' || c == '1') ? first = false, Accepting : Error;
+            {
+                return (c == '0' || c == '1') ? Accepting : Error;
             }
-
-            void Reset() override { first = true; TokenLexer::Reset(); }
         };
 
         MyLexer()
@@ -349,6 +390,12 @@ namespace MyLang
                 for (auto& i : statements) i.Print(inset);
                 std::cout << ntabs(inset - 1) << "}\n";
             }
+
+            void Eval(Context& ctx)
+            {
+                for (auto& i : statements)
+                    i.Eval(ctx);
+            }
         };
 
         struct SelectionStatement
@@ -388,6 +435,14 @@ namespace MyLang
                 std::cout << ntabs(inset) << "else\n";
                 elsestmnt->Print(inset + 1);
             }
+
+            void Eval(Context& ctx)
+            {
+                if (expr->Eval(ctx))
+                    thenstmnt->Eval(ctx);
+                else
+                    elsestmnt->Eval(ctx);
+            }
         };
 
         struct AssignStatement
@@ -417,6 +472,11 @@ namespace MyLang
                 std::cout << ntabs(inset) << identifier << " := ";
                 expr->Print();
                 std::cout << '\n';
+            }
+
+            void Eval(Context& ctx)
+            {
+                ctx.identifiers[identifier] = expr->Eval(ctx);
             }
         };
 
@@ -451,6 +511,16 @@ namespace MyLang
                 case Assign: value.get<Assign>().Print(inset); break;
                 }
             }
+
+            void Eval(Context& ctx)
+            {
+                switch (value.index())
+                {
+                case Selection: value.get<Selection>().Eval(ctx); break;
+                case Compound: value.get<Compound>().Eval(ctx); break;
+                case Assign: value.get<Assign>().Eval(ctx); break;
+                }
+            }
         };
 
         struct Expression
@@ -458,10 +528,10 @@ namespace MyLang
             struct Constant
             {
                 Constant(const std::string& val)
-                    : value(std::stoi(val.c_str()))
+                    : value(std::stoi(val.c_str(), nullptr, 2))
                 {}
 
-                bool value;
+                uint8_t value;
             };
 
             enum class Operator
@@ -490,17 +560,37 @@ namespace MyLang
             // ExprPart is either Constant, Identifier, or Operator
             struct ExprPart
             {
+                struct OpType 
+                { 
+                    std::string op;
+                    Operator group; 
+
+                    uint8_t Eval(uint8_t a, uint8_t b = 0)
+                    {
+                        if (op == "+") return a + b;
+                        if (op == "-") return a - b;
+                        if (op == "*") return a * b;
+                        if (op == "/") return a / b;
+                        if (op == "<") return a < b;
+                        if (op == ">") return a > b;
+                        if (op == "=") return a == b;
+                        if (op == "not") return !a;
+                        if (op == "and") return a && b;
+                        if (op == "or") return a || b;
+                        return 0;
+                    }
+                };
                 enum Type { Constant = 0, Identifier = 1, Operator = 2 };
                 ExprPart(Expression::Constant v) : value(v) {}
                 ExprPart(const std::string& v) : value(v) {}
-                ExprPart(Token v) : value(v) {}
+                ExprPart(OpType v) : value(v) {}
 
                 template<Type N> auto& get() { return std::get<N>(value); }
 
                 Type index() { return static_cast<Type>(value.index()); }
                 template<Type N> bool is() { return index() == N; }
 
-                std::variant<Expression::Constant, std::string, Token> value;
+                std::variant<Expression::Constant, std::string, OpType> value;
             };
 
             // An expression is built up out of ExprParts
@@ -549,7 +639,7 @@ namespace MyLang
 
                 // If unary operator, check before recurse
                 bool _unaryAdd = false;
-                Token* opertr;
+                ExprPart::OpType opertr;
                 if (IsUnary(op))
                 {
                     if (tokens.Empty()) return {};
@@ -559,7 +649,7 @@ namespace MyLang
                     {
                         // If is operator, we need to add the operator later, and save state
                         _unaryAdd = true;
-                        opertr = &now;
+                        opertr = { now.val, op };
                         tokens.SetState(current);
                     }
                 }
@@ -569,7 +659,7 @@ namespace MyLang
                 auto res = ParseExpression(tokens, next); // Get parts
 
                 // If we need to add the operator, do it now after recurse (postfix)
-                if (_unaryAdd) res.emplace_back(*opertr);
+                if (_unaryAdd) res.emplace_back(opertr);
 
                 // Only if not unary operator
                 if (!IsUnary(op))
@@ -587,7 +677,7 @@ namespace MyLang
 
                         // Insert result from recursion before adding operator (postfix)
                         res.insert(res.end(), nextres.begin(), nextres.end()); // First this
-                        res.emplace_back(now);    // Then operator
+                        res.emplace_back(ExprPart::OpType{ now.val, op });    // Then operator
                         tokens.SetState(current); // Set the state
                     }
                 }
@@ -614,8 +704,51 @@ namespace MyLang
                 {
                 case ExprPart::Constant: std::cout << i.get<ExprPart::Constant>().value << ' '; break;
                 case ExprPart::Identifier: std::cout << i.get<ExprPart::Identifier>() << ' '; break;
-                case ExprPart::Operator: std::cout << i.get<ExprPart::Operator>().val << ' '; break;
+                case ExprPart::Operator: std::cout << i.get<ExprPart::Operator>().op << ' '; break;
                 }
+            }
+
+            uint8_t Eval(Context& ctx)
+            {
+                using enum ExprPart::Type;
+
+                // Stack to keep track of values
+                std::stack<uint8_t> _stack;
+                
+                // Loop through postfix
+                for (auto& i : parts)
+                {
+                    // Push identifier value or constant value to stack
+                    if (i.is<Identifier>()) _stack.push(ctx.identifiers[i.get<Identifier>()]);
+                    else if (i.is<Constant>()) _stack.push(i.get<Constant>().value);
+                    else // Otherwise perform operation
+                    {
+                        // Get operator 
+                        ExprPart::OpType& _op = i.get<Operator>();
+
+                        // Get first value
+                        uint8_t& _left = _stack.top();
+                        _stack.pop();
+
+                        // Test unary
+                        uint8_t _res = 0;
+                        if (IsUnary(_op.group))
+                            _res = _op.Eval(_left); // Eval
+
+                        else
+                        {
+                            // Get second value
+                            uint8_t& _right = _stack.top();
+                            _stack.pop();
+                            _res = _op.Eval(_left, _right); // Eval
+                        }
+
+                        // Push the result of the operation to the stack.
+                        _stack.push(_res);
+                    }
+                }
+
+                return _stack.top();
             }
         };
 
@@ -640,6 +773,7 @@ namespace MyLang
             }
 
             void Print(size_t inset = 0) { for (auto& i : statements) i.Print(inset); }
+            void Eval(Context& ctx) { for (auto& i : statements) i.Eval(ctx); }
         };
     };
 }
