@@ -5,6 +5,72 @@
 #include "type_linker.hpp"
 #include "constexpr_counter.hpp"
 
+namespace kaixo
+{
+    template<class ...Args>
+    struct constructor {};
+    template<class Ty, class ...Constructors>
+    concept link_constructors = kaixo::link_types<kaixo::type_group<Constructors...>, kaixo::type_group<Ty>>;
+
+    template<class Ty>
+    struct try_parse {
+        static inline Ty parse(std::string_view& args);
+    };
+
+    template<class Ty> requires (std::floating_point<Ty> || std::integral<Ty>)
+        struct try_parse<Ty> {
+        static inline Ty parse(std::string_view& args) {
+            args = args.substr(args.find_first_not_of(" \t"));
+            std::size_t length;
+            Ty val = 0;
+            auto res = std::from_chars(args.data(), args.data() + args.size(), val);
+            if (res.ec == std::errc()) {
+                args = { res.ptr, args.size() - (res.ptr - args.data()) };
+                return val;
+            }
+            else
+                throw nullptr;
+        }
+    };
+
+    template<class, class > struct decompose_constructor;
+    template<class Ty, class ...Args>
+    struct decompose_constructor<Ty, constructor<Args...>> {
+        static inline bool try_construct(Ty** assign, std::string_view& args) {
+            try {
+                *assign = new Ty{ try_parse<Args>::parse(args)... };
+                return true;
+            }
+            catch (...) { return false; }
+        }
+    };
+
+    template<class, class> struct decompose_type_group;
+    template<class Ty, class ...Cs>
+    struct decompose_type_group<Ty, type_group<Cs...>> {
+        static inline Ty try_construct(std::string_view args) {
+            Ty* val = nullptr;
+            (decompose_constructor<Ty, Cs>::try_construct(&val, args) || ...);
+            if (val == nullptr) throw nullptr;
+            Ty a = *val;
+            delete val;
+            return a;
+        }
+    };
+
+    template<class> struct decompose_tuple;
+    template<class ...Tys>
+    struct decompose_tuple<std::tuple<Tys...>> {
+        using type = constructor<Tys...>;
+    };
+
+    template<class Ty>
+    Ty construct(const std::string& args) {
+        static_assert(link_constructors<Ty, decompose_tuple<struct_info<Ty>::field_types>::type>);
+        return decompose_type_group<Ty, linked_types<Ty>>::try_construct(args);
+    }
+}
+
 using namespace kaixo;
 
 int Add(int a, int b) { return a + b; }

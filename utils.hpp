@@ -21,6 +21,7 @@ namespace kaixo {
     template<class ...Types>
     struct type_group {
         constexpr static inline size_t count = sizeof...(Types);
+        using types = std::tuple<Types...>;
     };
     template<size_t, class>
     struct nth_type_of;
