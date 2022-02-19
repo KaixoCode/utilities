@@ -71,34 +71,67 @@ namespace kaixo {
         constexpr function(auto&, detail::no_match) {}
         constexpr static inline decltype(auto) run(auto&&...args) { return Fun(std::forward<decltype(args)>(args)...); }
     };
+    
+    template<class ...Fields>
+    struct meta_struct;
 
     template<detail::string_struct Name, class Fun>
     struct virtual_function; // meta struct virtual member function
     template<detail::string_struct Name, class Ret, class ...Args>
     struct virtual_function<Name, Ret(Args...)> {
         detail::virtual_function_base<Ret, Args...>* fun = nullptr;
+        
         constexpr ~virtual_function() { if (fun && --fun->ref == 0) delete fun; } // Properly handle copy/move/delete
+        constexpr virtual_function(virtual_function& other) : fun(other.fun) { if (fun) ++fun->ref; }
         constexpr virtual_function(virtual_function&& other) : fun(other.fun) { other.fun = nullptr; }
         constexpr virtual_function(const virtual_function& other) : fun(other.fun) { if (fun) ++fun->ref; }
-        template<class MetaStruct> constexpr virtual_function(MetaStruct& obj) : virtual_function(obj, obj) {}
-        template<class MetaStruct> constexpr virtual_function(MetaStruct&& obj) : virtual_function(obj, obj) {}
-        template<class MetaStruct> constexpr virtual_function(const MetaStruct& obj) : virtual_function(obj, obj) {}
-        template<class MetaStruct, auto Fun> // use lambda to erase meta struct type (self) from argument list
-        constexpr virtual_function(MetaStruct& obj, function<Name, Fun>&) // Non-const
-            : fun{ new detail::virtual_function_typed_base{ detail::type<Ret(Args...)>{}, // Send function type
-                [&](auto&&...args) -> Ret { return Fun(obj, std::forward<decltype(args)>(args)...); }}} {}
-        template<class MetaStruct, auto Fun> 
-        constexpr virtual_function(MetaStruct&& obj, const function<Name, Fun>&) // Copy version
-            : fun{ new detail::virtual_function_typed_base{ detail::type<Ret(Args...)>{}, // Send function type
-                [=](auto&&...args) -> Ret { return Fun(obj, std::forward<decltype(args)>(args)...); }}} {}
-        template<class MetaStruct, auto Fun> 
-        constexpr virtual_function(const MetaStruct& obj, const function<Name, Fun>&) // Const ref version
-            : fun{ new detail::virtual_function_typed_base{ detail::type<Ret(Args...)>{}, // Send function type
-                [&](auto&&...args) -> Ret { return Fun(obj, std::forward<decltype(args)>(args)...); }}} {}
-        template<class Ty>
-        constexpr virtual_function(auto&, detail::arg_val<Name, Ty>&& v) 
-            : fun{ new detail::virtual_function_typed_base{ detail::type<Ret(Args...)>{}, std::move(v.value) } } {}
+
+        template<class ...Tys> constexpr virtual_function(meta_struct<Tys...>& obj) : virtual_function(obj, obj, 0) {}
+        template<class ...Tys> constexpr virtual_function(meta_struct<Tys...>&& obj) : virtual_function(obj, obj, 0) {}
+        template<class ...Tys> constexpr virtual_function(const meta_struct<Tys...>& obj) : virtual_function(obj, obj, 0) {}
+
         inline decltype(auto) run(auto&&...args) { return fun->run(std::forward<decltype(args)>(args)...); }
+
+        template<auto Fun>
+        constexpr virtual_function(auto& base, function<Name, Fun>&)
+            : fun{ new detail::virtual_function_typed_base{ detail::type<Ret(Args...)>{},
+            [&](auto&& ...args) { return Fun(base, std::forward<decltype(args)>(args)...); }} } {}
+        template<auto Fun>
+        constexpr virtual_function(auto& base, std::reference_wrapper<function<Name, Fun>>)
+            : fun{ new detail::virtual_function_typed_base{ detail::type<Ret(Args...)>{},
+            [&](auto&& ...args) { return Fun(base, std::forward<decltype(args)>(args)...); }} } {}
+
+        template<class ...Tys>
+        constexpr virtual_function(auto&, detail::arg_val<Name, meta_struct<Tys...>>&& v)
+            : virtual_function(v.value, v.value, 0) {}
+        
+        template<class Ty>
+        constexpr virtual_function(auto&, detail::arg_val<Name, Ty>&& v)
+            : fun{ new detail::virtual_function_typed_base{ detail::type<Ret(Args...)>{}, std::move(v.value) } } {}
+
+    private:
+        template<class MetaStruct, auto Fun> // use lambda to erase meta struct type (self) from argument list
+        constexpr virtual_function(MetaStruct& obj, function<Name, Fun>&, int) // Non-const
+            : fun{ new detail::virtual_function_typed_base{ detail::type<Ret(Args...)>{}, // Send function type
+                [&](auto&&...args) -> Ret { return Fun(obj, std::forward<decltype(args)>(args)...); }} } {}
+        template<class MetaStruct, auto Fun>
+        constexpr virtual_function(MetaStruct&& obj, function<Name, Fun>&&, int) // Copy version
+            : fun{ new detail::virtual_function_typed_base{ detail::type<Ret(Args...)>{}, // Send function type
+                [=](auto&&...args) -> Ret { return Fun(obj, std::forward<decltype(args)>(args)...); }} } {}
+        template<class MetaStruct, auto Fun>
+        constexpr virtual_function(const MetaStruct& obj, const function<Name, Fun>&, int) // Const ref version
+            : fun{ new detail::virtual_function_typed_base{ detail::type<Ret(Args...)>{}, // Send function type
+                [&](auto&&...args) -> Ret { return Fun(obj, std::forward<decltype(args)>(args)...); }} } {}
+
+        template<class MetaStruct, class Fun> // use lambda to erase meta struct type (self) from argument list
+        constexpr virtual_function(MetaStruct&, virtual_function<Name, Fun>& f, int) // Non-const
+            : fun{ f.fun } { if (fun) ++fun->ref; }
+        template<class MetaStruct, class Fun>
+        constexpr virtual_function(MetaStruct&&, virtual_function<Name, Fun>&& f, int) // Copy version
+            : fun{ f.fun } { f.fun = nullptr; }
+        template<class MetaStruct, class Fun>
+        constexpr virtual_function(const MetaStruct&, const virtual_function<Name, Fun>& f, int) // Const ref version
+            : fun{ f.fun } { if (fun) ++fun->ref; }
     };
 
     namespace detail {

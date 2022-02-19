@@ -846,11 +846,24 @@ using transform = meta_struct <
     virtual_function<"transform", double(double)>
 >;
 
+using my_transform = meta_struct<
+    field<"mult", double>,
+    function<"transform", [](auto& self, double v) { return v * self.get<"mult">(); }>
+>;
+
 constexpr auto transform_value(transform t) { return t.run<"transform">((double)t.get<"value">()); }
 
 int main()
 {
-    auto res6 = transform_value({ arg<"value"> = 10, arg<"transform"> = [](double a) { return a + 1; } });
+    my_transform mult_10 = { arg<"mult"> = 10 };
+
+    auto rss = arg<"transform"> = mult_10;
+
+    transform t = { arg<"value"> = 10, rss };
+
+    mult_10.get<"mult">() = 20;
+
+    auto res6 = transform_value(t);
 
 
 
