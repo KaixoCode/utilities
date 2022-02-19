@@ -60,7 +60,7 @@ namespace kaixo {
         template<class Ty, auto Init> constexpr field(const field<Name, Ty, Init>& v) : value{ v.value } {}
 
         template<class Ty>
-        constexpr field(auto&, detail::arg_val<Name, Ty> v) : value{ static_cast<Type>(std::move(v.value)) } {}
+        constexpr field(auto&, detail::arg_val<Name, Ty>&& v) : value{ static_cast<Type>(std::move(v.value)) } {}
         constexpr field(auto& self, detail::no_match v) : value{ detail::call_init<Type>(self, Init) } {}
 
         Type value;
@@ -95,6 +95,9 @@ namespace kaixo {
         constexpr virtual_function(const MetaStruct& obj, const function<Name, Fun>&) // Const ref version
             : fun{ new detail::virtual_function_typed_base{ detail::type<Ret(Args...)>{}, // Send function type
                 [&](auto&&...args) -> Ret { return Fun(obj, std::forward<decltype(args)>(args)...); }}} {}
+        template<class Ty>
+        constexpr virtual_function(auto&, detail::arg_val<Name, Ty>&& v) 
+            : fun{ new detail::virtual_function_typed_base{ detail::type<Ret(Args...)>{}, std::move(v.value) } } {}
         inline decltype(auto) run(auto&&...args) { return fun->run(std::forward<decltype(args)>(args)...); }
     };
 

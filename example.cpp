@@ -811,6 +811,14 @@ using has_carrot_soup = meta_struct<
 constexpr auto get_carrot_plus_soup(has_carrot_soup t) { return t.get<"carrot">() + t.get<"soup">(); }
 constexpr auto add_carrot_to_soup(has_carrot_soup t) { t.get<"soup">() += t.get<"carrot">(); }
 
+
+
+using has_get = meta_struct<
+    virtual_function<"get", double()>
+>;
+
+constexpr auto call_get(has_get t) { return t.run<"get">(); }
+
 using carrot_soup_bowl = meta_struct <
     field<"carrot", int, required>,
     field<"soup", float, required>,
@@ -819,12 +827,6 @@ using carrot_soup_bowl = meta_struct <
     function<"get", [](auto& self) -> auto& { return self.get<"bowl">(); }>
 >;
 
-using has_get = meta_struct<
-    virtual_function<"get", double()>
->;
-
-constexpr auto call_get(has_get t) { return t.run<"get">(); }
-
 using carrot_has_get = meta_struct<
     field<"carrot", int>,
     virtual_function<"get", double()>
@@ -832,14 +834,34 @@ using carrot_has_get = meta_struct<
 
 constexpr auto carrot_plus_call_get(carrot_has_get t) { return t.run<"get">() + t.get<"carrot">(); }
 
+using has_add_to_bowl = meta_struct<
+    virtual_function<"addToBowl", void(double)>
+>;
+
+constexpr auto add_2_to_bowl(has_add_to_bowl t) { return t.run<"addToBowl">(2); }
+
+
+using transform = meta_struct <
+    field<"value", double>,
+    virtual_function<"transform", double(double)>
+>;
+
+constexpr auto transform_value(transform t) { return t.run<"transform">((double)t.get<"value">()); }
+
 int main()
 {
-    carrot_soup_bowl _a{ arg<"carrot"> = 1, arg<"soup"> = 1 };
+    auto res6 = transform_value({ arg<"value"> = 10, arg<"transform"> = [](double a) { return a + 1; } });
+
+
 
     auto res = carrot_plus_call_get(carrot_soup_bowl{ arg<"carrot"> = 1, arg<"soup"> = 1 });
 
+    carrot_soup_bowl _a{ arg<"carrot"> = 1, arg<"soup"> = 1 };
+
+    add_2_to_bowl(_a);
+
     auto res1 = get_carrot_plus_soup(_a);
-    
+
     auto& res2 = get_carrot(_a);
     auto& res3 = get_soup(_a);
     
