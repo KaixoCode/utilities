@@ -825,11 +825,18 @@ using has_get = meta_struct<
 
 constexpr auto call_get(has_get t) { return t.run<"get">(); }
 
+using carrot_has_get = meta_struct<
+    field<"carrot", int>,
+    virtual_function<"get", double()>
+>;
+
+constexpr auto carrot_plus_call_get(carrot_has_get t) { return t.run<"get">() + t.get<"carrot">(); }
+
 int main()
 {
     carrot_soup_bowl _a{ arg<"carrot"> = 1, arg<"soup"> = 1 };
 
-    auto res = call_get(carrot_soup_bowl{ arg<"carrot"> = 1, arg<"soup"> = 1 });
+    auto res = carrot_plus_call_get(carrot_soup_bowl{ arg<"carrot"> = 1, arg<"soup"> = 1 });
 
     auto res1 = get_carrot_plus_soup(_a);
     

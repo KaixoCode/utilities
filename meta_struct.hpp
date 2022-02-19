@@ -76,8 +76,8 @@ namespace kaixo {
     struct virtual_function; // meta struct virtual member function
     template<detail::string_struct Name, class Ret, class ...Args>
     struct virtual_function<Name, Ret(Args...)> {
-        detail::virtual_function_base<Ret, Args...>* fun;
-        constexpr ~virtual_function() { if (fun && --fun->ref == 0) delete fun; }
+        detail::virtual_function_base<Ret, Args...>* fun = nullptr;
+        constexpr ~virtual_function() { if (fun && --fun->ref == 0) delete fun; } // Properly handle copy/move/delete
         constexpr virtual_function(virtual_function&& other) : fun(other.fun) { other.fun = nullptr; }
         constexpr virtual_function(const virtual_function& other) : fun(other.fun) { if (fun) ++fun->ref; }
         template<class MetaStruct> constexpr virtual_function(MetaStruct& obj) : virtual_function(obj, obj) {}
