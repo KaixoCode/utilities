@@ -5,6 +5,8 @@
 
 namespace kaixo {
     namespace detail {
+        template<class Ty> struct type {};
+        
         template<std::size_t N>
         struct string_struct { // Simple constexpr string literal wrapper
             char value[N - 1];
@@ -35,14 +37,13 @@ namespace kaixo {
         constexpr auto call_init(Self& self, F& f) requires(requires{
             { f(self) } -> std::convertible_to<Ty>; }) { return f(self); }
 
-        template<class Ty> struct type {};
-        template<class Ret, class ...Args>
-        struct virtual_function_base { virtual Ret run(Args&&...args) const = 0; };
-
+        // Type erasure through inheritance, virtual run method.
+        template<class Ret, class ...Args> // vvv Ref counted base class for function storage
+        struct virtual_function_base { std::size_t ref = 1; virtual Ret run(Args&&...args) const = 0; };
         template<class Fun, class Ret, class ...Args>
         struct virtual_function_typed_base : virtual_function_base<Ret, Args...> {
-            virtual_function_typed_base(type<Ret(Args...)>, Fun fun) : fun(fun) {}
             Fun fun;
+            virtual_function_typed_base(type<Ret(Args...)>, Fun fun) : fun(fun) {}
             Ret run(Args&&...args) const override { return fun(std::forward<Args>(args)...); };
         };
 
@@ -76,14 +77,22 @@ namespace kaixo {
     template<detail::string_struct Name, class Ret, class ...Args>
     struct virtual_function<Name, Ret(Args...)> {
         detail::virtual_function_base<Ret, Args...>* fun;
+        constexpr ~virtual_function() { if (fun && --fun->ref == 0) delete fun; }
+        constexpr virtual_function(virtual_function&& other) : fun(other.fun) { other.fun = nullptr; }
+        constexpr virtual_function(const virtual_function& other) : fun(other.fun) { if (fun) ++fun->ref; }
         template<class MetaStruct> constexpr virtual_function(MetaStruct& obj) : virtual_function(obj, obj) {}
+        template<class MetaStruct> constexpr virtual_function(MetaStruct&& obj) : virtual_function(obj, obj) {}
         template<class MetaStruct> constexpr virtual_function(const MetaStruct& obj) : virtual_function(obj, obj) {}
         template<class MetaStruct, auto Fun> // use lambda to erase meta struct type (self) from argument list
-        constexpr virtual_function(MetaStruct& obj, function<Name, Fun>&)
+        constexpr virtual_function(MetaStruct& obj, function<Name, Fun>&) // Non-const
             : fun{ new detail::virtual_function_typed_base{ detail::type<Ret(Args...)>{}, // Send function type
                 [&](auto&&...args) -> Ret { return Fun(obj, std::forward<decltype(args)>(args)...); }}} {}
         template<class MetaStruct, auto Fun> 
-        constexpr virtual_function(const MetaStruct& obj, const function<Name, Fun>&)
+        constexpr virtual_function(MetaStruct&& obj, const function<Name, Fun>&) // Copy version
+            : fun{ new detail::virtual_function_typed_base{ detail::type<Ret(Args...)>{}, // Send function type
+                [=](auto&&...args) -> Ret { return Fun(obj, std::forward<decltype(args)>(args)...); }}} {}
+        template<class MetaStruct, auto Fun> 
+        constexpr virtual_function(const MetaStruct& obj, const function<Name, Fun>&) // Const ref version
             : fun{ new detail::virtual_function_typed_base{ detail::type<Ret(Args...)>{}, // Send function type
                 [&](auto&&...args) -> Ret { return Fun(obj, std::forward<decltype(args)>(args)...); }}} {}
         inline decltype(auto) run(auto&&...args) { return fun->run(std::forward<decltype(args)>(args)...); }

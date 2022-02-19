@@ -820,16 +820,16 @@ using carrot_soup_bowl = meta_struct <
 >;
 
 using has_get = meta_struct<
-    virtual_function<"get", double&()>
+    virtual_function<"get", double()>
 >;
 
-constexpr auto& call_get(has_get t) { return t.run<"get">(); }
+constexpr auto call_get(has_get t) { return t.run<"get">(); }
 
 int main()
 {
     carrot_soup_bowl _a{ arg<"carrot"> = 1, arg<"soup"> = 1 };
 
-    auto& res = call_get(_a);
+    auto res = call_get(carrot_soup_bowl{ arg<"carrot"> = 1, arg<"soup"> = 1 });
 
     auto res1 = get_carrot_plus_soup(_a);
     
