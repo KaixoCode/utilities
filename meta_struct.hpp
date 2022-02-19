@@ -34,6 +34,20 @@ namespace kaixo {
         template<class Ty, class Self, class F> // Call initializer with self
         constexpr auto call_init(Self& self, F& f) requires(requires{
             { f(self) } -> std::convertible_to<Ty>; }) { return f(self); }
+
+        template<class Ty> struct type {};
+        template<class Ret, class ...Args>
+        struct virtual_function_base { virtual Ret run(Args&&...args) const = 0; };
+
+        template<class Fun, class Ret, class ...Args>
+        struct virtual_function_typed_base : virtual_function_base<Ret, Args...> {
+            virtual_function_typed_base(type<Ret(Args...)>, Fun fun) : fun(fun) {}
+            Fun fun;
+            Ret run(Args&&...args) const override { return fun(std::forward<Args>(args)...); };
+        };
+
+        template<class Fun, class Ret, class ...Args>
+        virtual_function_typed_base(type<Ret(Args...)>, Fun)->virtual_function_typed_base<Fun, Ret, Args...>;
     }
 
     template<detail::string_struct Name, class Type, auto Init = detail::default_init<Type>()>
@@ -57,6 +71,24 @@ namespace kaixo {
         constexpr static inline decltype(auto) run(auto&&...args) { return Fun(std::forward<decltype(args)>(args)...); }
     };
 
+    template<detail::string_struct Name, class Fun>
+    struct virtual_function; // meta struct virtual member function
+    template<detail::string_struct Name, class Ret, class ...Args>
+    struct virtual_function<Name, Ret(Args...)> {
+        detail::virtual_function_base<Ret, Args...>* fun;
+        template<class MetaStruct> constexpr virtual_function(MetaStruct& obj) : virtual_function(obj, obj) {}
+        template<class MetaStruct> constexpr virtual_function(const MetaStruct& obj) : virtual_function(obj, obj) {}
+        template<class MetaStruct, auto Fun> // use lambda to erase meta struct type (self) from argument list
+        constexpr virtual_function(MetaStruct& obj, function<Name, Fun>&)
+            : fun{ new detail::virtual_function_typed_base{ detail::type<Ret(Args...)>{}, // Send function type
+                [&](auto&&...args) -> Ret { return Fun(obj, std::forward<decltype(args)>(args)...); }}} {}
+        template<class MetaStruct, auto Fun> 
+        constexpr virtual_function(const MetaStruct& obj, const function<Name, Fun>&)
+            : fun{ new detail::virtual_function_typed_base{ detail::type<Ret(Args...)>{}, // Send function type
+                [&](auto&&...args) -> Ret { return Fun(obj, std::forward<decltype(args)>(args)...); }}} {}
+        inline decltype(auto) run(auto&&...args) { return fun->run(std::forward<decltype(args)>(args)...); }
+    };
+
     namespace detail {
         template<string_struct Name>
         struct arg_type { // Constructor argument without value
@@ -66,9 +98,9 @@ namespace kaixo {
 
         // Const and non-const 'get' implementations
         template<string_struct Name, class Type, auto Default>
-        constexpr decltype(auto) get_impl(field<Name, Type, Default>& m) { return (m.value); }
+        constexpr Type& get_impl(field<Name, Type, Default>& m) { return (m.value); }
         template<string_struct Name, class Type, auto Default>
-        constexpr decltype(auto) get_impl(const field<Name, Type, Default>& m) { return (m.value); }
+        constexpr Type const& get_impl(const field<Name, Type, Default>& m) { return (m.value); }
         template<string_struct Name, class MetaStruct> // Uses type deduction to get correct value
         constexpr decltype(auto) get(MetaStruct&& s) { return get_impl<Name>(std::forward<MetaStruct>(s)); }
 
@@ -77,10 +109,18 @@ namespace kaixo {
         constexpr decltype(auto) run_impl(const function<Name, Fun>& m, auto&&...args) {
             return (function<Name, Fun>::run(std::forward<decltype(args)>(args)...));
         }
+        template<string_struct Name, class Fun>
+        constexpr decltype(auto) run_impl(const virtual_function<Name, Fun>& m, auto&&, auto&&...args) {
+            return m.fun->run(std::forward<decltype(args)>(args)...);
+        }        
+        template<string_struct Name, class Fun>
+        constexpr decltype(auto) run_impl(virtual_function<Name, Fun>& m, auto&&, auto&&...args) {
+            return m.fun->run(std::forward<decltype(args)>(args)...);
+        }
         template<string_struct Name, class MetaStruct>
         constexpr decltype(auto) run(MetaStruct&& s, auto&&...args) {
-            return run_impl<Name>(std::forward<MetaStruct>(s), // Insert struct twice, once for type deduct
-                std::forward<MetaStruct>(s), std::forward<decltype(args)>(args)...); // 2nd one for argument in call
+            return run_impl<Name>(std::forward<MetaStruct>(s), 
+                std::forward<MetaStruct>(s), std::forward<decltype(args)>(args)...);
         }
     }
 
@@ -101,9 +141,9 @@ namespace kaixo {
         constexpr meta_struct() : meta_struct(detail::params{}) {}
 
         template<detail::string_struct Name>
-        constexpr decltype(auto) get() const { return detail::get<Name>(*this); }
+        constexpr auto const& get() const { return detail::get<Name>(*this); }
         template<detail::string_struct Name>
-        constexpr decltype(auto) get() { return detail::get<Name>(*this); }
+        constexpr auto& get() { return detail::get<Name>(*this); }
 
         template<detail::string_struct Name>
         constexpr decltype(auto) run(auto&&...args) const { return detail::run<Name>(*this, std::forward<decltype(args)>(args)...); };

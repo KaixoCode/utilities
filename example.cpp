@@ -792,13 +792,6 @@ struct Email {
 
 using namespace kaixo;
 
-using carrot_soup_bowl = meta_struct <
-    field<"carrot", int, required>,
-    field<"soup", float, required>,
-    field<"bowl", double, [](auto& self) { return self.get<"soup">() + 100; }>,
-    function<"addToBowl", [](auto& self, double amount){ self.get<"bowl">() += amount; }>
->;
-
 using has_carrot = meta_struct<
     field<"carrot", int&>
 >;
@@ -818,9 +811,25 @@ using has_carrot_soup = meta_struct<
 constexpr auto get_carrot_plus_soup(has_carrot_soup t) { return t.get<"carrot">() + t.get<"soup">(); }
 constexpr auto add_carrot_to_soup(has_carrot_soup t) { t.get<"soup">() += t.get<"carrot">(); }
 
+using carrot_soup_bowl = meta_struct <
+    field<"carrot", int, required>,
+    field<"soup", float, required>,
+    field<"bowl", double, [](auto& self) { return self.get<"soup">() + 100; }>,
+    function<"addToBowl", [](auto& self, double amount){ self.get<"bowl">() += amount; }>,
+    function<"get", [](auto& self) -> auto& { return self.get<"bowl">(); }>
+>;
+
+using has_get = meta_struct<
+    virtual_function<"get", double&()>
+>;
+
+constexpr auto& call_get(has_get t) { return t.run<"get">(); }
+
 int main()
 {
     carrot_soup_bowl _a{ arg<"carrot"> = 1, arg<"soup"> = 1 };
+
+    auto& res = call_get(_a);
 
     auto res1 = get_carrot_plus_soup(_a);
     
@@ -834,6 +843,7 @@ int main()
     auto val3 = _a.get<"bowl">();
     
     _a.run<"addToBowl">(30);
+    _a.run<"get">();
     auto val4 = _a.get<"bowl">();
 
     return 0;
