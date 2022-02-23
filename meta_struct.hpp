@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <string_view>
 #include <utility>
+#include <ostream>
 
 namespace kaixo {
     namespace detail {
@@ -95,7 +96,7 @@ namespace kaixo {
         template<detail::string_struct Name>
         struct arg_type { // Constructor argument without value
             template<class T> // Equal opertator returns arg_val
-            constexpr auto operator=(T t) const { return field<Name, std::decay_t<T>>{ std::move(t) }; }
+            constexpr auto operator=(T t) const { return field<Name, T>{ std::forward<T>(t) }; }
         };
 
         // Type erasure through inheritance, virtual run method.
@@ -176,16 +177,24 @@ namespace kaixo {
         template<class Self, class ...Tys>
         virtual_function(Self&, meta_struct<Tys...> m)
             : virtual_function(m, m, 0) {}
+        
+        template<class Self, class Fun, auto Init>
+        virtual_function(Self& m, field<Name, Fun, Init> val)
+            : fun(new detail::virtual_function_typed_base{ detail::type<Ret(Args...)>{},
+            [&, val](Args...args) { return val.value(m, std::forward<Args>(args)...); } }) {}
 
         template<class Self>
         virtual_function(Self&, detail::no_match) {}
 
     private:
         template<auto Fun, class ...Tys>
-        virtual_function(meta_struct<Tys...> m, function<Name, Fun>, int)
+        virtual_function(meta_struct<Tys...>& m, function<Name, Fun>&, int)
             : fun(new detail::virtual_function_typed_base{ detail::type<Ret(Args...)>{},
-                [m](Args...args) { return Fun(m, std::forward<Args>(args)...); } })
-        {}
+                [m](Args...args) { return Fun(m, std::forward<Args>(args)...); } }) {}
+
+        template<class Fun, class ...Tys>
+        virtual_function(meta_struct<Tys...>& m, virtual_function<Name, Fun>& v, int)
+            : fun(v.fun) { if (fun) ++fun->ref; }
     };
 
     template<class ...Fields>
@@ -217,11 +226,6 @@ namespace kaixo {
         constexpr decltype(auto) operator[](detail::arg_type<Name>) { return detail::get<Name>(*this); }
         template<detail::string_struct Name>
         constexpr decltype(auto) operator[](detail::arg_type<Name>) const { return detail::get<Name>(*this); }
-        
-        template<detail::string_struct Name>
-        constexpr decltype(auto) operator()(detail::arg_type<Name>, auto&& ...args) { return detail::run<Name>(*this, std::forward<decltype(args)>(args)...); }
-        template<detail::string_struct Name>
-        constexpr decltype(auto) operator()(detail::arg_type<Name>, auto&& ...args) const { return detail::run<Name>(*this, std::forward<decltype(args)>(args)...); }
 
     private:
         template<class ...Fs>
@@ -230,6 +234,36 @@ namespace kaixo {
         template<class ...Fs>
         friend class meta_struct;
     };
+
+    template<detail::string_struct Name, class Ty, auto Init>
+    std::ostream& operator<<(std::ostream& os, const field<Name, Ty, Init>& dt)
+    {
+        os << Name.str() << " = " << dt.value;
+        return os;
+    }
+
+    template<detail::string_struct Name, class Fun>
+    std::ostream& operator<<(std::ostream& os, const virtual_function<Name, Fun>& dt)
+    {
+        os << "virtual " << Name.str() << "() = " << dt.fun;
+        return os;
+    }
+
+    template<detail::string_struct Name, auto Fun>
+    std::ostream& operator<<(std::ostream& os, const function<Name, Fun>& dt)
+    {
+        os << Name.str() << "()";
+        return os;
+    }
+
+    template<class ...Ty>
+    std::ostream& operator<<(std::ostream& os, const meta_struct<Ty...>& dt)
+    {
+        os << "{ ";
+        ((os << (Ty&)dt << ", "), ...);
+        os << " }";
+        return os;
+    }
 
     template<class> struct msty;
     template<class ...Tys> struct msty<meta_struct<Tys...>> { using type = std::tuple<Tys...>; };

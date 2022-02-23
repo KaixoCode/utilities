@@ -22,6 +22,8 @@ constexpr static auto area = arg<"area">;
 constexpr static auto start = arg<"start">;
 constexpr static auto end = arg<"end">;
 constexpr static auto distance = arg<"distance">;
+constexpr static auto size = arg<"size">;
+constexpr static auto draw = arg<"draw">;
 
 constexpr static auto distance_fun = [](auto& self, auto& other) {
     return std::sqrt(
@@ -55,18 +57,43 @@ using rect = meta_struct<
     field<"x", Type>, field<"y", Type>,
     field<"width", Type>, field<"height", Type>,
     function<"area", area_fun>,
-    function<"start", start_fun<Type>>,
-    function<"end", end_fun<Type>>
+    function<"start", start_fun<Type&>>,
+    function<"end", end_fun<Type&>>
 >;
 
-int main()
-{
+using component = meta_struct<
+    field<"size", rect<double>>,
+    virtual_function<"draw", void()>
+>;
+
+using drawable = meta_struct<
+    virtual_function<"draw", void()>
+>;
+
+#include <vector>
+
+int main() {
     rect<double> _r{ x = 0, y = 0, width = 50, height = 50 };
+
+    std::vector<drawable> drawables;
+
+    component _c{ 
+        size = _r, 
+        draw = [](auto& self) {
+            std::cout << self << '\n';
+        } 
+    };
+
+    drawable _d = _c;
+
+    drawables.push_back(_c);
+
+    _c[draw]();
 
     double _area1 = _r[area]();
 
-    point<double> _start = _r[start]();
-    point<double> _end = _r[end]();
+    point<double&> _start = _r[start]();
+    point<double&> _end = _r[end]();
 
     double _distance = _start[distance](_end);
 
