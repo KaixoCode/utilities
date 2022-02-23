@@ -84,8 +84,8 @@ namespace kaixo {
         constexpr field(const Type& v) : value(v) {}
 
         template<class Self, class Ty>
-        constexpr field(Self&, const field<Name, Ty>& a)
-            : value((Type)a.value) {}
+        constexpr field(Self&, std::reference_wrapper<field<Name, Ty>> a)
+            : value((Type)a.get().value) {}
 
         template<class Self>
         constexpr field(Self& self, detail::no_match)
@@ -175,13 +175,17 @@ namespace kaixo {
         detail::virtual_function_base<Ret, Args...>* fun = nullptr;
 
         template<class Self, class ...Tys>
-        virtual_function(Self&, meta_struct<Tys...> m)
-            : virtual_function(m, m, 0) {}
+        virtual_function(Self&, std::reference_wrapper<meta_struct<Tys...>> m)
+            : virtual_function(m.get(), m.get(), 0) {}
         
+        template<class Self, class ...Tys>
+        virtual_function(Self&, std::reference_wrapper<const meta_struct<Tys...>> m)
+            : virtual_function(m.get(), m.get(), 0) {}
+
         template<class Self, class Fun, auto Init>
-        virtual_function(Self& m, field<Name, Fun, Init> val)
+        virtual_function(Self& m, std::reference_wrapper<field<Name, Fun, Init>> val)
             : fun(new detail::virtual_function_typed_base{ detail::type<Ret(Args...)>{},
-            [&, val](Args...args) { return val.value(m, std::forward<Args>(args)...); } }) {}
+            [&, val = val.get()](Args...args) { return val.value(m, std::forward<Args>(args)...); }}) {}
 
         template<class Self>
         virtual_function(Self&, detail::no_match) {}
@@ -190,26 +194,38 @@ namespace kaixo {
         template<auto Fun, class ...Tys>
         virtual_function(meta_struct<Tys...>& m, function<Name, Fun>&, int)
             : fun(new detail::virtual_function_typed_base{ detail::type<Ret(Args...)>{},
-                [m](Args...args) { return Fun(m, std::forward<Args>(args)...); } }) {}
+                [&](Args...args) { return Fun(m, std::forward<Args>(args)...); } }) {}
 
         template<class Fun, class ...Tys>
         virtual_function(meta_struct<Tys...>& m, virtual_function<Name, Fun>& v, int)
+            : fun(v.fun) { if (fun) ++fun->ref; }
+
+        template<auto Fun, class ...Tys>
+        virtual_function(const meta_struct<Tys...>& m, const function<Name, Fun>&, int)
+            : fun(new detail::virtual_function_typed_base{ detail::type<Ret(Args...)>{},
+                [&](Args...args) { return Fun(m, std::forward<Args>(args)...); } }) {}
+
+        template<class Fun, class ...Tys>
+        virtual_function(const meta_struct<Tys...>& m, const virtual_function<Name, Fun>& v, int)
             : fun(v.fun) { if (fun) ++fun->ref; }
     };
 
     template<class ...Fields>
     struct meta_struct : Fields... {
-
         template<class ...Tys>
-        constexpr meta_struct(Tys... args)
-            : meta_struct(detail::params{ args... }) {}
+        constexpr meta_struct(Tys&&... args)
+            : meta_struct(detail::params{ std::ref(args)... }) {}
 
         template<class Self, class ...Args>
         constexpr meta_struct(Self&, detail::params<Args...> val)
             : meta_struct(val) {}
 
         template<class Self>
-        constexpr meta_struct(Self&, meta_struct val)
+        constexpr meta_struct(Self&, std::reference_wrapper<meta_struct> val)
+            : meta_struct(val) {}
+
+        template<class Self>
+        constexpr meta_struct(Self&, std::reference_wrapper<const meta_struct> val)
             : meta_struct(val) {}
 
         template<detail::string_struct Name>

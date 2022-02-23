@@ -24,6 +24,7 @@ constexpr static auto end = arg<"end">;
 constexpr static auto distance = arg<"distance">;
 constexpr static auto size = arg<"size">;
 constexpr static auto draw = arg<"draw">;
+constexpr static auto m_A = arg<"m_A">;
 
 constexpr static auto distance_fun = [](auto& self, auto& other) {
     return std::sqrt(
@@ -44,12 +45,12 @@ constexpr static auto area_fun = [](auto& self) {
 
 template<class Type>
 constexpr static auto start_fun = [](auto& self) {
-    return point<Type>{ x = self[x], y = self[y] };
+    return point<Type>{ x = std::ref(self[x]), y = std::ref(self[y]) };
 };
 
 template<class Type>
 constexpr static auto end_fun = [](auto& self) {
-    return point<Type>{ x = self[width], y = self[height] };
+    return point<Type>{ x = std::ref(self[width]), y = std::ref(self[height]) };
 };
 
 template<class Type>
@@ -61,9 +62,37 @@ using rect = meta_struct<
     function<"end", end_fun<Type&>>
 >;
 
+
+
+struct A
+{
+    int val;
+    A(int a) : val(a) { std::cout << "construct\n"; };
+    A(A&& a) : val(a.val) { std::cout << "move\n"; };
+    A(const A& a) : val(a.val) { std::cout << "copy\n"; };
+    ~A() { std::cout << "destruct\n"; };
+};
+
+template<class ...Ty>
+std::ostream& operator<<(std::ostream& os, const A& dt)
+{
+    os << dt.val;
+    return os;
+}
+
 using component = meta_struct<
     field<"size", rect<double>>,
+    field<"m_A", A, []{ return 0; }>,
     virtual_function<"draw", void()>
+>;
+
+using my_component = meta_struct<
+    field<"size", rect<double>>,
+    field<"m_A", A, []{ return 0; }>,
+    function<"draw", [](auto& self) {
+        std::cout << self << '\n'; 
+    }
+    >
 >;
 
 using drawable = meta_struct<
@@ -72,23 +101,36 @@ using drawable = meta_struct<
 
 #include <vector>
 
+
 int main() {
     rect<double> _r{ x = 0, y = 0, width = 50, height = 50 };
 
     std::vector<drawable> drawables;
 
-    component _c{ 
-        size = _r, 
+    component _c1{
+        size = _r,
+        m_A = 5,
         draw = [](auto& self) {
             std::cout << self << '\n';
         } 
     };
+    
+    auto _c3 = construct(_c1, x = 10);
+    my_component _c2{};
 
-    drawable _d = _c;
+    //_c2[size][width];
 
-    drawables.push_back(_c);
+    drawable _d1 = _c1;
+    drawable _d2 = _c2;
 
-    _c[draw]();
+    drawables.push_back(_c1);
+    drawables.push_back(_c1);
+
+    //_c1[size][x] = 5;
+    //_c2[size][x] = 6;
+
+    drawables[0][draw]();
+    drawables[1][draw]();
 
     double _area1 = _r[area]();
 
