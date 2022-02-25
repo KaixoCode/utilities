@@ -84,8 +84,8 @@ namespace kaixo {
         constexpr field(const Type& v) : value(v) {}
 
         template<class Self, class Ty>
-        constexpr field(Self&, std::reference_wrapper<field<Name, Ty>> a)
-            : value((Type)a.get().value) {}
+        constexpr field(Self&, field<Name, Ty> a)
+            : value((Type)a.value) {}
 
         template<class Self>
         constexpr field(Self& self, detail::no_match)
@@ -171,21 +171,25 @@ namespace kaixo {
     struct virtual_function<Name, Ret(Args...)> {
         constexpr ~virtual_function() { if (fun && --fun->ref == 0) delete fun; }
         constexpr virtual_function(const virtual_function& other) : fun(other.fun) { if (fun) ++fun->ref; }
-        constexpr virtual_function(virtual_function&& other) : fun(other.fun) { other.fun = nullptr; }
+        constexpr virtual_function(virtual_function&& other) : fun(other.fun) { if (fun) ++fun->ref; }
         detail::virtual_function_base<Ret, Args...>* fun = nullptr;
+
+        template<class Self, class ...Tys>
+        virtual_function(Self&, meta_struct<Tys...>&& m)
+            : virtual_function(std::move(m), std::move(m), 0) {}
 
         template<class Self, class ...Tys>
         virtual_function(Self&, std::reference_wrapper<meta_struct<Tys...>> m)
             : virtual_function(m.get(), m.get(), 0) {}
-        
+
         template<class Self, class ...Tys>
         virtual_function(Self&, std::reference_wrapper<const meta_struct<Tys...>> m)
             : virtual_function(m.get(), m.get(), 0) {}
 
         template<class Self, class Fun, auto Init>
-        virtual_function(Self& m, std::reference_wrapper<field<Name, Fun, Init>> val)
+        virtual_function(Self& m, field<Name, Fun, Init>&& val)
             : fun(new detail::virtual_function_typed_base{ detail::type<Ret(Args...)>{},
-            [&, val = val.get()](Args...args) { return val.value(m, std::forward<Args>(args)...); }}) {}
+            [&, val = std::move(val)](Args...args) { return val.value(m, std::forward<Args>(args)...); }}) {}
 
         template<class Self>
         virtual_function(Self&, detail::no_match) {}
@@ -201,6 +205,15 @@ namespace kaixo {
             : fun(v.fun) { if (fun) ++fun->ref; }
 
         template<auto Fun, class ...Tys>
+        virtual_function(meta_struct<Tys...>&& m, function<Name, Fun>&&, int)
+            : fun(new detail::virtual_function_typed_base{ detail::type<Ret(Args...)>{},
+                [m = std::move(m)](Args...args) { return Fun(m, std::forward<Args>(args)...); }}) {}
+
+        template<class Fun, class ...Tys>
+        virtual_function(meta_struct<Tys...>&& m, virtual_function<Name, Fun>&& v, int)
+            : fun(v.fun) { if (fun) ++fun->ref; }
+
+        template<auto Fun, class ...Tys>
         virtual_function(const meta_struct<Tys...>& m, const function<Name, Fun>&, int)
             : fun(new detail::virtual_function_typed_base{ detail::type<Ret(Args...)>{},
                 [&](Args...args) { return Fun(m, std::forward<Args>(args)...); } }) {}
@@ -212,20 +225,17 @@ namespace kaixo {
 
     template<class ...Fields>
     struct meta_struct : Fields... {
+
         template<class ...Tys>
-        constexpr meta_struct(Tys&&... args)
-            : meta_struct(detail::params{ std::ref(args)... }) {}
+        constexpr meta_struct(Tys... args)
+            : meta_struct(detail::params{ args... }) {}
 
         template<class Self, class ...Args>
         constexpr meta_struct(Self&, detail::params<Args...> val)
             : meta_struct(val) {}
 
         template<class Self>
-        constexpr meta_struct(Self&, std::reference_wrapper<meta_struct> val)
-            : meta_struct(val) {}
-
-        template<class Self>
-        constexpr meta_struct(Self&, std::reference_wrapper<const meta_struct> val)
+        constexpr meta_struct(Self&, meta_struct val)
             : meta_struct(val) {}
 
         template<detail::string_struct Name>
@@ -283,6 +293,8 @@ namespace kaixo {
 
     template<class> struct msty;
     template<class ...Tys> struct msty<meta_struct<Tys...>> { using type = std::tuple<Tys...>; };
+    template<class ...Tys> struct msty<std::reference_wrapper<meta_struct<Tys...>>> { using type = std::tuple<Tys...>; };
+    template<class ...Tys> struct msty<std::reference_wrapper<const meta_struct<Tys...>>> { using type = std::tuple<Tys...>; };
     template<detail::string_struct Name, class Type, auto Init> struct msty<field<Name, Type, Init>> { using type = std::tuple<field<Name, Type, Init>>; };
     template<detail::string_struct Name, auto Fun> struct msty<function<Name, Fun>> { using type = std::tuple<function<Name, Fun>>; };
     template<class ...Tys> using mstyt = decltype(detail::make_tuple_unique(std::declval<typename msty<Tys>::type>()...));
@@ -291,8 +303,8 @@ namespace kaixo {
     template<class ...Tys> using mstyttmst = typename mstyttms<mstyt<Tys...>>::type;
 
     template<class ...Tys>
-    constexpr auto construct(Tys...args) {
-        return mstyttmst<std::decay_t<Tys>...>{ args... };
+    constexpr auto construct(Tys&&...args) {
+        return mstyttmst<std::decay_t<Tys>...>{ std::move(args)... };
     }
 
     template<class Ty> struct tomst { using type = Ty; };
