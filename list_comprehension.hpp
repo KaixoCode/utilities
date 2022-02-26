@@ -553,12 +553,9 @@ namespace kaixo {
         }
 
         // 'var, var'; Converts 2 vars to tuple of vars
-        template<is_var_type A, is_var_type B>
-        constexpr auto operator,(A&, B&) { return tuple_of_vars<A, B>{}; }
-        template<is_var_type A, is_var_type ...Bs>
-        constexpr auto operator,(tuple_of_vars<Bs...>&&, A&) { return tuple_of_vars<Bs..., A>{}; }
-        template<is_var_type A, is_var_type ...Bs>
-        constexpr auto operator,(A&, tuple_of_vars<Bs...>&&) { return tuple_of_vars<A, Bs...>{}; }
+        template<is_var_type A, is_var_type B> constexpr auto operator,(A&, B&) { return tuple_of_vars<A, B>{}; }
+        template<is_var_type A, is_var_type ...Bs> constexpr auto operator,(tuple_of_vars<Bs...>&&, A&) { return tuple_of_vars<Bs..., A>{}; }
+        template<is_var_type A, is_var_type ...Bs> constexpr auto operator,(A&, tuple_of_vars<Bs...>&&) { return tuple_of_vars<A, Bs...>{}; }
 
         // 'expression, var'; Same as above, but with 1 expression
         template<is_var_type B>
