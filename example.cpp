@@ -1,22 +1,26 @@
 ﻿#include "list_comprehension.hpp"
-
+#include <array>
 
 int main() {
 
     using namespace kaixo;
-    using namespace kaixo::views;
+    using namespace kaixo::lc_operators;
 
-    constexpr std::array a{ 1, 2, 3, 4 };
-    constexpr std::array b{ 1, 2, 3, 4 };
+    
+    constexpr auto a = var<"a">;
+    constexpr auto b = var<"b">;
+    constexpr auto c = var<"c">;
 
-    constexpr auto x = var<"x">;
-    constexpr auto y = var<"y">;
+    constexpr auto res = lc[(a, b, c) | c <- range(1, 11), b <- range(1, 11), a <- range(1, 11), a*a + b*b == c*c];
+    constexpr auto v1 = res[2];
 
-    constexpr auto res = lc[(x, y) | x <- range(0, inf), y <- range(0, 10), x % 2 == 0, y % 2 == 0];
+    constexpr auto rs2 = lc[(a, b, c) | (a, (b, c)) <- (range(0, 10), range(0, 10), range(0, 10))];
+    constexpr auto v2 = rs2[6];
 
-    for (auto i : res) {
-        std::cout << std::get<0>(i) << ", " << std::get<1>(i) << '\n';
-    }
+    //for (auto i : res) {
+    //    std::cout << std::get<0>(i) << ", " << std::get<1>(i) << ", " << std::get<2>(i) << '\n';
+    //}
+
 
     //for (auto i : res)
     //{
