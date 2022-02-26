@@ -23,6 +23,7 @@ namespace kaixo {
 
     // Type as tuple, takes existing tuple into account
     template<class Ty> struct as_tuple { using type = std::tuple<Ty>; };
+    template<class A, class B> struct as_tuple<std::pair<A, B>> { using type = std::tuple<std::remove_const_t<A>, B>; };
     template<class ...Tys> struct as_tuple<std::tuple<Tys...>> { using type = std::tuple<Tys...>; };
     template<class Ty> using as_tuple_t = typename as_tuple<Ty>::type;
 
@@ -56,7 +57,7 @@ namespace kaixo {
     struct tuple_with_names : public Tuple {
         using type = Tuple;
 
-        constexpr void operator=(Tuple&& val) { Tuple::operator=(std::move(val)); }
+        constexpr tuple_with_names& operator=(Tuple&& val) { Tuple::operator=(std::move(val)); return *this; }
         template<tag Name> constexpr decltype(auto) get() const { return std::get<Names::index_of<Name>>(*this); }
     };
 
@@ -412,26 +413,27 @@ namespace kaixo {
 
             constexpr iterator& operator++() {
                 if constexpr (std::tuple_size_v<Constraints> == 0)
-                    value = { *++it }; // no constraints = just decrement
+                    ++it; // no constraints = just decrement
                 else { // decrement until constraints pass or at end
-                    do value = { *++it };
-                    while (!(it == me.data.container.begin()) && !me.check_constraints(me.seq, value));
+                    do ++it;
+                    while (!(it == me.data.container.end()) && !me.check_constraints(me.seq, value = *it));
                 }
                 return *this;
             }
 
             constexpr iterator& operator--() {
                 if constexpr (std::tuple_size_v<Constraints> == 0)
-                    value = { *--it }; // no constraints = just decrement
+                    --it; // no constraints = just decrement
                 else { // decrement until constraints pass or at end
-                    do value = { *--it };
-                    while (!(it == me.data.container.begin()) && !me.check_constraints(me.seq, value));
+                    do --it;
+                    while (!(it == me.data.container.begin()) && !me.check_constraints(me.seq, value = *it));
                 }
                 return *this;
             }
 
             constexpr bool operator==(const iterator& other) const { return other.it == it; }
-            constexpr value_type operator*() const {
+            constexpr value_type operator*() {
+                if constexpr (std::tuple_size_v<Constraints> == 0) value = *it;
                 return me.data.expr(value);
             }
 
@@ -442,7 +444,7 @@ namespace kaixo {
             // Prepare on create, so we start at a valid index
             constexpr void prepare() {
                 if (!(it == me.data.container.end())) {
-                    value = { *it };
+                    value = *it;
                     if (!me.check_constraints(me.seq, value)) operator++();
                 }
             }
@@ -640,7 +642,7 @@ namespace kaixo {
         constexpr iterator begin() const { return iterator{ m_Start }; }
         constexpr iterator end() const { return iterator{ m_End }; }
         constexpr size_type size() const { return m_End - m_Start; }
-        constexpr Ty operator[](size_type index) const { return m_Start + index; }
+        constexpr Ty operator[](size_type index) const { return m_Start + static_cast<Ty>(index); }
 
     private:
         Ty m_Start;
