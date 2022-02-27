@@ -6,6 +6,31 @@
 #include <cstddef>
 
 namespace kaixo {
+
+    // Simple tuple cat making use of the std::tuple_cat function
+    template<class ...Tys> using tuple_cat_t = decltype(std::tuple_cat(std::declval<Tys>()...));
+
+    // Var type has a name
+    template<class Ty> concept is_var_type = requires() { Ty::name; };
+
+    // Container needs to have these things for list comprehension
+    template<class Ty>
+    concept container_type = requires(const std::decay_t<Ty> ty) {
+        typename std::decay_t<Ty>::value_type;
+        typename std::decay_t<Ty>::size_type;
+        typename std::decay_t<Ty>::const_iterator;
+        { ty.begin() } -> std::same_as<typename std::decay_t<Ty>::const_iterator>;
+        { ty.end() } -> std::same_as<typename std::decay_t<Ty>::const_iterator>;
+    };
+
+    // Type has names type alias
+    template<class Ty>
+    concept has_names = requires () { typename std::decay_t<Ty>::names; };
+
+    // Named container is used when creating list comprehension object, needs names
+    template<class Ty>
+    concept is_named_container = container_type<Ty> && has_names<Ty>;
+
     // is specialization of templated class
     template<typename Test, template<typename...> class Ref> struct is_specialization : std::false_type {};
     template<template<typename...> class Ref, typename... Args> struct is_specialization<Ref<Args...>, Ref> : std::true_type {};
@@ -25,6 +50,13 @@ namespace kaixo {
     template<class ...Tys> struct as_tuple<std::tuple<Tys...>> { using type = std::tuple<Tys...>; };
     template<class Ty> using as_tuple_t = typename as_tuple<Ty>::type;
 
+    // Determines what type to store, if reference, stores reference, 
+    // otherwise by value, always const because list comprehension never changes input values
+    template<class Ty>
+    using stored_type_t = std::conditional_t<std::is_lvalue_reference_v<Ty>, const std::decay_t<Ty>&, const std::decay_t<Ty>>;
+
+    // ===============================================================
+  
     // String literal wrapper for template parameter
     template<std::size_t N>
     struct tag {
@@ -34,40 +66,60 @@ namespace kaixo {
         constexpr std::string_view str() const { return { value, N - 1 }; }
     };
 
-    // Variable, type with string literal as template parameter
-    template<tag Name> struct var_t { constexpr static inline auto name = Name; consteval var_t() {} };
-    template<tag Name> constexpr auto var = var_t<Name>{};
-
     // Collection of tags
+    template<tag Name> struct var_t;
     template<tag ...Names> struct tags {
         using names = std::tuple<var_t<Names>...>;
         template<tag Name> constexpr static auto index_of = tuple_index_of<names, var_t<Name>>::value;
     };
 
+    // ===============================================================
+
+    // Expression is simple wrapper for a lambda
+    template<class Lambda> struct expression : public Lambda {};
+
+    // Breaking condition
+    template<class Lambda> struct break_condition : public Lambda {};
+
+    // Wrap function in expression
+    template<tag ...Ns, class Fun>
+    constexpr auto wrap(Fun&& fun) { return expression{ [fun = std::move(fun)] (auto& vals) { return fun(vals.get<Ns>()...); } }; }
+
+    // ===============================================================
+
+    // Variable, type with string literal as template parameter
+    template<tag Name> struct var_t { constexpr static inline auto name = Name; consteval var_t() {} };
+    template<tag Name> constexpr auto var = var_t<Name>{};
+    template<is_var_type ...Vars> struct tuple_of_vars { using vars = std::tuple<Vars...>; };
+
+    // Alias for a variable, contains expression that will be evaluated which becomes its value
+    template<is_var_type Var, specialization<expression> Expression>
+    struct var_alias {
+        using var = Var;
+        stored_type_t<Expression> expr;
+    };
+
+    // Convert tuple of var_aliases to a tuple of vars
+    template<class Ty> struct var_alias_names;
+    template<class ...Tys> struct var_alias_names<std::tuple<Tys...>> { using type = std::tuple<typename Tys::var...>; };
+    template<class Ty> using var_alias_names_t = typename var_alias_names<Ty>::type;
+
+    // Convert a tuple of var_aliases to a tuple of resulting types, using the Input type
+    // the Input type is an instance of tuple_with_names
+    template<class Ty, class Input> struct var_alias_types;
+    template<class Input, class ...Tys> struct var_alias_types<std::tuple<Tys...>, Input> { using type = std::tuple<decltype(std::declval<Tys>().expr(std::declval<Input&>()))...>; };
+    template<class Ty, class Input> using var_alias_types_t = typename var_alias_types<Ty, Input>::type;
+
+    // ===============================================================
+
     // Tuple of var_t's to tags class
     template<class> struct tuple_to_tags;
     template<class ...As> struct tuple_to_tags<std::tuple<As...>> { using type = tags<As::name...>; };;
     template<class A> using tuple_to_tags_t = typename tuple_to_tags<A>::type;
-    template<class A, class B> using combine_names_t = tuple_to_tags_t<decltype(std::tuple_cat(std::declval<A>(), std::declval<B>()))>;
-
-    // Container needs to have these things for list comprehension
-    template<class Ty>
-    concept container_type = requires(const std::decay_t<Ty> ty) {
-        typename std::decay_t<Ty>::value_type;
-        typename std::decay_t<Ty>::size_type;
-        typename std::decay_t<Ty>::const_iterator;
-        { ty.begin() } -> std::same_as<typename std::decay_t<Ty>::const_iterator>;
-        { ty.end() } -> std::same_as<typename std::decay_t<Ty>::const_iterator>;
-    };
-
-    // Type has names type alias
-    template<class Ty>
-    concept has_names = requires () {
-        typename std::decay_t<Ty>::names;
-    };
+    template<class A, class B> using combine_names_t = tuple_to_tags_t<tuple_cat_t<A, B>>;
 
     // Tuple with names linked, uses index of name to find correct element of tuple
-    template<has_names Names, class Tuple>
+    template<has_names Names, specialization<std::tuple> Tuple>
     struct tuple_with_names : public Tuple {
         using type = Tuple;
         using names = Names;
@@ -86,121 +138,10 @@ namespace kaixo {
         constexpr Tuple& as_tuple() { return *this; }
     };
 
-    // Expression is simple wrapper for a lambda
-    template<class Lambda>
-    struct expression : public Lambda {};
-
-    // Breaking condition
-    template<class Lambda>
-    struct break_condition : public Lambda {};
-
-    // Var type has a name
-    template<class Ty>
-    concept is_var_type = requires() { Ty::name; };
-
-    template<tag ...Ns, class Fun>
-    constexpr auto wrap(Fun&& fun) { return expression{ [fun = std::move(fun)] (auto& vals) { return fun(vals.get<Ns>()...); } }; }
-
-    template<auto Fun, tag ...Ns>
-    constexpr auto wrapf() { return expression{ [] (auto& vals) { return Fun(vals.get<Ns>()...); } }; }
-
-    // Wrapped container is used when creating list comprehension object, needs names
-    template<class Ty>
-    concept is_named_container = container_type<Ty> && has_names<Ty>;
-
-    // Only valid argument for operations if not variable or container
-    template<class Ty>
-    concept valid_op_type = (!is_var_type<Ty> && !container_type<Ty> && !specialization<Ty, expression>);
-
-    namespace lc_operators {
-#define create_op(op)                                                                                                                      \
-        template<is_var_type A, is_var_type B>                                                                                             \
-        constexpr auto operator op(const A&, const B&) {                                                                                   \
-            return expression{ [](auto& vals) { return vals.get<A::name>() op vals.get<B::name>(); } };                                    \
-        }                                                                                                                                  \
-                                                                                                                                           \
-        template<is_var_type B>                                                                                                            \
-        constexpr auto operator op(specialization<expression> auto&& expr1, const B&) {                                                    \
-            return expression{ [expr1 = std::move(expr1)] (auto& vals) { return expr1(vals) op vals.get<B::name>(); } };                   \
-        }                                                                                                                                  \
-                                                                                                                                           \
-        template<is_var_type A>                                                                                                            \
-        constexpr auto operator op(const A&, specialization<expression> auto&& expr2) {                                                    \
-            return expression{ [expr2 = std::move(expr2)] (auto& vals) { return vals.get<A::name>() op expr2(vals); } };                   \
-        }                                                                                                                                  \
-                                                                                                                                           \
-        constexpr auto operator op(specialization<expression> auto&& expr1, specialization<expression> auto&& expr2) {                     \
-            return expression{ [expr1 = std::move(expr1), expr2 = std::move(expr2)] (auto& vals) { return expr1(vals) op expr2(vals); } }; \
-        }                                                                                                                                  \
-                                                                                                                                           \
-        template<is_var_type A, valid_op_type B>                                                                                           \
-        constexpr auto operator op(const A&, B& b) {                                                                                       \
-            return expression{ [&](auto& vals) { return vals.get<A::name>() op b; } };                                                     \
-        }                                                                                                                                  \
-                                                                                                                                           \
-        template<valid_op_type B>                                                                                                          \
-        constexpr auto operator op(specialization<expression> auto&& expr1, B& b) {                                                        \
-            return expression{ [&, expr1 = std::move(expr1)] (auto& vals) { return expr1(vals) op b; } };                                  \
-        }                                                                                                                                  \
-                                                                                                                                           \
-        template<is_var_type A, valid_op_type B>                                                                                           \
-        constexpr auto operator op(B& b, const A&) {                                                                                       \
-            return expression{ [&](auto& vals) { return b op vals.get<A::name>(); } };                                                     \
-        }                                                                                                                                  \
-                                                                                                                                           \
-        template<valid_op_type B>                                                                                                          \
-        constexpr auto operator op(B& b, specialization<expression> auto&& expr1) {                                                        \
-            return expression{ [&, expr1 = std::move(expr1)] (auto& vals) { return b op expr1(vals); } };                                  \
-        }                                                                                                                                  \
-                                                                                                                                           \
-        template<is_var_type A, valid_op_type B>                                                                                           \
-        constexpr auto operator op(const A&, B&& b) {                                                                                      \
-            return expression{ [b = std::move(b)](auto& vals) { return vals.get<A::name>() op b; } };                                      \
-        }                                                                                                                                  \
-                                                                                                                                           \
-        template<valid_op_type B>                                                                                                          \
-        constexpr auto operator op(specialization<expression> auto&& expr1, B&& b) {                                                       \
-            return expression{ [b = std::move(b), expr1 = std::move(expr1)] (auto& vals) { return expr1(vals) op b; } };                   \
-        }                                                                                                                                  \
-                                                                                                                                           \
-        template<is_var_type A, valid_op_type B>                                                                                           \
-        constexpr auto operator op(B&& b, const A&) {                                                                                      \
-            return expression{ [b = std::move(b)](auto& vals) { return b op vals.get<A::name>(); } };                                      \
-        }                                                                                                                                  \
-                                                                                                                                           \
-        template<valid_op_type B>                                                                                                          \
-        constexpr auto operator op(B&& b, specialization<expression> auto&& expr1) {                                                       \
-            return expression{ [b = std::move(b), expr1 = std::move(expr1)] (auto& vals) { return b op expr1(vals); } };                   \
-        }                                                                                                                                  \
-
-        create_op(+) create_op(-) create_op(*) create_op(/ ) create_op(== ) create_op(!= ) create_op(<= )
-            create_op(>= ) create_op(> ) create_op(< ) create_op(%) create_op(<=> ) create_op(<< ) create_op(>> )
-            create_op(&) create_op(| ) create_op(&&) create_op(|| ) 
-
-
-#define create_uop(op)                                                                                                       \
-        template<is_var_type A>                                                                                              \
-        constexpr auto operator op(const A&) {                                                                               \
-            return expression{ [](auto& vals) { return  op vals.get<A::name>(); } };                                         \
-        }                                                                                                                    \
-                                                                                                                             \
-        constexpr auto operator op(specialization<expression> auto&& expr1) {                                                \
-            return expression{ [expr1 = std::move(expr1)](auto& vals) { return op expr1(vals); } };                          \
-        }
-
-            create_uop(-) create_uop(~) create_uop(!) create_uop(*) create_uop(&)
-
-#undef create_op
-#undef create_uop
-    }
-
-    // Determines what type to store, if reference, stores reference, 
-    // otherwise by value, always const because list comprehension never changes input values
-    template<class Ty>
-    using stored_type_t = std::conditional_t<std::is_lvalue_reference_v<Ty>, const std::decay_t<Ty>&, const std::decay_t<Ty>>;
+    // ===============================================================
 
     // Zip 2 containers into a single container of tuples, tuple_cat's if containers have tuples themselves
-    template<class A, class B>
+    template<container_type A, container_type B>
     class zip_t {
         using container_type_a = std::decay_t<A>;
         using container_type_b = std::decay_t<B>;
@@ -209,7 +150,7 @@ namespace kaixo {
         using iterator_a = typename container_type_a::const_iterator;
         using iterator_b = typename container_type_b::const_iterator;
     public:
-        using value_type = decltype(std::tuple_cat(std::declval<as_tuple_t<value_type_a>>(), std::declval<as_tuple_t<value_type_b>>()));
+        using value_type = tuple_cat_t<as_tuple_t<value_type_a>, as_tuple_t<value_type_b>>;
         using size_type = typename container_type_a::size_type;
 
         explicit constexpr zip_t(A a, B b) : a(std::forward<A>(a)), b(std::forward<B>(b)) {}
@@ -250,7 +191,7 @@ namespace kaixo {
     template<class A, class B> zip_t(A&, B&)->zip_t<A&, B&>;
 
     // Map a function over a container
-    template<class Fun, class Ty>
+    template<class Fun, container_type Ty>
     class map_t {
         using container_type = std::decay_t<Ty>;
         using container_value_type = typename container_type::value_type;
@@ -300,7 +241,7 @@ namespace kaixo {
 
     // Cartesian product of 2 containers, result is 1 container of tuples,
     // tuple_cat's if original containers contain tuples
-    template<class A, class B>
+    template<container_type A, container_type B>
     class cart_t {
         using container_type_a = std::decay_t<A>;
         using container_type_b = std::decay_t<B>;
@@ -309,7 +250,7 @@ namespace kaixo {
         using iterator_a = typename container_type_a::const_iterator;
         using iterator_b = typename container_type_b::const_iterator;
     public:
-        using value_type = decltype(std::tuple_cat(std::declval<as_tuple_t<value_type_a>>(), std::declval<as_tuple_t<value_type_b>>()));
+        using value_type = tuple_cat_t<as_tuple_t<value_type_a>, as_tuple_t<value_type_b>>;
         using size_type = typename container_type_a::size_type;
 
         explicit constexpr cart_t(A a, B b) : a(std::forward<A>(a)), b(std::forward<B>(b)) {}
@@ -368,7 +309,7 @@ namespace kaixo {
 
     // Named container, holds a container, but has names for all indices 
     // in the tuple that the container holds.
-    template<class Container, has_names Names>
+    template<container_type Container, has_names Names>
     class named_container {
     public:
         using container_type = std::decay_t<Container>;
@@ -392,20 +333,6 @@ namespace kaixo {
     private:
         stored_type_t<Container> container;
     };
-
-    template<is_var_type Var, specialization<expression> Expression>
-    struct var_alias {
-        using var = Var;
-        stored_type_t<Expression> expr;
-    };
-
-    template<class Ty> struct var_alias_names;
-    template<class ...Tys> struct var_alias_names<std::tuple<Tys...>> { using type = std::tuple<typename Tys::var...>; };
-    template<class Ty> using var_alias_names_t = typename var_alias_names<Ty>::type;
-
-    template<class Ty, class Input> struct var_alias_types;
-    template<class Input, class ...Tys> struct var_alias_types<std::tuple<Tys...>, Input> { using type = std::tuple<decltype(std::declval<Tys>().expr(std::declval<Input&>()))...>; };
-    template<class Ty, class Input> using var_alias_types_t = typename var_alias_types<Ty, Input>::type;
 
     // List comprehension base, only has data, is used when still constructing final object
     // Expression is what'll be outputted, Container determines the values going into the Expression
@@ -454,15 +381,17 @@ namespace kaixo {
         using container_iterator = typename container_type::const_iterator;
         using container_value_type = typename container_type::value_type;
         using named_tuple_type = tuple_with_names<typename container_type::names, as_tuple_t<container_value_type>>;
+
+        // Recursive definition for tuple_with_names type, since every argument relies on the
+        // type of the previous one, so we need to go through the var aliases one-by-one to get final type
         template<std::size_t I> struct named_tuple_type_i {
             using prev = named_tuple_type_i<I - 1>::type;
             using type = tuple_with_names<
-                combine_names_t<typename prev::names::names, // Combine the names of the previous named tuple index with the next element of the var aliases
-                    var_alias_names_t<std::tuple<std::tuple_element_t<I - 1, VarAliases>>>>, // Take the I-1'th index of the VarAliases tuple
-                decltype(std::tuple_cat(std::declval<typename prev::type>(), // Concat previous tuple with next element in the var aliases by checking result type of expression
-                    std::declval<var_alias_types_t<std::tuple<std::tuple_element_t<I - 1, VarAliases>>, prev>>()))>; // Using the previous declaration as argument
+                combine_names_t<typename prev::names::names, var_alias_names_t<std::tuple<std::tuple_element_t<I - 1, VarAliases>>>>,
+                tuple_cat_t<typename prev::type, var_alias_types_t<std::tuple<std::tuple_element_t<I - 1, VarAliases>>, prev>>>; 
         };
 
+        // Base case, no VarAliases, so just the named_tuple_type
         template<> struct named_tuple_type_i<0> { using type = named_tuple_type; };
         using final_named_tuple_type = typename named_tuple_type_i<std::tuple_size_v<VarAliases>>::type;
 
@@ -589,16 +518,9 @@ namespace kaixo {
         }
     };
 
-    template<is_var_type ...Vars>
-    struct tuple_of_vars {
-        using vars = std::tuple<Vars...>;
-    };
-
-    // All operators for constructing a list comprehension object.
     namespace lc_operators {
 
         // ===============================================================
-        // Start of list_comprehension, combines expression with container
 
         // Expr | Container
         template<specialization<expression> Expression, is_named_container Container>
@@ -637,7 +559,6 @@ namespace kaixo {
         }
 
         // ===============================================================
-        // Container variable linking operators
 
         // - Container, necessary sugar for 'x <- container' syntax, just forwards container
         template<container_type Container>
@@ -668,7 +589,6 @@ namespace kaixo {
         }
 
         // ===============================================================
-        // Comma operators for constructing list_comprehension_base object
 
         // 'list comprehension base, named container'; Creates new named container of cartesian product with combined names
         template<specialization<list_comprehension_base> A, is_named_container B>
@@ -680,7 +600,8 @@ namespace kaixo {
             
             return list_comprehension_base{
                 std::move(a.expr), 
-                named_container<decltype(cart_t{ std::move(a.container), std::forward<B>(b) }), combined>{ cart_t{ std::move(a.container), std::forward<B>(b) } },
+                named_container<decltype(cart_t{ std::move(a.container), std::forward<B>(b) }), combined>
+                    { cart_t{ std::move(a.container), std::forward<B>(b) } },
                 std::move(a.aliases),
                 std::move(a.constraints),
                 std::move(a.breaks) 
@@ -724,7 +645,6 @@ namespace kaixo {
         }
 
         // ===============================================================
-        // Comma operators for constructing parallel iteration
 
         // 'container, container'; For parallel iteration, creates a new zipped container.
         template<container_type A, container_type B> requires (!is_named_container<A> && !is_named_container<B>)
@@ -738,7 +658,6 @@ namespace kaixo {
         template<is_var_type A, is_var_type ...Bs> constexpr auto operator,(A&, tuple_of_vars<Bs...>&&) { return tuple_of_vars<A, Bs...>{}; }
 
         // ===============================================================
-        // Comma operators for constructing result expression object
 
         // 'expression, var'; Same as above, but with 1 expression
         template<is_var_type B>
@@ -806,7 +725,6 @@ namespace kaixo {
         }
 
         // ===============================================================
-        // Breaking conditions and variable aliases operators
 
         struct brk_t {};
         constexpr brk_t brk;
@@ -824,6 +742,94 @@ namespace kaixo {
         constexpr auto operator<<=(const A&, specialization<expression> auto&& expr1) {
             return var_alias<A, decltype(expr1)>{ expr1 };
         }
+
+        // ===============================================================
+
+        // Define what
+        // Only valid argument for operators if not variable, expression, or container
+        template<class Ty>
+        concept valid_op_type = (!is_var_type<Ty> && !container_type<Ty> && !specialization<Ty, expression>);
+
+        // macro for defining binary operator
+#define create_op(op)                                                                                                                      \
+        template<is_var_type A, is_var_type B>                                                                                             \
+        constexpr auto operator op(const A&, const B&) {                                                                                   \
+            return expression{ [](auto& vals) { return vals.get<A::name>() op vals.get<B::name>(); } };                                    \
+        }                                                                                                                                  \
+                                                                                                                                           \
+        template<is_var_type B>                                                                                                            \
+        constexpr auto operator op(specialization<expression> auto&& expr1, const B&) {                                                    \
+            return expression{ [expr1 = std::move(expr1)] (auto& vals) { return expr1(vals) op vals.get<B::name>(); } };                   \
+        }                                                                                                                                  \
+                                                                                                                                           \
+        template<is_var_type A>                                                                                                            \
+        constexpr auto operator op(const A&, specialization<expression> auto&& expr2) {                                                    \
+            return expression{ [expr2 = std::move(expr2)] (auto& vals) { return vals.get<A::name>() op expr2(vals); } };                   \
+        }                                                                                                                                  \
+                                                                                                                                           \
+        constexpr auto operator op(specialization<expression> auto&& expr1, specialization<expression> auto&& expr2) {                     \
+            return expression{ [expr1 = std::move(expr1), expr2 = std::move(expr2)] (auto& vals) { return expr1(vals) op expr2(vals); } }; \
+        }                                                                                                                                  \
+                                                                                                                                           \
+        template<is_var_type A, valid_op_type B>                                                                                           \
+        constexpr auto operator op(const A&, B& b) {                                                                                       \
+            return expression{ [&](auto& vals) { return vals.get<A::name>() op b; } };                                                     \
+        }                                                                                                                                  \
+                                                                                                                                           \
+        template<valid_op_type B>                                                                                                          \
+        constexpr auto operator op(specialization<expression> auto&& expr1, B& b) {                                                        \
+            return expression{ [&, expr1 = std::move(expr1)] (auto& vals) { return expr1(vals) op b; } };                                  \
+        }                                                                                                                                  \
+                                                                                                                                           \
+        template<is_var_type A, valid_op_type B>                                                                                           \
+        constexpr auto operator op(B& b, const A&) {                                                                                       \
+            return expression{ [&](auto& vals) { return b op vals.get<A::name>(); } };                                                     \
+        }                                                                                                                                  \
+                                                                                                                                           \
+        template<valid_op_type B>                                                                                                          \
+        constexpr auto operator op(B& b, specialization<expression> auto&& expr1) {                                                        \
+            return expression{ [&, expr1 = std::move(expr1)] (auto& vals) { return b op expr1(vals); } };                                  \
+        }                                                                                                                                  \
+                                                                                                                                           \
+        template<is_var_type A, valid_op_type B>                                                                                           \
+        constexpr auto operator op(const A&, B&& b) {                                                                                      \
+            return expression{ [b = std::move(b)](auto& vals) { return vals.get<A::name>() op b; } };                                      \
+        }                                                                                                                                  \
+                                                                                                                                           \
+        template<valid_op_type B>                                                                                                          \
+        constexpr auto operator op(specialization<expression> auto&& expr1, B&& b) {                                                       \
+            return expression{ [b = std::move(b), expr1 = std::move(expr1)] (auto& vals) { return expr1(vals) op b; } };                   \
+        }                                                                                                                                  \
+                                                                                                                                           \
+        template<is_var_type A, valid_op_type B>                                                                                           \
+        constexpr auto operator op(B&& b, const A&) {                                                                                      \
+            return expression{ [b = std::move(b)](auto& vals) { return b op vals.get<A::name>(); } };                                      \
+        }                                                                                                                                  \
+                                                                                                                                           \
+        template<valid_op_type B>                                                                                                          \
+        constexpr auto operator op(B&& b, specialization<expression> auto&& expr1) {                                                       \
+            return expression{ [b = std::move(b), expr1 = std::move(expr1)] (auto& vals) { return b op expr1(vals); } };                   \
+        }                                                                                                                                  \
+
+        create_op(+) create_op(-) create_op(*) create_op(/ ) create_op(== ) create_op(!= ) create_op(<= );
+        create_op(>= ) create_op(> ) create_op(< ) create_op(%) create_op(<=> ) create_op(<< ) create_op(>> );
+        create_op(&) create_op(| ) create_op(&&) create_op(|| );
+
+        // Macro for defining unary operator
+#define create_uop(op)                                                                                                       \
+        template<is_var_type A>                                                                                              \
+        constexpr auto operator op(const A&) {                                                                               \
+            return expression{ [](auto& vals) { return op vals.get<A::name>(); } };                                          \
+        }                                                                                                                    \
+                                                                                                                             \
+        constexpr auto operator op(specialization<expression> auto&& expr1) {                                                \
+            return expression{ [expr1 = std::move(expr1)](auto& vals) { return op expr1(vals); } };                          \
+        }
+
+        create_uop(-) create_uop(~) create_uop(!) create_uop(*) create_uop(&);
+
+#undef create_op
+#undef create_uop
     }
 
     // Construct the final list comprehension using the operator[] in 
