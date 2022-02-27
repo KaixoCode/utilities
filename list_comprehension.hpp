@@ -52,23 +52,6 @@ namespace kaixo {
     template<class A> using tuple_to_tags_t = typename tuple_to_tags<A>::type;
     template<class A, class B> using combine_names_t = tuple_to_tags_t<decltype(std::tuple_cat(std::declval<A>(), std::declval<B>()))>;
 
-    // Tuple with names linked, uses index of name to find correct element of tuple
-    template<class Names, class Tuple>
-    struct tuple_with_names : public Tuple {
-        using type = Tuple;
-
-        constexpr tuple_with_names& operator=(Tuple&& val) { Tuple::operator=(std::move(val)); return *this; }
-        template<tag Name> constexpr decltype(auto) get() const { return std::get<Names::index_of<Name>>(*this); }
-    };
-
-    // Expression is simple wrapper for a lambda
-    template<class Lambda>
-    struct expression : public Lambda {};
-
-    // Var type has a name
-    template<class Ty>
-    concept is_var_type = requires() { Ty::name; };
-
     // Container needs to have these things for list comprehension
     template<class Ty>
     concept container_type = requires(const std::decay_t<Ty> ty) {
@@ -84,6 +67,44 @@ namespace kaixo {
     concept has_names = requires () {
         typename std::decay_t<Ty>::names;
     };
+
+    // Tuple with names linked, uses index of name to find correct element of tuple
+    template<has_names Names, class Tuple>
+    struct tuple_with_names : public Tuple {
+        using type = Tuple;
+        using names = Names;
+
+        template<specialization<tuple_with_names> Ty>
+        constexpr tuple_with_names& assign(Ty&& vals) { do_assign(std::make_index_sequence<std::tuple_size_v<Ty::names::names>>{}, std::forward<Ty>(vals)); return *this; }
+        constexpr tuple_with_names& operator=(Tuple&& tuple) { Tuple::operator=(std::move(tuple)); return *this; }
+
+        template<specialization<tuple_with_names> Ty, std::size_t ...Ns>
+        constexpr void do_assign(std::index_sequence<Ns...>, Ty&& vals) { 
+            (set<std::tuple_element_t<Ns, typename Ty::names::names>::name>(vals.get<std::tuple_element_t<Ns, typename Ty::names::names>::name>()), ...); 
+        }
+
+        template<tag Name, class Ty> constexpr void set(Ty&& val) { std::get<Names::index_of<Name>>(*this) = std::forward<Ty>(val); }
+        template<tag Name> constexpr decltype(auto) get() const { return std::get<Names::index_of<Name>>(*this); }
+        constexpr Tuple& as_tuple() { return *this; }
+    };
+
+    // Expression is simple wrapper for a lambda
+    template<class Lambda>
+    struct expression : public Lambda {};
+
+    // Breaking condition
+    template<class Lambda>
+    struct break_condition : public Lambda {};
+
+    // Var type has a name
+    template<class Ty>
+    concept is_var_type = requires() { Ty::name; };
+
+    template<tag ...Ns, class Fun>
+    constexpr auto wrap(Fun&& fun) { return expression{ [fun = std::move(fun)] (auto& vals) { return fun(vals.get<Ns>()...); } }; }
+
+    template<auto Fun, tag ...Ns>
+    constexpr auto wrapf() { return expression{ [] (auto& vals) { return Fun(vals.get<Ns>()...); } }; }
 
     // Wrapped container is used when creating list comprehension object, needs names
     template<class Ty>
@@ -121,12 +142,12 @@ namespace kaixo {
                                                                                                                                            \
         template<valid_op_type B>                                                                                                          \
         constexpr auto operator op(specialization<expression> auto&& expr1, B& b) {                                                        \
-            return expression{ [&, expr1 = std::move(expr1)] (auto& vals) { return b op expr1(vals); } };                                  \
+            return expression{ [&, expr1 = std::move(expr1)] (auto& vals) { return expr1(vals) op b; } };                                  \
         }                                                                                                                                  \
                                                                                                                                            \
         template<is_var_type A, valid_op_type B>                                                                                           \
         constexpr auto operator op(B& b, const A&) {                                                                                       \
-            return expression{ [&](auto& vals) { return vals.get<A::name>() op b; } };                                                     \
+            return expression{ [&](auto& vals) { return b op vals.get<A::name>(); } };                                                     \
         }                                                                                                                                  \
                                                                                                                                            \
         template<valid_op_type B>                                                                                                          \
@@ -141,12 +162,12 @@ namespace kaixo {
                                                                                                                                            \
         template<valid_op_type B>                                                                                                          \
         constexpr auto operator op(specialization<expression> auto&& expr1, B&& b) {                                                       \
-            return expression{ [b = std::move(b), expr1 = std::move(expr1)] (auto& vals) { return b op expr1(vals); } };                   \
+            return expression{ [b = std::move(b), expr1 = std::move(expr1)] (auto& vals) { return expr1(vals) op b; } };                   \
         }                                                                                                                                  \
                                                                                                                                            \
         template<is_var_type A, valid_op_type B>                                                                                           \
         constexpr auto operator op(B&& b, const A&) {                                                                                      \
-            return expression{ [b = std::move(b)](auto& vals) { return vals.get<A::name>() op b; } };                                      \
+            return expression{ [b = std::move(b)](auto& vals) { return b op vals.get<A::name>(); } };                                      \
         }                                                                                                                                  \
                                                                                                                                            \
         template<valid_op_type B>                                                                                                          \
@@ -368,39 +389,87 @@ namespace kaixo {
         constexpr size_type size() const { return container.size(); }
         constexpr decltype(auto) operator[](size_type index) const { return container[index]; }
 
+        constexpr void load_vars(auto& vars) {}
+
     private:
         stored_type_t<Container> container;
     };
 
+    template<is_var_type Var, specialization<expression> Expression>
+    struct var_alias {
+        using var = Var;
+        stored_type_t<Expression> expr;
+    };
+
+    template<class Ty> struct var_alias_names;
+    template<class ...Tys> struct var_alias_names<std::tuple<Tys...>> { using type = std::tuple<typename Tys::var...>; };
+    template<class Ty> using var_alias_names_t = typename var_alias_names<Ty>::type;
+
+    template<class Ty, class Input> struct var_alias_types;
+    template<class Input, class ...Tys> struct var_alias_types<std::tuple<Tys...>, Input> { using type = std::tuple<decltype(std::declval<Tys>().expr(std::declval<Input&>()))...>; };
+    template<class Ty, class Input> using var_alias_types_t = typename var_alias_types<Ty, Input>::type;
+
     // List comprehension base, only has data, is used when still constructing final object
     // Expression is what'll be outputted, Container determines the values going into the Expression
     // Constraints is a tuple of Expressions that filter the final output.
-    template<specialization<expression> Expression, is_named_container Container, class Constraints>
+    template<specialization<expression> Expression, is_named_container Container, class VarAliases, class Constraints, class Breaks>
     class list_comprehension_base {
     public:
-        constexpr list_comprehension_base(Expression expr, Container cont, Constraints css)
-            : expr(expr), container(cont), constraints(css) {}
+        constexpr list_comprehension_base(Expression expr, Container cont, VarAliases&& aliases, Constraints&& css, Breaks&& breaks)
+            : expr(expr), container(cont), aliases(aliases), constraints(css), breaks(breaks) {}
+        
+        constexpr list_comprehension_base(list_comprehension_base&& move)
+            : expr(std::move(move.expr)), container(std::move(move.container)), aliases(std::move(move.aliases)), constraints(std::move(move.constraints)), breaks(std::move(move.breaks)) {}
+                
+        constexpr list_comprehension_base(const list_comprehension_base& move)
+            : expr(move.expr), container(move.container), aliases(move.aliases), constraints(move.constraints), breaks(move.breaks) {}
 
         stored_type_t<Expression> expr;
         stored_type_t<Container> container;
+        VarAliases aliases;
         Constraints constraints;
+        Breaks breaks;
     };
 
     // Final list comprehension object
-    template<specialization<expression> Expression, is_named_container Container, class Constraints>
+    template<specialization<expression> Expression, is_named_container Container, class VarAliases, class Constraints, class Breaks>
     class list_comprehension {
+    public:
+        using var_aliases = VarAliases;
+        using constraints = Constraints;
+        using breaks = Breaks;
+        using base_type = list_comprehension_base<Expression, Container, VarAliases, Constraints, Breaks>;
         using container_type = std::decay_t<Container>;
         using container_iterator = typename container_type::const_iterator;
         using container_value_type = typename container_type::value_type;
-        using named_tuple_type = tuple_with_names<typename Container::names, as_tuple_t<container_value_type>>;
-        constexpr static auto seq = std::make_index_sequence<std::tuple_size_v<Constraints>>{};
+        using named_tuple_type = tuple_with_names<typename container_type::names, as_tuple_t<container_value_type>>;
+        template<std::size_t I> struct named_tuple_type_i {
+            using prev = named_tuple_type_i<I - 1>::type;
+            using type = tuple_with_names<
+                combine_names_t<typename prev::names::names, // Combine the names of the previous named tuple index with the next element of the var aliases
+                    var_alias_names_t<std::tuple<std::tuple_element_t<I - 1, VarAliases>>>>, // Take the I-1'th index of the VarAliases tuple
+                decltype(std::tuple_cat(std::declval<typename prev::type>(), // Concat previous tuple with next element in the var aliases by checking result type of expression
+                    std::declval<var_alias_types_t<std::tuple<std::tuple_element_t<I - 1, VarAliases>>, prev>>()))>; // Using the previous declaration as argument
+        };
 
-    public:
-        using value_type = decltype(std::declval<Expression>()(std::declval<named_tuple_type&>()));
+        template<> struct named_tuple_type_i<0> { using type = named_tuple_type; };
+        using final_named_tuple_type = typename named_tuple_type_i<std::tuple_size_v<VarAliases>>::type;
+
+        constexpr static auto alias_seq = std::make_index_sequence<std::tuple_size_v<VarAliases>>{};
+        constexpr static auto constraints_seq = std::make_index_sequence<std::tuple_size_v<Constraints>>{};
+        constexpr static auto breaks_seq = std::make_index_sequence<std::tuple_size_v<Breaks>>{};
+
+        using value_type = decltype(std::declval<Expression>()(std::declval<final_named_tuple_type&>()));
         using size_type = typename container_type::size_type;
 
-        constexpr list_comprehension(list_comprehension_base<Expression, Container, Constraints>&& base)
+        constexpr list_comprehension(base_type&& base)
             : data(std::move(base)) {}
+        
+        constexpr list_comprehension(list_comprehension&& move)
+            : data(std::move(move.data)) {}
+
+        constexpr list_comprehension(const list_comprehension& move)
+            : data(move.data) {}
 
         class iterator {
         public:
@@ -412,53 +481,80 @@ namespace kaixo {
             constexpr iterator& operator=(const iterator& other) { it = other.it; return *this; }
 
             constexpr iterator& operator++() {
+                // If we have breaking conditions, check those, and set to end if break
+                if constexpr (std::tuple_size_v<Breaks> != 0) {
+                    me.get_alias_values(alias_seq, value.assign(named_tuple_type{ *it }));
+                    if (me.check_breaks(me.breaks_seq, value)) { it = me.data.container.end(); return *this; }
+                }
                 if constexpr (std::tuple_size_v<Constraints> == 0)
                     ++it; // no constraints = just decrement
                 else { // decrement until constraints pass or at end
                     do ++it;
-                    while (!(it == me.data.container.end()) && !me.check_constraints(me.seq, value = *it));
+                    while (!(it == me.data.container.end()) && !me.check_constraints(me.constraints_seq,
+                        (value.assign(named_tuple_type{ *it }), me.get_alias_values(alias_seq, value), value)));
                 }
                 return *this;
             }
 
             constexpr iterator& operator--() {
+                // If we have breaking conditions, check those, and set to end if break
+                if constexpr (std::tuple_size_v<Breaks> != 0) {
+                    me.get_alias_values(alias_seq, value = named_tuple_type{ *it });
+                    if (me.check_breaks(me.breaks_seq, value)) { it = me.data.container.end(); return *this; }
+                }
                 if constexpr (std::tuple_size_v<Constraints> == 0)
                     --it; // no constraints = just decrement
                 else { // decrement until constraints pass or at end
                     do --it;
-                    while (!(it == me.data.container.begin()) && !me.check_constraints(me.seq, value = *it));
+                    while (!(it == me.data.container.begin()) && !me.check_constraints(me.constraints_seq,
+                        (value.assign(named_tuple_type{ *it }), me.get_alias_values(alias_seq, value), value)));
                 }
                 return *this;
             }
 
             constexpr bool operator==(const iterator& other) const { return other.it == it; }
             constexpr value_type operator*() {
-                if constexpr (std::tuple_size_v<Constraints> == 0) value = *it;
+                // If we are about to deref the end at compiletime, throw to prevent compiling
+                if (it == me.data.container.end()) throw std::exception("Access after end");
+                if constexpr (std::tuple_size_v<Constraints> == 0) {
+                    me.get_alias_values(alias_seq, value.assign(named_tuple_type{ *it }));
+                }
                 return me.data.expr(value);
             }
 
-            named_tuple_type value;
+            final_named_tuple_type value;
             container_iterator it;
             const list_comprehension& me;
         private:
             // Prepare on create, so we start at a valid index
             constexpr void prepare() {
                 if (!(it == me.data.container.end())) {
-                    value = *it;
-                    if (!me.check_constraints(me.seq, value)) operator++();
+                    me.get_alias_values(alias_seq, value.assign(named_tuple_type{ *it }));
+                    if (!me.check_constraints(me.constraints_seq, value)) operator++();
                 }
             }
         };
 
         using const_iterator = iterator;
+        using reverse_iterator = std::reverse_iterator<iterator>;
+        using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
         constexpr iterator begin() const { return iterator{ *this, data.container.begin() }; }
         constexpr iterator end() const { return iterator{ *this, data.container.end() }; }
 
         constexpr decltype(auto) operator[](size_type index) const {
-            if constexpr (std::tuple_size_v<Constraints> == 0) {
-                named_tuple_type _tpl{ data.container[index] };
-                return data.expr(_tpl);
+            if constexpr (std::tuple_size_v<Constraints> == 0 && std::tuple_size_v<Breaks> == 0) {
+                if constexpr (std::tuple_size_v<VarAliases> == 0)
+                {
+                    named_tuple_type _tpl{ data.container[index] };
+                    return data.expr(_tpl);
+                } 
+                else
+                {
+                    final_named_tuple_type _tpl{};
+                    get_alias_values(alias_seq, _tpl.assign(named_tuple_type{ data.container[index] }));
+                    return data.expr(_tpl);
+                }
             }
             else // If constraints, we don't know where what index is, so use  
             {    // the increment operator to count to nth element
@@ -469,12 +565,22 @@ namespace kaixo {
         }
 
     private:
-        list_comprehension_base<Expression, Container, Constraints> data;
+        base_type data;
         friend class iterator;
 
         template<std::size_t ...Is>
         constexpr bool check_constraints(std::index_sequence<Is...>, auto& val) const {
             return (std::get<Is>(data.constraints)(val) && ...);
+        }
+
+        template<std::size_t ...Is>
+        constexpr bool check_breaks(std::index_sequence<Is...>, auto& val) const {
+            return (std::get<Is>(data.breaks)(val) || ...);
+        }
+
+        template<std::size_t ...Is>
+        constexpr void get_alias_values(std::index_sequence<Is...>, auto& vals) const {
+            (vals.set<std::tuple_element_t<Is, VarAliases>::var::name>(std::get<Is>(data.aliases).expr(vals)), ...);
         }
     };
 
@@ -489,21 +595,24 @@ namespace kaixo {
         // Expr | Container
         template<specialization<expression> Expression, is_named_container Container>
         constexpr auto operator|(Expression&& expr, Container&& cont) {
-            return list_comprehension_base<Expression, Container, std::tuple<>>{ std::forward<Expression>(expr), std::forward<Container>(cont), {} };
+            return list_comprehension_base<Expression, Container, std::tuple<>, std::tuple<>, std::tuple<>>{ 
+                std::forward<Expression>(expr), std::forward<Container>(cont), {}, {}, {} };
         }
 
         // Var | Container
         template<is_var_type Var, is_named_container Container>
         constexpr auto operator|(Var&, Container&& cont) {
             auto expr = expression{ [](auto& val) { return val.get<Var::name>(); } };
-            return list_comprehension_base<decltype(expr), Container, std::tuple<>>{ std::move(expr), std::forward<Container>(cont), {} };
+            return list_comprehension_base<decltype(expr), Container, std::tuple<>, std::tuple<>, std::tuple<>>{ 
+                std::move(expr), std::forward<Container>(cont), {}, {}, {} };
         }
 
         // Var | Container
         template<is_named_container Container, is_var_type ...Vars>
         constexpr auto operator|(tuple_of_vars<Vars...>&&, Container&& cont) {
             auto expr = expression{ [](auto& val) { return std::tuple{ val.get<Vars::name>()... }; } };
-            return list_comprehension_base<decltype(expr), Container, std::tuple<>>{ std::move(expr), std::forward<Container>(cont), {} };
+            return list_comprehension_base<decltype(expr), Container, std::tuple<>, std::tuple<>, std::tuple<>>{ 
+                std::move(expr), std::forward<Container>(cont), {}, {}, {} };
         }
 
         // - Container, necessary sugar for 'x <- container' syntax, just forwards container
@@ -528,24 +637,42 @@ namespace kaixo {
         // Convert container into a named container
         template<container_type Container, is_var_type ...Vars>
         constexpr auto operator<(tuple_of_vars<Vars...>&&, Container&& c) {
-            static_assert(std::tuple_size_v<std::decay_t<Container>::value_type> == sizeof...(Vars));
+            static_assert(std::tuple_size_v<std::decay_t<Container>::value_type> == sizeof...(Vars), "tuple_of_vars is not the same size as tuple in container");
             return named_container<Container&&, tags<Vars::name...>>{ std::forward<Container>(c) };
         }
 
         // 'list comprehension base, named container'; Creates new named container of cartesian product with combined names
         template<specialization<list_comprehension_base> A, is_named_container B>
         constexpr auto operator,(A&& a, B&& b) {
-            using combined = combine_names_t<std::decay_t<decltype(a.container)>::names::names, std::decay_t<B>::names::names>;
-            const cart_t _cont{ std::move(a.container), std::forward<B>(b) };
-            const named_container<decltype(_cont), combined> _c{ _cont };
-            return list_comprehension_base<decltype(a.expr), decltype(_c), decltype(a.constraints)>{ std::move(a.expr), std::move(_c), std::move(a.constraints) };
+            using combined = combine_names_t<typename std::decay_t<decltype(a.container)>::names::names, typename std::decay_t<B>::names::names>;
+            cart_t _cont{ std::move(a.container), std::forward<B>(b) };
+            named_container<decltype(_cont), combined> _c{ _cont };
+            return list_comprehension_base<decltype(a.expr), decltype(_c), decltype(a.aliases), decltype(a.constraints), decltype(a.breaks)>{
+                std::move(a.expr), std::move(_c), std::move(a.aliases), std::move(a.constraints), std::move(a.breaks) };
         }
 
         // 'list comprehension base, expression'; Adds a constraint.
         template<specialization<list_comprehension_base> A, specialization<expression> B>
         constexpr auto operator,(A&& a, B&& b) {
-            const std::tuple _css = std::tuple_cat(a.constraints, std::tuple{ b });
-            return list_comprehension_base<decltype(a.expr), decltype(a.container), decltype(_css)>{ std::move(a.expr), std::move(a.container), std::move(_css) };
+            std::tuple _css = std::tuple_cat(a.constraints, std::tuple{ std::forward<B>(b) });
+            return list_comprehension_base<decltype(a.expr), decltype(a.container), decltype(a.aliases), decltype(_css), decltype(a.breaks)>{ 
+                std::move(a.expr), std::move(a.container), std::move(a.aliases), std::move(_css), std::move(a.breaks) };
+        }
+
+        // 'list comprehension base, break condition'; Adds a break condition.
+        template<specialization<list_comprehension_base> A, specialization<break_condition> B>
+        constexpr auto operator,(A&& a, B&& b) {
+            std::tuple _breaks = std::tuple_cat(a.breaks, std::tuple{ std::forward<B>(b) });
+            return list_comprehension_base<decltype(a.expr), decltype(a.container), decltype(a.aliases), decltype(a.constraints), decltype(_breaks)>{
+                std::move(a.expr), std::move(a.container), std::move(a.aliases), std::move(a.constraints), std::move(_breaks) };
+        }
+
+        // 'list comprehension base, var alias'; Adds a var alias.
+        template<specialization<list_comprehension_base> A, specialization<var_alias> B>
+        constexpr auto operator,(A&& a, B&& b) {
+            std::tuple _aliases = std::tuple_cat(a.aliases, std::tuple{ std::forward<B>(b) });
+            return list_comprehension_base<decltype(a.expr), decltype(a.container), decltype(_aliases), decltype(a.constraints), decltype(a.breaks)>{
+                std::move(a.expr), std::move(a.container), std::move(_aliases), std::move(a.constraints), std::move(a.breaks) };
         }
 
         // 'container, container'; For parallel iteration, creates a new zipped container.
@@ -593,14 +720,31 @@ namespace kaixo {
             return expression{ [expr1 = std::move(expr1), expr2 = std::move(expr2)] (auto& vals) {
                 return std::tuple_cat(std::tuple{ expr1(vals) }, std::tuple{ expr2(vals) }); } };
         }
+
+        struct brk_t {};
+        constexpr brk_t brk;
+
+        constexpr auto operator<<=(const brk_t&, specialization<expression> auto&& expr1) {
+            return break_condition{ expr1 };
+        }
+
+        template<is_var_type A>
+        constexpr auto operator<<=(const brk_t&, A&) {
+            return break_condition{ [](auto& vals) { return vals.get<A::name>(); } };
+        }
+
+        template<is_var_type A>
+        constexpr auto operator<<=(const A&, specialization<expression> auto&& expr1) {
+            return var_alias<A, decltype(expr1)>{ expr1 };
+        }
     }
 
     // Construct the final list comprehension using the operator[] in 
     // this global constexpr object.
     struct lc_op {
-        template<class A, class B, class C>
-        constexpr auto operator[](list_comprehension_base<A, B, C>&& val) const { 
-            return list_comprehension<A, B, C>{ std::move(val) }; 
+        template<class A, class B, class C, class D, class E>
+        constexpr auto operator[](list_comprehension_base<A, B, C, D, E>&& val) const { 
+            return list_comprehension<A, B, C, D, E>{ std::move(val) }; 
         }
     };
     constexpr lc_op lc;
@@ -610,7 +754,8 @@ namespace kaixo {
     constexpr inf_t inf;
 
     // Simple range class
-    template<class Ty>
+    struct dud {};
+    template<class Ty, class B = dud>
     class range {
     public:
         using value_type = Ty;
@@ -619,6 +764,7 @@ namespace kaixo {
         constexpr range(const Ty& a) : m_Start(), m_End(a) {}
         constexpr range(const Ty& a, const Ty& b) : m_Start(a), m_End(b) {}
         constexpr range(const Ty& a, inf_t) : m_Start(a), m_End(std::numeric_limits<Ty>::max()) {}
+        constexpr range(const Ty& a, B&) requires(is_var_type<B>) : m_Start(a), m_End(std::numeric_limits<Ty>::max()) {}
 
         class iterator {
         public:
