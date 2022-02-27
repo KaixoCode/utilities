@@ -27,8 +27,12 @@ int main() {
     constexpr auto rs4 = lc[(a, b, c) | (a, b) <- lc[(a, b) | a <- range(0, inf), b <- range(0, 10)], c <- range(0, 10)];
     constexpr auto v4 = rs4[106];
 
-    constexpr auto rs5 = lc[c | a <- range(0ll, inf), b <<= a * a, c <<= b * b, a * 100 < c];
-    constexpr auto v5 = rs5[1];
+    constexpr auto rs5 = lc[c | a <- range(0ll, inf), b <<= a * a, c <<= b * b, a * 100 < c, c != 100];
+    constexpr auto v5 = rs5[3099];
+
+    using af = tuple_cat_t<std::tuple<int, int>, std::tuple<int>>;
+
+
 
     //constexpr auto v5 = rs5[4];
     //using aaaea = decltype(std::tuple_cat(
