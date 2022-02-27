@@ -544,8 +544,6 @@ namespace kaixo {
         };
 
         using const_iterator = iterator;
-        using reverse_iterator = std::reverse_iterator<iterator>;
-        using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
         constexpr iterator begin() const { return iterator{ *this, data.container.begin() }; }
         constexpr iterator end() const { return iterator{ *this, data.container.end() }; }
@@ -691,6 +689,18 @@ namespace kaixo {
             };
         }
 
+        // 'list comprehension base, var alias'; Adds a var alias.
+        template<specialization<list_comprehension_base> A, specialization<var_alias> B>
+        constexpr auto operator,(A&& a, B&& b) {
+            return list_comprehension_base{
+                std::move(a.expr),
+                std::move(a.container),
+                std::tuple_cat(a.aliases, std::tuple{ std::forward<B>(b) }),
+                std::move(a.constraints),
+                std::move(a.breaks)
+            };
+        }
+
         // 'list comprehension base, expression'; Adds a constraint.
         template<specialization<list_comprehension_base> A, specialization<expression> B>
         constexpr auto operator,(A&& a, B&& b) {
@@ -712,18 +722,6 @@ namespace kaixo {
                 std::move(a.aliases), 
                 std::move(a.constraints), 
                 std::tuple_cat(a.breaks, std::tuple{ std::forward<B>(b) })
-            };
-        }
-
-        // 'list comprehension base, var alias'; Adds a var alias.
-        template<specialization<list_comprehension_base> A, specialization<var_alias> B>
-        constexpr auto operator,(A&& a, B&& b) {
-            return list_comprehension_base{
-                std::move(a.expr), 
-                std::move(a.container),
-                std::tuple_cat(a.aliases, std::tuple{ std::forward<B>(b) }), 
-                std::move(a.constraints), 
-                std::move(a.breaks)
             };
         }
 
