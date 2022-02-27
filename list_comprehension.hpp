@@ -14,10 +14,8 @@ namespace kaixo {
     // Index of type in tuple
     template<typename T, typename C, std::size_t I> struct tuple_index_r;
     template<typename H, typename ...R, typename C, std::size_t I>
-    struct tuple_index_r<std::tuple<H, R...>, C, I>
-        : public std::conditional<std::is_same<C, H>::value,
-        std::integral_constant<std::size_t, I>,
-        tuple_index_r<std::tuple<R...>, C, I + 1>>::type{};
+    struct tuple_index_r<std::tuple<H, R...>, C, I> : public std::conditional<std::is_same<C, H>::value,
+        std::integral_constant<std::size_t, I>, tuple_index_r<std::tuple<R...>, C, I + 1>>::type{};
     template<typename C, std::size_t I> struct tuple_index_r<std::tuple<>, C, I> {};
     template<typename T, typename C> struct tuple_index_of : public std::integral_constant<std::size_t, tuple_index_r<T, C, 0>::value> {};
 
