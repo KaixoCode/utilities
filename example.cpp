@@ -6,13 +6,12 @@
 #include <vector>
 
 
-template<template<class ...> class Fun>
-struct aaaaa {};
 
 int main() {
 
     using namespace kaixo;
     using namespace kaixo::lc_operators;
+    using namespace kaixo::lc_functions;
 
     constexpr auto a = var<"a">;
     constexpr auto b = var<"b">;
@@ -30,9 +29,8 @@ int main() {
     constexpr auto rs5 = lc[c | a <- range(0ll, inf), b <<= a * a, c <<= b * b, a * 100 < c, c != 100];
     constexpr auto v5 = rs5[3099];
 
-    using af = tuple_cat_t<std::tuple<int, int>, std::tuple<int>>;
-
-
+    constexpr auto rs6 = lc[min(a, 5) | a <- range(0, 10)];
+    constexpr auto v6 = rs6[6];
 
     //constexpr auto v5 = rs5[4];
     //using aaaea = decltype(std::tuple_cat(
