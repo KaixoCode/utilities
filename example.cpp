@@ -1,57 +1,56 @@
-﻿#include "list_comprehension.hpp"
-#include <array>
+﻿#include <array>
 
 #include <map>
 #include <list>
 #include <vector>
 
+//template<int Width, int Height>
+//constexpr bool has_path1(const Screen<Width, Height>& screen) { //
+//    int ry = 0, y = 0, x = 0, d = 1;                           //
+//    while (ry != Height) {                                     // Continue until the reset y is Height
+//        while (screen[{ x + 1, y }] == 0) ++x, d = 1;          // Check ahead, if free: move and reset direction to 1
+//        if (x == Width - 1) break;                             // If after move we're at the edge: win
+//        if (screen[{ x, y + d }] == 0) y += d;                 // Check in current direction, if 0: move
+//        else { if (d == 1) d = -1; else y = ++ry, x = 0; }     // Otherwise, if dir is 1, try other dir, 
+//    }                                                          // Otherwise start at next y and set x back to 0
+//    return x == Width - 1;                                     // Win if we're at the final x
+//}
+
+struct Point { int x, y; };
+template<int Width, int Height>
+struct Screen {
+    constexpr static auto width = Width;
+    constexpr static auto height = Height;
+    constexpr auto& operator[](Point p) { return data[p.x + p.y * Width]; }
+    constexpr auto& operator[](Point p) const { return data[p.x + p.y * Width]; }
+    std::uint8_t data[Width * Height];
+};
+
+constexpr bool check(auto& s, auto& c, Point p) {
+    if (p.x < 0 || p.x >= s.width || p.y < 0 || p.y >= s.height) return false;
+    return s[p] == 0 && c[p] == 0 && (c[p] = 1, p.x == s.width - 1
+        || check(s, c, { p.x + 1, p.y }) || check(s, c, { p.x - 1, p.y })
+        || check(s, c, { p.x, p.y + 1 }) || check(s, c, { p.x, p.y - 1 }));
+}
+
+constexpr bool has_path(auto& screen) {
+    std::decay_t<decltype(screen)> checked{};
+    return check(screen, checked, { 0, 0 });
+}
+
+
+
+
+
+
+
 
 
 int main() {
 
-    using namespace kaixo;
-    using namespace kaixo::lc_operators;
-    using namespace kaixo::lc_functions;
-
-    constexpr auto a = var<"a">;
-    constexpr auto b = var<"b">;
-    constexpr auto c = var<"c">;
-
-    constexpr auto res = lc[(a, b, c) | c <- range(0, inf), b <- range(1, 10), a <- range(1, 11), a * a + b * b == c * c];
-    constexpr auto v1 = res[0];
-
-    constexpr auto rs2 = lc[(a + b + c) | (a, b, c) <- (range(0, 10), range(0, 10), range(0, 10))];
-    constexpr auto v2 = rs2[6];
-
-    constexpr auto rs4 = lc[(a, b, c) | (a, b) <- lc[(a, b) | a <- range(0, inf), b <- range(0, 10)], c <- range(0, 10)];
-    constexpr auto v4 = rs4[106];
-
-    constexpr auto rs5 = lc[c | a <- range(0ll, inf), b <<= a * a, c <<= b * b, a * 100 < c, c != 100];
-    constexpr auto v5 = rs5[3099];
-
-    constexpr auto rs6 = lc[min(a, 5) | a <- range(0, 10)];
-    constexpr auto v6 = rs6[6];
-
-    //constexpr auto v5 = rs5[4];
-    //using aaaea = decltype(std::tuple_cat(
-    //    std::declval<typename decltype(rs5)::container_type::names::names>(), 
-    //    std::declval<typename var_alias_names<decltype(rs5)::var_aliases>::type>()));
-    //
-
-    //tuple_with_names<tags<"a", "b", "c">, std::tuple<int, int, int>> apple;
-    //apple.assign(tuple_with_names<tags<"a", "b", "c">, std::tuple<int, int, int>>{ std::tuple{ 0, 0, 0 } });
-
-    //for (auto i : res) {
-    //    std::cout << std::get<0>(i) << ", " << std::get<1>(i) << ", " << std::get<2>(i) << '\n';
-    //}
 
 
-    //for (auto i : res)
-    //{
-    //    std::cout << std::get<0>(i) << ", " << std::get<1>(i) << ", " << std::get<2>(i) << ", " << std::get<3>(i) << '\n';
-    //}
 
-    //[](auto a, auto b, auto c, auto d) { return a + b + c + d; };
 
     return 0;
 }

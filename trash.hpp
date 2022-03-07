@@ -2270,8 +2270,7 @@ private:
 };
 
 template<class Symbol = std::uint8_t, class State = std::size_t>
-struct TuringMachine
-{
+struct TuringMachine {
     enum Direction { Left = -1, None = 0, Right = 1 };
     constexpr static State HALT = static_cast<State>(-1);
     using Instruction = std::tuple<State, Symbol, Direction>;
@@ -2282,14 +2281,12 @@ struct TuringMachine
     State state = 0;
 
     Symbol& Read() { return *head; }
-    Symbol& Move(Direction d)
-    {
+    Symbol& Move(Direction d) {
         return d == Left ? head == tape.begin() ? *(head = tape.insert(tape.begin(), 0)) : *--head
             : d == Right ? ++head == tape.end() ? *(head = tape.insert(tape.end(), 0)) : *head : *head;
     }
 
-    bool Step()
-    {
+    bool Step() {
         auto& [nstate, write, move] = instructions.at({ state, Read() });
         return (Read() = write, Move(move), state = nstate) != HALT;
     }
