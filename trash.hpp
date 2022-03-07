@@ -2546,3 +2546,68 @@ void trash() {
     lambda_example();
     struct_tuple_example();
 }
+
+
+//template<int Width, int Height>
+//constexpr bool has_path1(const Screen<Width, Height>& screen) { //
+//    int ry = 0, y = 0, x = 0, d = 1;                           //
+//    while (ry != Height) {                                     // Continue until the reset y is Height
+//        while (screen[{ x + 1, y }] == 0) ++x, d = 1;          // Check ahead, if free: move and reset direction to 1
+//        if (x == Width - 1) break;                             // If after move we're at the edge: win
+//        if (screen[{ x, y + d }] == 0) y += d;                 // Check in current direction, if 0: move
+//        else { if (d == 1) d = -1; else y = ++ry, x = 0; }     // Otherwise, if dir is 1, try other dir, 
+//    }                                                          // Otherwise start at next y and set x back to 0
+//    return x == Width - 1;                                     // Win if we're at the final x
+//}
+
+struct Point { int x, y; };
+template<int Width, int Height>
+struct Screen {
+    constexpr static auto width = Width;
+    constexpr static auto height = Height;
+    constexpr auto& operator[](Point p) { return data[p.x + p.y * Width]; }
+    constexpr auto& operator[](Point p) const { return data[p.x + p.y * Width]; }
+    std::uint8_t data[Width * Height];
+};
+
+constexpr bool check(auto& s, auto& c, Point p) {
+    if (p.x < 0 || p.x >= s.width || p.y < 0 || p.y >= s.height) return false;
+    return s[p] == 0 && c[p] == 0 && (c[p] = 1, p.x == s.width - 1
+        || check(s, c, { p.x + 1, p.y }) || check(s, c, { p.x - 1, p.y })
+        || check(s, c, { p.x, p.y + 1 }) || check(s, c, { p.x, p.y - 1 }));
+}
+
+constexpr bool has_path(auto& screen) {
+    std::decay_t<decltype(screen)> checked{};
+    return check(screen, checked, { 0, 0 });
+}
+
+
+struct everything { template<class Ty> operator Ty(); };
+template<std::size_t N, class Fun, class ...Args> struct partially_invocable;
+template<std::size_t N, class Fun, class ...Args> requires std::invocable<Fun, Args...>
+struct partially_invocable<N, Fun, Args...> : std::bool_constant<true> {};
+template<std::size_t N, class Fun, class ...Args> requires (!std::invocable<Fun, Args...>)
+struct partially_invocable<N, Fun, Args...> : std::bool_constant<partially_invocable<N - 1, Fun, Args..., everything>::value> {};
+template<class Fun, class ...Args> struct partially_invocable<0, Fun, Args...>
+: std::bool_constant<false> {
+    static_assert(std::invocable<Fun, Args...>, "Incompatible arguments in function call");
+};
+
+constexpr auto my_forward(auto& val) { return std::ref(val); }
+constexpr auto my_forward(auto&& val) { return std::move(val); }
+
+template<class Lambda>
+struct function : Lambda {
+    template<class ...Args> requires partially_invocable<20, Lambda, Args...>::value
+        constexpr auto operator()(Args&&...args) const {
+        if constexpr (std::invocable<Lambda, Args...>)
+            return Lambda::operator()(std::forward<Args>(args)...);
+        else {
+            auto _l = [...args = my_forward(args), fun = *this](auto&&...rem) {
+                return fun(args..., std::forward<decltype(rem)>(rem)...);
+            };
+            return function<decltype(_l)>{ std::move(_l) };
+        }
+    }
+};
