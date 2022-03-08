@@ -151,7 +151,7 @@ namespace kaixo {
             using type = remove_t<dud, std::tuple<std::conditional_t<in_tuple<E, Ty>, dud, E>...>>; // If in tuple: dud, otherwise type
         };
     }
-    // removed all types in tuple from other tuple
+    // removes all types in tuple from other tuple
     template<is_tuple A, is_tuple B> using remove_all_t = typename detail::remove_all<A, B>::type;
 
     namespace detail {
@@ -187,7 +187,8 @@ namespace kaixo {
     // simple tuple printing
     template<class ...Ty>
     constexpr auto& operator<<(auto& a, std::tuple<Ty...>& v) {
-        detail::print_tuple(a, v, std::make_index_sequence<sizeof...(Ty) - 1>{});
+        if constexpr (sizeof...(Ty) == 0) a << "()";
+        else detail::print_tuple(a, v, std::make_index_sequence<sizeof...(Ty) - 1>{});
         return a;
     }
 }
