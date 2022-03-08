@@ -1,121 +1,193 @@
 #pragma once
-#include <concepts>
-#include <tuple>
 #include <utility>
-#include <typeinfo>
-#include <stdexcept>
-#include <array>
-#include <bitset>
-#include <cassert>
-#include <iostream>
+#include <tuple>
 
 namespace kaixo {
-    template<size_t V>
-    struct number {
-        constexpr static inline size_t value = V;
-    };
-    template<class Type>
-    struct wrapper {
-        using type = Type;
-    };
-    template<class ...Types>
-    struct type_group {
-        constexpr static inline size_t count = sizeof...(Types);
-        using types = std::tuple<Types...>;
-    };
-    template<size_t, class>
-    struct nth_type_of;
-    template<size_t N, template<class...> class Type, class ...Types>
-    struct nth_type_of<N, Type<Types...>> {
-        using type = typename std::tuple_element<N, std::tuple<Types...>>::type;
-    };
-    template<size_t N, class Group>
-    using nth_type_of_t = typename nth_type_of<N, Group>::type;
 
+    namespace detail {
+        template<class Ty> concept has_fun_op = requires() { &Ty::operator(); };
+        template<class> struct signature;
+        template<class Ty> requires has_fun_op<Ty>
+        struct signature<Ty> { using type = typename signature<decltype(&Ty::operator())>::type; };
+        template<class R, class T, class ...Args>
+        struct signature<R(T::*)(Args...)> { using type = R(Args...); };
+        template<class R, class T, class ...Args>
+        struct signature<R(T::*)(Args...) const> { using type = R(Args...) const; };
+        template<class R, class T, class ...Args>
+        struct signature<R(T::*)(Args...) &&> { using type = R(Args...) &&; };
+        template<class R, class T, class ...Args>
+        struct signature<R(T::*)(Args...) &> { using type = R(Args...) &; };
+        template<class R, class T, class ...Args>
+        struct signature<R(T::*)(Args...) const&&> { using type = R(Args...) const&&; };
+        template<class R, class T, class ...Args>
+        struct signature<R(T::*)(Args...) const&> { using type = R(Args...) const&; };
+        template<class R, class T, class ...Args>
+        struct signature<R(T::*)(Args...) volatile> { using type = R(Args...) volatile; };
+        template<class R, class T, class ...Args>
+        struct signature<R(T::*)(Args...) volatile const> { using type = R(Args...) volatile const; };
+        template<class R, class T, class ...Args>
+        struct signature<R(T::*)(Args...) volatile &&> { using type = R(Args...) volatile &&; };
+        template<class R, class T, class ...Args>
+        struct signature<R(T::*)(Args...) volatile &> { using type = R(Args...) volatile &; };
+        template<class R, class T, class ...Args>
+        struct signature<R(T::*)(Args...) volatile const&&> { using type = R(Args...) volatile const&&; };
+        template<class R, class T, class ...Args>
+        struct signature<R(T::*)(Args...) volatile const&> { using type = R(Args...) volatile const&; };
+        template<class R, class ...Args>
+        struct signature<R(*)(Args...)> { using type = R(Args...); };
+    }
+    // get the function signature of a (member) function or a lambda/functor
+    template<class Ty> using signature_t = typename detail::signature<Ty>::type;
+
+    namespace detail {
+        template<class, template<class...> class>
+        struct is_specialization : std::false_type {};
+        template<template<class...> class Ref, class... Args>
+        struct is_specialization<Ref<Args...>, Ref> : std::true_type {};
+    }
+    // is specialization of templated class
     template<class Test, template<class...> class Ref>
-    struct is_specialization : std::false_type {};
+    concept specialization = detail::is_specialization<std::decay_t<Test>, Ref>::value;
 
-    template<template<class...> class Ref, class... Args>
-    struct is_specialization<Ref<Args...>, Ref> : std::true_type {};
+    // 
+    // Tuple helpers
+    // 
 
-    template<class T, template<class...> class S>
-    concept specialization_of = is_specialization<T, S>::value;
+    // is specialization of std::tuple
+    template<class Ty> concept is_tuple = specialization<Ty, std::tuple>;
 
-    template<class T, class ...Tys>
-    concept one_of = (std::same_as<Tys, T> || ...);
+    namespace detail {
+        template<std::size_t N, is_tuple> struct drop;
+        template<class ...Tys> struct drop<0, std::tuple<Tys...>> {
+            using type = std::tuple<Tys...>;
+        };
+        template<std::size_t N, class Ty, class ...Tys> struct drop<N, std::tuple<Ty, Tys...>>
+        : drop<N - 1, std::tuple<Tys...>> {};
+    }
+    // drop first N types from tuple
+    template<std::size_t N, is_tuple Ty> using drop_t = typename detail::drop<N, Ty>::type;
 
-    template<class>
-    struct member_signature;
-    template<class Return, class T, class... Args>
-    struct member_signature<Return(T::*)(Args...) const> {
-        using type = Return(Args...);
-    };
-    template<class Return, class T, class... Args>
-    struct member_signature<Return(T::*)(Args...)> {
-        using type = Return(Args...);
-    };
-    template<class T>
-    using member_signature_t = typename member_signature<T>::type;
+    namespace detail {
+        template<std::size_t N, is_tuple, is_tuple> struct take;
+        template<class ...Tys, class ...Rem> struct take<0, std::tuple<Tys...>, std::tuple<Rem...>> {
+            using type = std::tuple<Tys...>;
+        };
+        template<std::size_t N, class Ty, class ...Tys, class ...Rem> struct take<N, std::tuple<Tys...>, std::tuple<Ty, Rem...>>
+        : take<N - 1, std::tuple<Tys..., Ty>, std::tuple<Rem...>> {};
+    }
+    // take first N types from tuple
+    template<std::size_t N, is_tuple Ty> using take_t = typename detail::take<N, std::tuple<>, Ty>::type;
 
-    template<class, class = void>
-    struct lambda_signature;
-    template<class _Fx>
-    struct lambda_signature<_Fx, std::void_t<decltype(&_Fx::operator())>> {
-        using type = member_signature<decltype(&_Fx::operator())>::type;
-    };
-    template<class T>
-    using lambda_signature_t = typename lambda_signature<T>::type;
+    // remove first type from tuple
+    template<is_tuple Ty> using tail_t = drop_t<1, Ty>;
+    // first type of tuple
+    template<is_tuple Ty> using head_t = std::tuple_element_t<0, Ty>;
+    // remove last type from tuple
+    template<is_tuple Ty> using init_t = take_t<std::tuple_size_v<Ty> -1, Ty>;
+    // last type of tuple
+    template<is_tuple Ty> using last_t = std::tuple_element_t<std::tuple_size_v<Ty> -1, Ty>;
 
-    template<class>
-    struct funptr_to_type;
-    template<class Return, class ...Args>
-    struct funptr_to_type<Return(*)(Args...)> {
-        using type = Return(Args...);
-    };
-    template<class T>
-    using funptr_to_type_t = typename funptr_to_type<T>::type;
-
-    template<class, std::size_t>
-    struct last_n_args;
-    template<class Return, class ...Args, std::size_t N>
-    struct last_n_args<Return(Args...), N> {
-        template<std::size_t... I>
-        static inline Return(*last_n(std::index_sequence<I...>))(std::tuple_element_t<sizeof...(Args) - N + I, std::tuple<Args...>>...) {};
-        using type = typename funptr_to_type<decltype(last_n(std::make_index_sequence<N>{})) > ::type;
-    };
-    template<class T, std::size_t N>
-    using last_n_args_t = typename last_n_args<T, N>::type;
-
-    template<class, std::size_t>
-    struct first_n_args;
-    template<class Return, typename ...Args, std::size_t N>
-    struct first_n_args<Return(Args...), N> {
-        template<std::size_t... I>
-        static inline Return(*first_n(std::index_sequence<I...>))(std::tuple_element_t<I, std::tuple<Args...>>...) {};
-        using type = typename funptr_to_type<decltype(first_n(std::make_index_sequence<N>{})) > ::type;
-    };
-    template<class T, std::size_t N>
-    using first_n_args_t = typename first_n_args<T, N>::type;
-
-    template<class Func, class ...Tys>
-    concept are_first_n = requires(typename first_n_args<Func, sizeof...(Tys)>::type func, Tys&&...tys) {
-        func(std::forward<Tys>(tys)...);
-    };
-
-    void print_struct(auto& data)
-    {
-        std::byte* _bytes = reinterpret_cast<std::byte*>(std::addressof(data));
-
-        constexpr size_t _size = sizeof(decltype(data));
-        constexpr size_t _bytesperrow = alignof(decltype(data));
-
-        for (int i = 0; i < _size; i++)
-        {
-            size_t index = (1 + std::floor(i / _bytesperrow)) * _bytesperrow - (1 + i % _bytesperrow);
-            std::bitset<8> _byte = (char8_t)_bytes[index];
-            std::cout << _byte << " ";
-            if ((i + 1) % _bytesperrow == 0)
-                std::cout << std::endl;
+    namespace detail {
+        template<std::size_t I, class Tuple, std::size_t... Is>
+        constexpr auto element_as_tuple(Tuple tuple, std::index_sequence<Is...>) {
+            if constexpr (!(std::is_same_v<std::tuple_element_t<I, Tuple>,
+                std::tuple_element_t<Is, Tuple>> || ...))
+                return std::tuple<std::tuple_element_t<I, Tuple>>(std::get<I>(tuple));
+            else return std::make_tuple();
         }
+        template<class Tuple, std::size_t... Is>
+        constexpr auto make_tuple_unique(Tuple tuple, std::index_sequence<Is...>) {
+            return std::tuple_cat(element_as_tuple<Is>(tuple, std::make_index_sequence<Is>())...);
+        }
+    }
+    // remove duplicate types from tuple
+    template<is_tuple Tuple> constexpr auto unique_tuple(Tuple tuple) {
+        return make_tuple_unique(tuple, std::make_index_sequence<std::tuple_size_v<tuple>>{});
+    }
+    // remove duplicate types from tuples
+    template<is_tuple Ty> using unique_tuple_t = decltype(unique_tuple(std::declval<Ty>()));
+
+    namespace detail {
+        template<class T, class E, std::size_t I = 0> struct tuple_index;
+        template<class F, class ...R, class E, std::size_t I>
+        struct tuple_index<std::tuple<F, R...>, E, I> : public std::conditional<std::is_same<E, F>::value,
+            std::integral_constant<std::size_t, I>, tuple_index<std::tuple<R...>, E, I + 1>>::type{};
+        template<class E, std::size_t I> struct tuple_index<std::tuple<>, E, I> {};
+    }
+    // index of type in tuple
+    template<class E, is_tuple Tuple>
+    constexpr static std::size_t tuple_index_v = detail::tuple_index<Tuple, E>::value;
+
+    namespace detail {
+        template<class T, is_tuple Ty> struct is_in_tuple;
+        template<class T, class ...Tys> struct is_in_tuple<T, std::tuple<Tys...>>
+        : std::bool_constant<std::disjunction_v<std::is_same<T, Tys>...>> {};
+    }
+    // type is in tuple
+    template<class T, class Ty> concept in_tuple = is_tuple<Ty> && detail::is_in_tuple<T, Ty>::value;
+    // type is not in tuple
+    template<class T, class Ty> concept not_in_tuple = is_tuple<Ty> && !detail::is_in_tuple<T, Ty>::value;
+
+    // concat tuples
+    template<is_tuple ...Tys> using tuple_cat_t = decltype(std::tuple_cat(std::declval<Tys>()...));
+
+    namespace detail {
+        template<class T, is_tuple, is_tuple> struct remove;
+        template<class T, class ...Tys> struct remove<T, std::tuple<Tys...>, std::tuple<>> {
+            using type = std::tuple<Tys...>;
+        };
+        template<class T, class Ty, class ...Rem, class ...Tys> struct remove<T, std::tuple<Tys...>, std::tuple<Ty, Rem...>>
+        : remove<T, std::tuple<Tys..., Ty>, std::tuple<Rem...>> {};
+        template<class T, class ...Rem, class ...Tys> struct remove<T, std::tuple<Tys...>, std::tuple<T, Rem...>>
+        : remove<T, std::tuple<Tys...>, std::tuple<Rem...>> {};
+    }
+    // remove type from tuple
+    template<class T, is_tuple Ty> using remove_t = typename detail::remove<T, std::tuple<>, Ty>::type;
+
+    namespace detail {
+        struct dud {}; // dud type
+        template<class Ty, class T> struct remove_all;
+        template<class Ty, class ...E> struct remove_all<Ty, std::tuple<E...>> {
+            using type = remove_t<dud, std::tuple<std::conditional_t<in_tuple<E, Ty>, dud, E>...>>; // If in tuple: dud, otherwise type
+        };
+    }
+    // removed all types in tuple from other tuple
+    template<is_tuple A, is_tuple B> using remove_all_t = typename detail::remove_all<A, B>::type;
+
+    namespace detail {
+        template<class ...Tys> struct as_tuple { using type = std::tuple<Tys...>; };
+        template<class Ty> struct as_tuple<Ty> { using type = std::tuple<Ty>; };
+        template<class A, class B> struct as_tuple<std::pair<A, B>> { using type = std::tuple<A, B>; };
+        template<class ...Tys, template<class...> class T> struct as_tuple<T<Tys...>> { using type = std::tuple<Tys...>; };
+        template<class ...Tys> struct as_tuple<std::tuple<Tys...>> { using type = std::tuple<Tys...>; };
+    }
+    // get type as tuple (pair<a, b> -> tuple<a, b>, type -> tuple<type>, tuple<tys...> -> tuple<tys...>, 
+    // type<tys...> -> tuple<tys...>, tys... -> std::tuple<tys...>)
+    template<class ...Ty> using as_tuple_t = typename detail::as_tuple<Ty...>::type;
+
+    namespace detail {
+        template<is_tuple Ty> struct flatten;
+        template<class Ty> struct flatten<std::tuple<Ty>> { using type = std::tuple<Ty>; };
+        template<class ...Tys> struct flatten<std::tuple<Tys...>> {
+            using type = tuple_cat_t<typename flatten<as_tuple_t<Tys>>::type...>;
+        };
+    }
+    // flatten nested tuples to a single tuple
+    template<is_tuple Ty> using flatten_t = typename detail::flatten<Ty>::type;
+
+    namespace detail {
+        template<class T, std::size_t ... Is>
+        constexpr void print_tuple(auto& a, T& v, std::index_sequence<Is...>) {
+            a << "(";
+            ((a << std::get<Is>(v) << ", "), ...);
+            a << std::get<sizeof...(Is)>(v);
+            a << ")";
+        }
+    }
+    // simple tuple printing
+    template<class ...Ty>
+    constexpr auto& operator<<(auto& a, std::tuple<Ty...>& v) {
+        detail::print_tuple(a, v, std::make_index_sequence<sizeof...(Ty) - 1>{});
+        return a;
     }
 }

@@ -3,6 +3,33 @@
 #include "function.hpp"
 
 namespace kaixo {
+    template<class, std::size_t>
+    struct last_n_args;
+    template<class Return, class ...Args, std::size_t N>
+    struct last_n_args<Return(Args...), N> {
+        template<std::size_t... I>
+        static inline Return(*last_n(std::index_sequence<I...>))(std::tuple_element_t<sizeof...(Args) - N + I, std::tuple<Args...>>...) {};
+        using type = typename funptr_to_type<decltype(last_n(std::make_index_sequence<N>{})) > ::type;
+    };
+    template<class T, std::size_t N>
+    using last_n_args_t = typename last_n_args<T, N>::type;
+
+    template<class, std::size_t>
+    struct first_n_args;
+    template<class Return, typename ...Args, std::size_t N>
+    struct first_n_args<Return(Args...), N> {
+        template<std::size_t... I>
+        static inline Return(*first_n(std::index_sequence<I...>))(std::tuple_element_t<I, std::tuple<Args...>>...) {};
+        using type = typename funptr_to_type<decltype(first_n(std::make_index_sequence<N>{})) > ::type;
+    };
+    template<class T, std::size_t N>
+    using first_n_args_t = typename first_n_args<T, N>::type;
+
+    template<class Func, class ...Tys>
+    concept are_first_n = requires(typename first_n_args<Func, sizeof...(Tys)>::type func, Tys&&...tys) {
+        func(std::forward<Tys>(tys)...);
+    };
+
     template<class>
     class pa_function;
     template<class Return, class...Args>
