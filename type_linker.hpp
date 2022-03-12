@@ -2,6 +2,18 @@
 #include "utils.hpp"
 
 namespace kaixo {
+
+    template<size_t V>
+    struct number {
+        constexpr static inline size_t value = V;
+    };
+
+    template<class ...Types>
+    struct type_group {
+        constexpr static inline size_t count = sizeof...(Types);
+        using types = std::tuple<Types...>;
+    };
+
     template<class> struct tag;
     template<class ...Input>
     struct tag<type_group<Input...>> {

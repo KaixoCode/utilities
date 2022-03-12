@@ -24,6 +24,7 @@ add_library(utilities STATIC
   "${utilities_SOURCE_DIR}/trash.hpp"
   "${utilities_SOURCE_DIR}/Parser.hpp"
   "${utilities_SOURCE_DIR}/meta_struct.hpp"
+  "${utilities_SOURCE_DIR}/typed_any.hpp"
 )
 
 set_target_properties(utilities PROPERTIES LINKER_LANGUAGE CXX)

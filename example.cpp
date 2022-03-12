@@ -4,43 +4,103 @@
 #include <iostream>
 #include "utils.hpp"
 
+#include <variant>
 
-struct X {
 
-    void foo(int i) && {
+// -- header file --
+#include <iostream>
+struct override;
 
+template<class = override, class...>
+inline auto logger = std::clog;
+
+template<class... Tys, class T>
+void log(T t) { logger<override, Tys...> << t; }
+
+// -- cpp file --
+#include <fstream>
+
+template<> auto logger<override> = std::ofstream{ "log.txt" };
+
+struct dud {};
+template<auto Impl, class A = dud>
+struct infix {
+    A a;
+
+    template<class Ty>
+    constexpr friend auto operator<(Ty&& a, const infix& op) {
+        return infix<Impl, Ty>{ std::forward<Ty>(a) };
     }
 
+    template<class Ty> requires (std::invocable<decltype(Impl), A, Ty>)
+    constexpr friend auto operator>(infix&& op, Ty&& b) 
+        -> decltype(Impl(std::forward<A>(op.a), std::forward<Ty>(b))) {
+        return Impl(std::forward<A>(op.a), std::forward<Ty>(b));
+    }
 };
 
+#include <array>
+#include <map>
 
-constexpr auto test = [](auto a, int b, double c) { return a * b * c; };
+constexpr infix<[](auto& a, auto& b){ return a.contains(b); }> contains;
 
-struct everything { template<class Ty> constexpr operator Ty(); };
+constexpr infix<[]<class Ty>(Ty&& val, auto& container) {
+    return std::find(std::begin(container), std::end(container), 
+        std::forward<Ty>(val)) != std::end(container);
+}> in;
 
-template<class, class> struct argument_types;
-template<class Ty, class ...Tys, std::invocable<Tys...> Lambda> struct argument_types<Lambda, std::tuple<Ty, Tys...>> { 
-    using type = decltype(std::declval<Lambda>()(std::declval<Tys>()...))(Tys...);
-};
-template<class ...Tys, class Lambda> struct argument_types<Lambda, std::tuple<Tys...>> 
-    : argument_types<Lambda, std::tuple<Tys..., everything>>{};
-template<class Lambda> using argument_types_t = typename argument_types<Lambda, std::tuple<>>::type;
+constexpr infix<[]<class A, class B>(A&& a, B&& b){
+    if constexpr (std::integral<A> && std::integral<B>)
+        return a % b;
+    else
+        return std::fmod(std::forward<A>(a), std::forward<B>(b));
+}> mod;
+
+
+#define wrap(x) []<class ...Tys> requires requires(Tys&&...args) { x(std::forward<Tys>(args)...); } (Tys&&...args)\
+    -> decltype(x(std::forward<Tys>(args)...)) { return x(std::forward<Tys>(args)...); }
+
+#include "typed_any.hpp"
 
 int main() {
-    using aetype = argument_types_t<decltype(test)>;
 
     using namespace kaixo;
-    constexpr auto i1 = tuple_index_v<int, std::tuple<double, short, float, int>>;
-    constexpr auto i2 = in_tuple<int, std::tuple<double, short, float, int>>;
 
-    using aieon = flatten_t<std::tuple<int, std::tuple<short, std::tuple<float, double>, int>, int>>;
+    struct Thing {
+        int a = 10;
+        double b = 3.5;
+    };
 
-    constexpr auto afeafa = detail::has_fun_op<decltype([]() {})>;
+    Any any1{};
+    Any any2{};
+    any1.set(Thing{});
+    any2.set(0.0);
+    auto val11 = any1.get();
+    auto val12 = any2.get();
+    any1.set(0);
+    any2.set(Thing{});
+    auto val21 = any1.get();
+    auto val22 = any2.get();
 
-    using oaine = signature_t<decltype(&X::foo)>;
 
-    aieon a;
-    std::cout << a;
+
+    //kaixo::linked_types<kaixo::Thing::thing_dud>;
+
+
+    std::map<std::string, int> map{ { 
+        { "woof", 1 }, 
+        { "carrot", 2 } 
+    } };
+    
+    auto a3 = map <contains> "woof";
+
+    constexpr auto res = 8 <mod> 3;
+
+    constexpr std::array data{ 0, 2, 3, 6, 7 };
+    constexpr bool isin = 2 <in> data;
+
+
+    log("carrot soup");
 
     return 0;
 }
