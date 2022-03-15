@@ -105,7 +105,7 @@ namespace kaixo {
         template<class Ty = thing_dud, // Our own type info
                  auto Cur = [] {}, // Unique lambda to distinguish from previous gets
                  class ...Tys > // Funky unused type group for more indirection
-        constexpr auto get() {
+        constexpr decltype(auto) get() {
             using type = head_t< // Get first type from type group
                 my_type<Ty, // Our type info
                         // Compiletime counter - 1, should equal the one in previous set call

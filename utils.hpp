@@ -5,9 +5,9 @@
 namespace kaixo {
 
     namespace detail {
-        template<class Ty> concept has_fun_op = requires() { &Ty::operator(); };
-        template<class> struct signature;
-        template<class Ty> requires has_fun_op<Ty>
+        template<class Ty> concept has_fun_op = requires(decltype(&Ty::operator()) a) { a; };
+        template<class Ty> struct signature { static_assert(has_fun_op<Ty>, "Type has no function signature."); };
+        template<has_fun_op Ty>
         struct signature<Ty> { using type = typename signature<decltype(&Ty::operator())>::type; };
         template<class R, class T, class ...Args>
         struct signature<R(T::*)(Args...)> { using type = R(Args...); };
