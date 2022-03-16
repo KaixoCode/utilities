@@ -174,85 +174,81 @@ private:
 template<class ...Tys>
 heap(Tys&&...)->heap<std::tuple_element_t<0, std::tuple<Tys...>>, sizeof...(Tys)>;
 
-#include <queue>
+struct Connection {
+    std::size_t vertex = std::numeric_limits<std::size_t>::max();
+    double weight = std::numeric_limits<double>::max();
+};
 
+template<std::size_t S = 0>
+struct Vertex {
+    constexpr static auto size = S;
+    Connection connections[S];
+};
 
-#include "constexpr_parser.hpp"
+template<> struct Vertex<0> { 
+    constexpr static auto size = 0;
+    Connection* connections = nullptr;
+};
 
+#include <span>
 
-template<auto A>
-struct thing {};
+template<class ...Vertices>
+struct Graph {
+    constexpr static auto size = sizeof...(Vertices);
+    constexpr static auto edges = (Vertices::size + ...);
 
-constexpr bool isalpha(char c) {
-    return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z';
-}
+    struct {
+    private:
+        std::size_t offsets[size + 1]{};
+        Connection connections[edges]{};
+    public:
+        constexpr auto operator[](std::size_t i) const {
+            return std::span{ connections + offsets[i], offsets[i + 1] - offsets[i] };
+        }
+        friend struct Graph;
+    } vertices;
 
-constexpr bool isspace(char c) {
-    return c == ' ' || c == '\f' || c == '\n' || c == '\r' || c == '\t' || c == '\v';
-}
+    constexpr Graph(Vertices&& ...vs) {
+        std::size_t i1 = 0, i2 = 0;
+        vertices.offsets[0] = 0;
+        ((std::copy_n(vs.connections, vs.size, vertices.connections + i2),
+            vertices.offsets[++i1] = i2 + vs.size, i2 += vs.size), ...);
+    }
+
+    // Implemented using Dijkstra's Algorithm
+    constexpr auto shortest_path(std::size_t a) const {
+        constexpr auto infinity = std::numeric_limits<double>::max();
+        std::array<double, size> dist{}; // Final distances
+        dist.fill(infinity), dist[a] = 0; // itself = 0, rest = infinity
+
+        bool done[size]{}; // Keep track of checked vertices
+        std::size_t count = size, u = a, next = u;
+        for (auto _ = 0ull; _ < size; ++_, done[u] = true, u = next) {
+            double s = infinity;
+            for (auto& [v, w] : vertices[u]) {
+                if (!done[v] && dist[v] < s) s = dist[v], next = v;
+                if (dist[v] > dist[u] + w) dist[v] = dist[u] + w;
+            }
+        }
+
+        return dist;
+    }
+};
 
 int main() {
-    using namespace kaixo;
 
-    constexpr auto word_parser = [](std::string_view str, std::string_view word) -> result<std::string_view> {
-        bool matches = str.substr(0, std::size(word)) == word;
-        if (matches) return { true, str.substr(std::size(word)), str.substr(0, std::size(word)) };
-        else return { false };
+    constexpr Graph graph{
+        Vertex{ { { 1,  7. }, { 2,  9. }, { 5, 14. } } },
+        Vertex{ { { 0,  7. }, { 2, 10. }, { 3, 15. } } },
+        Vertex{ { { 0,  9. }, { 1, 10. }, { 3, 11. }, { 5, 2. } } },
+        Vertex{ { { 1, 15. }, { 2, 11. }, { 4,  6. } } },
+        Vertex{ { { 3,  6. }, { 5,  9. } } },
+        Vertex{ { { 0, 14. }, { 2,  2. }, { 4,  9. } } },
     };
 
-    constexpr auto char_parser = [](std::string_view str, char c) -> result<char> {
-        if (str.size() > 0 && str[0] == c) return { true, str.substr(1), c };
-        else return { false };
-    };
+    constexpr auto aeon = sizeof(graph);
 
-    constexpr auto identifier_parser = [](std::string_view str) -> result<std::string_view> {
-        std::size_t index = 0;
-        while (index < str.size() && isalpha(str[index])) ++index;
-        if (index == 0) return { false };
-        else return { true, str.substr(index), str.substr(0, index) };
-    };
-    constexpr auto whitespace_parser = [](std::string_view str) -> result<std::string_view> {
-        std::size_t index = 0;
-        while (index < str.size() && isspace(str[index])) ++index;
-        if (index == 0) return { false };
-        else return { true, str.substr(index), str.substr(0, index) };
-    };
-
-    struct keyword {
-        std::string_view val;
-    };
-
-    struct type {
-        enum { NONE, INT, FLOAT, DOUBLE } t;
-        constexpr type() : t(NONE) {}
-        constexpr type(std::string_view val) 
-            : t(val == "int" ? INT 
-              : val == "float" ? FLOAT
-              : val == "double" ? DOUBLE : NONE) {}
-    };
-
-    struct declaration {
-        type ty;
-        std::string_view ws;
-        std::string_view iden;
-    };
-
-    using my_parser = parser <
-        p<"char"> = satisfy < char_parser >,
-        p<"word"> = satisfy < word_parser >,
-        p<"ident"> = satisfy < identifier_parser >,
-        p<"ws"> = satisfy < whitespace_parser >,
-        p<"symbol"> = t<keyword> << (p<"word">("if")  
-                                   | p<"word">("while")
-                                   | p<"word">("for")),
-        p<"type"> = t<type> << (p<"word">("int")  
-                              | p<"word">("double")
-                              | p<"word">("float")),
-        p<"decl"> = t<declaration> << p<"type"> * p<"ws"> * p<"ident">
-    >;
-
-    constexpr auto aei = my_parser::parse<"decl">("int apple");
-    constexpr auto is = aei.value;
+    constexpr auto sp = graph.shortest_path(0);
 
     //using my_parser = parser<
     //    p<"char"> = satisfy < [](std::string_view str, auto c) -> result<char> {

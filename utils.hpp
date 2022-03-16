@@ -191,4 +191,14 @@ namespace kaixo {
         else detail::print_tuple(a, v, std::make_index_sequence<sizeof...(Ty) - 1>{});
         return a;
     }
+
+    namespace detail {
+        template<class v> struct tfor_i;
+        template<std::size_t ...Is> struct tfor_i<std::index_sequence<Is...>> {
+            constexpr static auto value = []<class Ty>(Ty&& l) { (std::forward<Ty>(l).operator()<Is>(), ...); };
+        };
+    }
+    // template for, calls lambda with template argument std::size_t
+    template<std::size_t N> constexpr auto tfor = tfor_i<decltype(std::make_index_sequence<N>{})>::value;
+
 }
