@@ -218,37 +218,43 @@ struct Graph {
     // Implemented using Dijkstra's Algorithm
     constexpr auto shortest_path(std::size_t a) const {
         constexpr auto infinity = std::numeric_limits<double>::max();
-        std::array<double, size> dist{}; // Final distances
-        dist.fill(infinity), dist[a] = 0; // itself = 0, rest = infinity
+        std::array<double, size> dist{}; // distances
+        dist[a] = 0, dist.fill(infinity); // itself = 0, rest = infinity
 
-        bool done[size]{}; // Keep track of checked vertices
-        std::size_t count = size, u = a, next = u;
-        for (auto _ = 0ull; _ < size; ++_, done[u] = true, u = next) {
-            double s = infinity;
-            for (auto& [v, w] : vertices[u]) {
-                if (!done[v] && dist[v] < s) s = dist[v], next = v;
+        bool checked[size]{}; // Keep track of checked vertices
+        checked[a] = true; // No need to check itself
+        for (std::size_t _ = 0, u = 0; _ < size; ++_) {
+            double s = infinity; // Find lowest distance unchecked vertex
+            for (std::size_t next = 0; next < size; ++next)
+                if (!checked[next] && dist[next] < s) s = dist[u], u = next;
+            for (auto& [v, w] : vertices[u]) // relax vertex u and its neighbours
                 if (dist[v] > dist[u] + w) dist[v] = dist[u] + w;
-            }
+            checked[u] = true; // Now we've checked this one
         }
 
         return dist;
+    }
+
+    constexpr auto shortest_path_mess(std::size_t a) const {
+        constexpr auto i=DBL_MAX;std::array<double,size>d{};bool c[size
+        ]{};c[a]=1;d.fill(i),d[a]=0;for(size_t _=0,u=0,n=0;_<size;++_,n
+        =0,c[u]=1){for(auto s=i;n<size;++n)if(!c[n]&&d[n]<s)s=d[u],u=n;
+        for(auto&[v,w]:vertices[u])if(d[v]>d[u]+w)d[v]=d[u]+w;}return d;
     }
 };
 
 int main() {
 
     constexpr Graph graph{
-        Vertex{ { { 1,  7. }, { 2,  9. }, { 5, 14. } } },
-        Vertex{ { { 0,  7. }, { 2, 10. }, { 3, 15. } } },
-        Vertex{ { { 0,  9. }, { 1, 10. }, { 3, 11. }, { 5, 2. } } },
-        Vertex{ { { 1, 15. }, { 2, 11. }, { 4,  6. } } },
-        Vertex{ { { 3,  6. }, { 5,  9. } } },
-        Vertex{ { { 0, 14. }, { 2,  2. }, { 4,  9. } } },
+        Vertex{ { { 1,  5. }, { 2,  6. } } },
+        Vertex{ { { 0,  5. }, { 3,  4. } } },
+        Vertex{ { { 0,  6. }, { 3,  1. } } },
+        Vertex{ { { 1,  4. }, { 2,  1. } } },
     };
 
     constexpr auto aeon = sizeof(graph);
 
-    constexpr auto sp = graph.shortest_path(0);
+    constexpr auto sp = graph.shortest_path_mess(0);
 
     //using my_parser = parser<
     //    p<"char"> = satisfy < [](std::string_view str, auto c) -> result<char> {
