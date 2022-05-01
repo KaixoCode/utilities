@@ -2292,7 +2292,900 @@ struct TuringMachine {
     }
 };
 
+#include <vector>
+#include <iostream>
+#include <iomanip>
+#include "utils.hpp"
+
+#include <variant>
+#include <cassert>
+
+// -- header file --
+#include <iostream>
+struct override;
+
+template<class = override, class...>
+inline auto logger = std::clog;
+
+template<class... Tys, class T>
+void log(T t) { logger<override, Tys...> << t; }
+
+// -- cpp file --
+#include <fstream>
+
+template<> auto logger<override> = std::ofstream{ "log.txt" };
+
+struct dud {};
+template<auto Impl, class A = dud>
+struct infix {
+    A a;
+
+    template<class Ty>
+    constexpr friend auto operator<(Ty&& a, const infix& op) {
+        return infix<Impl, Ty>{ std::forward<Ty>(a) };
+    }
+
+    template<class Ty> requires (std::invocable<decltype(Impl), A, Ty>)
+        constexpr friend auto operator>(infix&& op, Ty&& b)
+        -> decltype(Impl(std::forward<A>(op.a), std::forward<Ty>(b))) {
+        return Impl(std::forward<A>(op.a), std::forward<Ty>(b));
+    }
+};
+
+#include <array>
+#include <map>
+
+constexpr infix < [](auto& a, auto& b) { return a.contains(b); } > contains;
+
+constexpr infix < []<class Ty>(Ty&& val, auto& container) {
+    return std::find(std::begin(container), std::end(container),
+        std::forward<Ty>(val)) != std::end(container);
+} > in;
+
+constexpr infix < []<class A, class B>(A&& a, B&& b) {
+    if constexpr (std::integral<A> && std::integral<B>)
+        return a % b;
+    else
+        return std::fmod(std::forward<A>(a), std::forward<B>(b));
+} > mod;
+
+
+#define wrap(x) []<class ...Tys> requires requires(Tys&&...args) { x(std::forward<Tys>(args)...); } (Tys&&...args)\
+    -> decltype(x(std::forward<Tys>(args)...)) { return x(std::forward<Tys>(args)...); }
+
+template<class ...Tys>
+struct overloaded : Tys... {
+    using Tys::operator()...;
+};
+
+template<std::size_t N, std::size_t M>
+struct dfa {
+    struct state {
+        std::pair<char, std::size_t> fun[M];
+        bool accept = false;
+
+        constexpr std::size_t transition(char c) const {
+            auto res = std::find_if(std::begin(fun), std::end(fun), [=](auto& v) { return v.first == c; });
+            return res->second;
+        }
+    };
+
+    state states[N];
+
+    template<std::size_t N>
+    constexpr bool accepts(const char(&c)[N]) const {
+        auto q = states;
+        for (std::size_t i = 0; i < N - 1; i++) {
+            q = &states[q->transition(c[i])];
+        }
+        return q->accept;
+    }
+};
+
+
+template<class Ty, std::size_t Size, std::size_t Arity = 2, class Pred = std::less<Ty>>
+struct heap {
+    using value_type = Ty;
+    using size_type = std::size_t;
+    using reference = Ty&;
+    using const_reference = const Ty&;
+    using value_compare = Pred;
+
+    constexpr heap() = default;
+
+    template<std::size_t N>
+    constexpr heap(const Ty(&arr)[N])
+        : m_Size(std::min(N, Size)) {
+        std::copy_n(arr, N, m_Data);
+        for (int64_t i = (m_Size - Arity) / Arity; i >= 0; i--)
+            sink(i); // Sink all layers
+    }
+
+    template<std::same_as<Ty> ...Tys>
+    constexpr heap(Tys&&...tys)
+        : m_Size(std::min(sizeof...(Tys), Size)) {
+        size_type index = 0;
+        ((m_Data[index++] = tys), ...);
+        for (int64_t i = (m_Size - Arity) / Arity; i >= 0; i--)
+            sink(i); // Sink all layers
+    }
+
+    template<class ...Tys>
+    constexpr Ty& emplace(Tys&& ...vals) {
+        assert(m_Size != Size); // Assert not full
+        // Put value at end
+        m_Data[m_Size] = Ty{ std::forward<Tys>(vals)... };
+        auto me = m_Size, pa = (m_Size - 1) / 2;
+        while (comp(m_Data[pa], m_Data[me])) { // While parent smaller
+            std::swap(m_Data[me], m_Data[pa]); // Swap with parent
+            if (pa == 0) break; // If root node, done
+            me = pa, pa = (me - 1) / 2; // New parent
+        }
+        ++m_Size;
+        return m_Data[me];
+    }
+
+    constexpr void push(Ty&& val) { emplace(std::move(val)); }
+    constexpr void push(const Ty& val) { emplace(val); }
+
+    constexpr bool empty() const { return m_Size == 0; }
+    constexpr size_type size() const { return m_Size; }
+    constexpr size_type max_size() const { return Size; }
+    constexpr size_type arity() const { return Arity; }
+
+    constexpr Ty& top() { return m_Data[0]; }
+    constexpr const Ty& top() const { return m_Data[0]; }
+
+    constexpr void pop() {
+        m_Data[0] = m_Data[m_Size - 1]; // Move last element to top
+        --m_Size; // Decrease size
+        sink(0); // Sink the root node down
+    }
+
+private:
+    size_type m_Size = 0;
+    Ty m_Data[Size];
+    [[no_unique_address]] Pred comp;
+
+    constexpr void sink(size_type i) {
+        size_type max = i; // Find highest value
+        for (size_type n = Arity * i + 1; n <= Arity * i + Arity; n++)
+            if (n < m_Size and comp(m_Data[n], m_Data[max])) max = n;
+
+        if (max != i) { // If not itself, swap and sink further down
+            std::swap(m_Data[i], m_Data[max]);
+            sink(max);
+        }
+    }
+
+    constexpr friend auto& operator<<(auto& a, const heap& v) {
+        size_type m = Size, l = 0, k = 1, p = 0;
+        for (auto& i : v.m_Data) {
+            for (auto j = 0; j < m * (Arity - 1); j++) a << " ";
+            a << std::setw(2) << std::setfill(' ') << i, ++p;
+            if (p >= v.m_Size) break;
+            for (auto j = 0; j < m * (Arity - 1); j++) a << " ";
+            if ((++l) % k == 0) l = 0, k *= Arity, a << '\n', m /= Arity;
+        }
+
+        return a;
+    }
+};
+
+template<class ...Tys>
+heap(Tys&&...)->heap<std::tuple_element_t<0, std::tuple<Tys...>>, sizeof...(Tys)>;
+
+
+#include <span>
+#include <ranges>
+
+//namespace old {
+//
+//    struct Edge {
+//        std::size_t vertex = std::numeric_limits<std::size_t>::max();
+//        double length = std::numeric_limits<double>::max();
+//    };
+//
+//    template<std::size_t S = 0>
+//    struct Vertex {
+//        constexpr static auto size = S;
+//        Edge edges[S];
+//    };
+//
+//    template<> struct Vertex<0> {
+//        constexpr static auto size = 0;
+//        Edge* edges = nullptr;
+//    };
+//
+//    template<std::size_t Size, std::size_t Edges>
+//    struct Graph {
+//        struct {
+//            std::size_t offsets[Size + 1]{};
+//            Edge edges[Edges]{};
+//
+//            constexpr auto from_edge(std::size_t edge) const {
+//                for (std::size_t i = 0; i < Size + 1; ++i)
+//                    if (offsets[i] > edge) return i - 1;
+//                return Size;
+//            }
+//
+//            constexpr auto operator[](std::size_t i) const {
+//                return std::span{ edges + offsets[i], offsets[i + 1] - offsets[i] };
+//            }
+//
+//            friend struct Graph;
+//        } vertices;
+//
+//        constexpr Graph(std::size_t(&a)[Size + 1], Edge(&b)[Edges]) {
+//            std::copy_n(a, Size + 1, vertices.offsets);
+//            std::copy_n(b, Edges, vertices.edges);
+//        }
+//
+//        template<class ...Vertices>
+//        constexpr Graph(Vertices&& ...vs) {
+//            std::size_t i1 = 0, i2 = 0;
+//            vertices.offsets[0] = 0;
+//            ((std::copy_n(vs.edges, vs.size, vertices.edges + i2),
+//                vertices.offsets[++i1] = i2 + vs.size, i2 += vs.size), ...);
+//        }
+//
+//        // Implemented using Dijkstra's Algorithm
+//        constexpr auto shortest_path(std::size_t a) const {
+//            constexpr auto infinity = std::numeric_limits<double>::max();
+//            std::array<double, Size> dist{}; // distances
+//            dist.fill(infinity), dist[a] = 0; // itself = 0, rest = infinity
+//
+//            bool checked[Size]{}; // Keep track of checked vertices
+//            checked[a] = true; // No need to check itself
+//            for (std::size_t _ = 0, u = 0; _ < Size; ++_) {
+//                double closest = infinity; // Find closest unchecked vertex
+//                for (std::size_t next = 0; next < Size; ++next)
+//                    if (!checked[next] && dist[next] < closest)
+//                        closest = dist[u], u = next;
+//                for (auto [v, len] : vertices[u]) // relax vertex u and its neighbours
+//                    dist[v] = std::min(dist[v], dist[u] + len);
+//                checked[u] = true; // Now we've checked this one
+//            }
+//
+//            return dist;
+//        }
+//
+//        constexpr auto minimum_spanning_tree() const {
+//            struct CompleteEdge {
+//                std::size_t a, b;
+//                double length;
+//            };
+//
+//            std::size_t offsets[Size + 1]{};
+//            CompleteEdge newEdges[Size - 1]{};
+//
+//            bool in_w[Size]{};
+//            StackVector<std::size_t, Size> w{};
+//            w.push_back(0), in_w[0] = true; // Start at v = 0
+//
+//            for (std::size_t i = 0; i < Size - 1; ++i) {
+//                double len = std::numeric_limits<double>::max();
+//                std::size_t v = 0, u = 0;
+//                for (auto vx : w.span()) // Loop over vertices in w
+//                    for (auto [ux, lenx] : vertices[vx]) // Loop over edges of v
+//                        // pick smallest edge who's other vertex is not in w
+//                        if (!in_w[ux] && lenx < len) len = lenx, v = vx, u = ux;
+//
+//                w.push_back(u), in_w[u] = true; // Add connected vertex to choices
+//                newEdges[i] = CompleteEdge{ v, u, len }; // Add new edge
+//                ++offsets[u + 1], ++offsets[v + 1]; // Add 1 to offsets
+//            }
+//
+//            // Calculate offsets
+//            std::size_t prev = 0;
+//            for (auto& i : offsets) i += prev, prev = i;
+//
+//            // Order the edges
+//            Edge finalEdges[2 * Size - 2]{};
+//            std::size_t cntr[Size]{};
+//            for (std::size_t i = 0; i < Size - 1; ++i) {
+//                auto e = newEdges[i];
+//                finalEdges[offsets[e.a] + cntr[e.a]++] = Edge{ e.b, e.length };
+//                finalEdges[offsets[e.b] + cntr[e.b]++] = Edge{ e.a, e.length };
+//            }
+//
+//            return Graph<Size, 2 * Size - 2>{ offsets, finalEdges };
+//        }
+//    };
+//
+//    template<class ...Vertices>
+//    Graph(Vertices&&...)->Graph<sizeof...(Vertices), (Vertices::size + ...)>;
+//}
+
+template<class Ty, std::size_t Size> struct StackVector {
+    constexpr void push_back(Ty&& v) { m_D[m_S] = std::move(v); ++m_S; }
+    constexpr void push_back(const Ty& v) { m_D[m_S] = v; ++m_S; }
+    constexpr void pop_back() { --m_S; }
+    constexpr auto size() const { return m_S; }
+    constexpr auto data() const { return m_D; }
+    constexpr auto data() { return m_D; }
+    constexpr auto begin() const { return m_D; }
+    constexpr auto end() const { return m_D + m_S; }
+    constexpr auto cbegin() const { return m_D; }
+    constexpr auto cend() const { return m_D + m_S; }
+    constexpr auto begin() { return m_D; }
+    constexpr auto end() { return m_D + m_S; }
+    Ty m_D[Size]{};
+    std::size_t m_S = 0;
+};
+struct Edge { std::size_t a, b; double length; };
+template<std::size_t Vertices, std::size_t Edges>
+struct UndirectedGraph {
+    Edge edges[Edges]{}; // All the edge weights
+    std::size_t part_of[Edges * 2]{}; // Mapping from vertex to edge
+    std::size_t offsets[Vertices + 1]{};
+    // Construct with template pack of edges, creates array
+    template<class ...Tys> constexpr UndirectedGraph(Tys&& ...es)
+        : UndirectedGraph(StackVector<Edge, Edges>{
+            { std::forward<Tys>(es)... }, sizeof...(Tys) }) {}
+            // Construct with stack array
+            constexpr UndirectedGraph(StackVector<Edge, Edges>&& arr) {
+                // Copy edges and calculate offsets
+                std::copy_n(arr.data(), arr.size(), edges);
+                for (auto& [a, b, _] : arr)
+                    ++offsets[a + 1], ++offsets[b + 1];
+                // Convert offsets to be accumulative
+                std::size_t p = 0;
+                for (auto& i : offsets) p = i += p;
+                // Using offsets, get edges that vertices are part of.
+                std::size_t i1 = 0, now[Vertices + 1]{};
+                for (auto& [a, b, _] : arr)
+                    part_of[offsets[a] + now[a]++] =
+                    part_of[offsets[b] + now[b]++] = i1++;
+            }
+            // View of all incident edges of vertex v
+            constexpr auto incident_edges(std::size_t v) const {
+                return std::views::transform(std::span<const std::size_t>{
+                    part_of + offsets[v], offsets[v + 1] - offsets[v] },
+                    [&](auto i) -> const Edge& { return edges[i]; });
+            }
+            // Shortest path from vertex a, implemented using Dijkstra's Algorithm
+            constexpr auto shortest_path(std::size_t a) const {
+                constexpr auto infinity = std::numeric_limits<double>::max();
+                std::array<double, Vertices> dist{}; // distances
+                dist.fill(infinity), dist[a] = 0; // itself = 0, rest = infinity
+                bool checked[Vertices]{}; // Keep track of checked vertices
+                checked[a] = true; // No need to check itself
+                for (std::size_t _ = 0; _ < Vertices; ++_) {
+                    double len = infinity; std::size_t u = 0;
+                    for (std::size_t ux = 0; ux < Vertices; ++ux)
+                        if (!checked[ux] && dist[ux] < len)
+                            len = dist[ux], u = ux; // Find closest
+                    // relax vertex u and its neighbours
+                    for (auto& [vx, ux, len] : incident_edges(u)) {
+                        auto& v = (vx == u ? ux : vx); // Pick other vertex as v
+                        dist[v] = std::min(dist[v], dist[u] + len);
+                    }
+                    checked[u] = true; // Now we've checked this one
+                } // Return all the distances!
+                return dist;
+            }
+            // Minimum spanning tree using Prim's algorithm
+            constexpr auto minimum_spanning_tree() const {
+                constexpr double infinity = std::numeric_limits<double>::max();
+                StackVector<Edge, Vertices - 1> out;
+                bool in_w[Vertices]{}; // Keep track of checked vertices 
+                StackVector<std::size_t, Vertices> w{}; // and available ones
+                w.push_back(0), in_w[0] = true; // Start with v = 0
+                for (std::size_t _ = 0; _ < Vertices - 1; ++_) {
+                    double len = infinity; std::size_t v = 0, u = 0;
+                    for (auto& vx : w) // Loop over incident edges of vertices in w
+                        for (auto& [a, b, lenx] : incident_edges(vx)) {
+                            auto& ux = (a == vx ? b : a); // Pick other vertex as u
+                            // pick smallest edge whose other vertex is not in w
+                            if (!in_w[ux] && lenx < len) len = lenx, v = vx, u = ux;
+                        }
+                    // Add new vertex to w, and add edge to output
+                    w.push_back(u), in_w[u] = true; // Add connected vertex to choices
+                    out.push_back({ v, u, len }); // Add new edge
+                } // Finally construct the new graph!
+                return UndirectedGraph<Vertices, Vertices - 1>{ std::move(out) };
+            }
+};
+
+
+struct integer {
+    int value = 0;
+    constexpr integer() = default;
+    constexpr integer(int v) : value(v) {};
+    constexpr integer(const integer&) = default;
+    constexpr integer(integer&&) = default;
+    constexpr operator int& () { return value; }
+    constexpr operator const int& () const { return value; }
+    constexpr operator int() const { return value; }
+};
+
+constexpr bool operator|(integer a, integer b) { return b % a == 0; }
+constexpr bool operator|(int a, integer b) { return b % a == 0; }
+constexpr bool operator|(integer a, int b) { return b % a == 0; }
+constexpr integer operator*(integer a, integer b) { return a.value * b.value; }
+constexpr integer operator*(int a, integer b) { return a * b.value; }
+constexpr integer operator*(integer a, int b) { return a.value * b; }
+constexpr integer operator+(integer a, integer b) { return a.value + b.value; }
+constexpr integer operator+(int a, integer b) { return a + b.value; }
+constexpr integer operator+(integer a, int b) { return a.value + b; }
+
+
+template<class Ty>
+class object {
+public:
+    using value_type = Ty;
+    using super = object<Ty>;
+protected:
+    class data : public value_type::data {
+    public:
+        using data_type = typename Ty::data;
+        template<class ...Tys> requires (!std::is_aggregate_v<typename Ty::data>) &&
+            requires(Tys&&...args) { new typename Ty::data(std::forward<Tys>(args)...); }
+        constexpr data(Tys&&...args) : Ty::data(std::forward<Tys>(args)...) {}
+        template<class ...Tys> requires (std::is_aggregate_v<typename Ty::data>) &&
+            requires(Tys&&...args) { new typename Ty::data{ std::forward<Tys>(args)... }; }
+        constexpr data(Tys&&...args) : Ty::data{ std::forward<Tys>(args)... } {}
+    private:
+        std::size_t ref = 1;
+        friend class object<value_type>;
+    } *me = nullptr;
+public:
+    template<class ...Tys> requires
+        requires(Tys&&...args) { new data(std::forward<Tys>(args)...); }
+    constexpr object(Tys&&...args) : me(new data(std::forward<Tys>(args)...)) {}
+    constexpr object(const object& other) : me(other.me) { me->ref++; }
+    constexpr object(object&& other) : me(other.me) { other.me = nullptr; }
+    constexpr object& operator=(const object& other) { clean(), me = other.me, ++me->ref; return *this; }
+    constexpr object& operator=(object&& other) { clean(), me = other.me, other.me = nullptr; return *this; }
+    constexpr ~object() { clean(); }
+    constexpr data* operator->() { return me; }
+    constexpr const data* operator->() const { return me; }
+    constexpr std::size_t hash_code() const { return std::bit_cast<std::size_t>(me); }
+    template<class T>
+    constexpr bool equals(object<T> other) const {
+        if constexpr (std::same_as<Ty, T>) return other.me == me; else return false;
+    }
+private:
+    constexpr void clean() {
+        if (--me->ref == 0) delete me;
+    }
+};
+
+//class MyClass : public object<MyClass> {
+//    friend class object<MyClass>;
+//    struct data {
+//        int a = 1;
+//        int b = 2;
+//    };
+//public:
+//    constexpr MyClass() {}
+//    constexpr MyClass(int a, int b) : super(a, b) {}
+//
+//    constexpr int sum() const {
+//        return me->a + me->b;
+//    }
+//
+//    constexpr void add(MyClass other) {
+//        me->a += other->a;
+//        me->b += other->b;
+//    }
+//};
+//
+//constexpr MyClass sum(MyClass a, MyClass b) {
+//    return { a->a + b->a, a->b + b->b };
+//}
+
+//template<typename, std::size_t> concept everything = true;
+//template<class ...Tys>
+//struct Tuple {
+//private:
+//    constexpr static auto make_offsets() {
+//        std::size_t offset = 0;
+//        std::array<std::size_t, sizeof...(Tys)> res{};
+//        std::size_t* data = res.data();
+//        ((*(data++) = offset, offset += sizeof(Tys)), ...);
+//        return res;
+//    }
+//    constexpr static auto bytes = (sizeof(Tys) + ...);
+//    constexpr static std::array<std::size_t, sizeof...(Tys)> offsets = make_offsets();
+//public:
+//    template<std::size_t I>
+//    using value_type = std::tuple_element_t<I, std::tuple<Tys...>>;
+//
+//    template<class ...Args>
+//    constexpr Tuple(Args&&...args) {
+//        std::size_t offset = 0;
+//        ((std::construct_at(&m_Data[offset], std::forward<Args>(args)), offset += sizeof(args)), ...);
+//    }
+//
+//    template<std::size_t I>
+//    constexpr value_type<I>& get() { return *std::bit_cast<value_type<I>*>(&m_Data[offsets[I]]); }
+//
+//    template<std::size_t I>
+//    constexpr const value_type<I>& get() const { return (const value_type<I>)(m_Data[offsets[I]]); }
+//
+//private:
+//    uint8_t m_Data[bytes]{};
+//};
+
+
+struct Color {
+    float r, g, b, a;
+};
+
+//class ColorMap {
+//public:
+//    ColorMap(std::initializer_list<
+//        std::pair<std::string_view, Color>> values) {
+//        for (auto& i : values) tree.insert(i.first, i.second);
+//    }
+//
+//    struct Node {
+//        ~Node() { if (nodes) delete nodes; }
+//        std::array<Node, 26>* nodes = nullptr;
+//        Color value{};
+//
+//        void insert(std::string_view str, const Color& v) {
+//            if (str.size() == 0) value = v;
+//            else {
+//                if (!nodes) nodes = new std::array<Node, 26>{};
+//                (*nodes)[str[0] - 'a'].insert(str.substr(1), v);
+//            }
+//        }
+//
+//        Color& at(std::string_view str) {
+//            return str.size() == 0 ? value : (*nodes)[str[0] - 'a'].at(str.substr(1));
+//        }
+//    };
+//
+//    Color& operator[](const std::string& str) {
+//        return tree.at(str);
+//    }
+//
+//    Node tree;
+//};
+
+
+
+//template<std::size_t N>struct S{char v[N-1]{};constexpr S(const char(&x)[N])
+//{std::copy_n(x,N-1,v);}constexpr operator std::string_view()const{return{v,N
+//-1};}};template<S K,auto V>struct MapVal{constexpr static auto v=V;constexpr
+//static auto k=K;};template<class...V>struct Map{using q=std::tuple_element_t
+//<0,std::tuple<decltype(V::v)...>>;constexpr static auto y(std::string_view 
+//r){auto h=14695981039346656037ULL;for(auto c:r)h=1099511628211ULL*(h^(std::
+//size_t)c);return h;}constexpr static auto s=[](){constexpr auto n=[]<auto N,
+//auto f>()->std::size_t{constexpr bool c=[](){bool u[N]{};auto i=0ull;return(
+//(i=y(V::k)%N,u[i]?1:(u[i]=1,0))||...);}();if constexpr(c)return f.operator()
+//<N+1,f>();else return N;};return n.operator()<sizeof...(V),n>();}();constexpr
+//static auto d=[](){std::array<const q*,s>res{};return((res[y(V::k)%s]=&V::v
+//),...),res;}();constexpr auto&operator[](auto&e)const{return*d[y(e)%s];}};
+
+
+//template<size_t N>struct S{char v[N-1];constexpr S(const char(&x)[N]){std::
+//copy_n(x,N-1,v);}constexpr operator std::string_view()const{return{v,N-1};}};
+//template<S K,auto V>struct Val{constexpr static auto v=V;constexpr static auto
+//k=K;};template<class...V>struct Map{constexpr static auto y(std::string_view r)
+//{auto h=14695981039346656037ULL;for(auto c:r)h=1099511628211ULL*(h^(size_t)c);
+//return h;}constexpr static auto s=[]{constexpr auto n=[]<auto N,auto f>(){
+//constexpr bool c=[]{bool u[N]{};auto i=0ull;return((i=y(V::k)%N,u[i]?1:(u[i]
+//=1,0))||...);}();if constexpr(c)return f.operator()<N+1,f>();else return N;};
+//return n.operator()<sizeof...(V),n>();}();constexpr static auto d=[]{std::array
+//<std::tuple_element_t<0,std::tuple<decltype(V::v)...>>*,s>res{};return((res[y(V
+//::k)%s]=&V::v),...),res;}();constexpr auto&at(auto&e)const{return*d[y(e)%s];}};
+
+#include <numeric>
+#include <string_view>
+#include <algorithm>
+#include <cstddef>
+#include <utility>
+template<std::size_t N> struct str_t {
+    char value[N - 1]{};
+    consteval str_t(const char(&val)[N]) { std::copy_n(val, N - 1, value); }
+    constexpr operator std::string_view() const { return { value, N - 1 }; }
+};
+template<str_t Key, auto Val> struct MapVal {
+    constexpr static auto val = Val;
+    constexpr static auto key = Key;
+};
+template<class... Vals> struct Map {
+    using value_type = std::tuple_element_t<0, std::tuple<decltype(Vals::val)...>>;
+    constexpr static std::size_t hash(std::string_view val) { // Constexpr str hash
+        return std::accumulate(val.begin(), val.end(), 14695981039346656037ULL,
+            [](std::size_t h, char c) { return 1099511628211ULL * (h ^ c); });
+    }
+    constexpr static auto size = [] { // Minimal size to prevent collisions
+        constexpr auto try_n = []<std::size_t N, auto Me>() -> std::size_t {
+            constexpr bool has_collision = [] { bool u[N]{}; std::size_t i = 0;
+            return ((i = hash(Vals::key) % N, u[i] ? 1 : (u[i] = 1, 0)) || ...);
+            }(); // If collision, try 1 more
+            if constexpr (has_collision) return Me.operator() < N + 1, Me > ();
+            else return N;
+        };
+        return try_n.operator() < sizeof...(Vals), try_n > ();
+    }();
+    constexpr static auto data = [] { // Construct the array with values
+        std::array<std::pair<const value_type*, std::string_view>, size> res{};
+        return ((res[hash(Vals::key) % size] = { &Vals::val, Vals::key }), ...), res;
+    }();
+    constexpr auto& at(auto& val) const {
+        auto& res = data[hash(val) % size];
+        if (res.second == val) return res.first; else throw "Value not in Map";
+    }
+};
+
+template<std::size_t N>
+struct tag {
+    constexpr static auto size = N - 1;
+    char value[N - 1];
+    constexpr tag(const char(&val)[N]) : value() { std::copy_n(val, N - 1, value); }
+    constexpr operator std::string_view() const { return { value, N - 1 }; }
+    constexpr std::string_view str() const { return { value, N - 1 }; }
+    template<std::size_t A>
+    constexpr bool operator==(const tag<A>& other) const {
+        if constexpr (N != A) return false;
+        else return str() == other.str();
+    }
+};
+
+struct match_result {
+    bool match;
+    std::string_view remainder;
+};
+
+template<tag Name>
+struct non_terminal_t {
+    constexpr static auto name = Name;
+
+    template<class Grammar>
+    constexpr static match_result match(std::string_view str) {
+        return Grammar::template non_terminal<non_terminal_t>::template match<Grammar>(str);
+    }
+};
+
+template<tag Name> constexpr auto nt = non_terminal_t<Name>{};
+
+template<tag Name, auto Lambda = 0>
+struct terminal_t {
+    constexpr static auto name = Name;
+
+    template<class Grammar>
+    constexpr static match_result match(std::string_view str) {
+        if constexpr (std::invocable<decltype(Lambda), std::string_view>) {
+            return Lambda(str); // if custom parser
+        }
+        else {
+            if (str.starts_with(name.str())) return { true, str.substr(name.size) };
+            else return { false, str };
+        }
+    }
+};
+
+template<tag Name, auto Lambda = 0> constexpr auto t = terminal_t<Name, Lambda>{};
+
+template<class ...Tys>
+struct and_link {
+    template<class Grammar>
+    constexpr static match_result match(std::string_view str) {
+        match_result res{ true, str };
+        bool match = ((res = Tys::template match<Grammar>(res.remainder), res.match) && ...);
+        return { match, res.remainder };
+    }
+};
+template<class ...Tys>
+struct or_link {
+    template<class Grammar>
+    constexpr static match_result match(std::string_view str) {
+        match_result res{ true, str };
+        ((res = Tys::template match<Grammar>(str), res.match) || ...);
+        return res;
+    }
+};
+
+template<class A, class B>
+constexpr and_link<A, B> operator*(A, B) { return {}; }
+template<class A, class ...B>
+constexpr and_link<A, B...> operator*(A, and_link<B...>) { return {}; }
+template<class A, class ...B>
+constexpr and_link<B..., A> operator*(and_link<B...>, A) { return {}; }
+
+template<class A, class B>
+constexpr or_link<A, B> operator|(A, B) { return {}; }
+template<class A, class ...B>
+constexpr or_link<A, B...> operator|(A, or_link<B...>) { return {}; }
+template<class A, class ...B>
+constexpr or_link<B..., A> operator|(or_link<B...>, A) { return {}; }
+
+template<tag Name, class Ty>
+struct non_terminal_link {
+    constexpr static auto link = Name;
+
+    template<class Grammar>
+    constexpr static match_result match(std::string_view str) {
+        return Ty::template match<Grammar>(str);
+    }
+};
+
+template<class Nt>
+constexpr auto operator<<=(const Nt& b, auto a) {
+    return non_terminal_link<Nt::name, decltype(a)>{};
+}
+
+template<class ...Tys>
+struct grammar {
+    using start = kaixo::head_t<std::tuple<Tys...>>;
+
+    template<class Nt, class Ty, class ...Tys> struct find_nt;
+
+    template<class Nt, class Ty, class ...Tys> requires (Nt::name == Ty::link)
+        struct find_nt<Nt, Ty, Tys...> { using type = Ty; };
+
+    template<class Nt, class Ty, class ...Tys> requires (!(Nt::name == Ty::link))
+        struct find_nt<Nt, Ty, Tys...> : find_nt<Nt, Tys...> {};
+
+    template<class Nt>
+    using non_terminal = typename find_nt<Nt, Tys...>::type;
+
+    constexpr grammar(Tys...) {}
+
+    constexpr match_result match(std::string_view str) const {
+        match_result res = start::template match<grammar>(str);
+        return { res.remainder.size() == 0, res.remainder };
+    }
+};
+
+#include <list>
+
 void trash() {
+    {
+
+        constexpr static auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
+        constexpr static auto is_alpha = [](char c) { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'; };
+
+        constexpr auto MUL_OP = nt<"MULOP">;
+        constexpr auto ADD_OP = nt<"ADDOP">;
+        constexpr auto POW_OP = nt<"POWOP">;
+        constexpr auto number = t < "number", [](std::string_view str) {
+            std::string_view res = str;
+            std::size_t size = 0;
+            while (res.size() > 0 && is_digit(res[0])) res = res.substr(1), ++size;
+            return match_result{ size > 0, res };
+        } > ;
+        constexpr auto variable = t < "variable", [](std::string_view str) {
+            std::string_view res = str;
+            std::size_t size = 0;
+            while (res.size() > 0 && is_alpha(res[0])) res = res.substr(1), ++size;
+            return match_result{ size > 0, res };
+        } > ;
+        constexpr auto PRIMARY = nt<"PRIMARY">;
+        constexpr auto EXPR = nt<"EXPR">;
+        constexpr auto TERM = nt<"TERM">;
+        constexpr auto FACTOR = nt<"FACTOR">;
+        constexpr auto S = nt<"S">;
+
+        constexpr grammar g{
+            S <<= EXPR,
+            EXPR <<= TERM * ADD_OP * EXPR | TERM,
+            TERM <<= FACTOR * MUL_OP * TERM | FACTOR,
+            FACTOR <<= PRIMARY * POW_OP * FACTOR | PRIMARY,
+            PRIMARY <<= number | variable | t<"("> *EXPR * t<")">,
+            ADD_OP <<= t<"+"> | t<"-">,
+            MUL_OP <<= t<"*"> | t<"/">,
+            POW_OP <<= t<"^">,
+        };
+
+        constexpr auto m = g.match("(2+2)*8^2");
+    }
+
+
+
+    // [1, 2, 3, 4, 5, 6, 7]
+    //
+    //          1
+    //      2       3
+    //    4   5   6   7
+    //
+
+    //constexpr auto agrg = cs.at("yellow");
+
+    //constexpr auto v1 = cs.at("yallow");
+
+    //ColorMap colors{ 
+    //    { "red", { 1, 0, 0, 1 } },
+    //    { "green", { 0, 1, 0, 1 } },
+    //    { "blue", { 0, 0, 1, 1 } },
+    //    { "yellow", { 1, 1, 0, 1 } },
+    //};
+
+    //auto r1 = colors["red"];
+    //auto r2 = colors["green"];
+    //auto r3 = colors["blue"];
+
+
+    // (1 - x)^-n = (1 + x + x^2 + ...)
+    // (1 - x)^-2 * (x^2 * (1 + x + x^2 + ...))^3 = (1-x)^-2*x^6*(1-x)^-3=x^6*(1-x)^-5
+
+    std::tuple values{ 0, 1.5, 2.1f, "carrot", 129, "soup" };
+
+    kaixo::tfor(values,
+        [](std::floating_point auto& i) {
+            std::cout << "floating: " << i << '\n';
+        },
+        [](std::integral auto& i) {
+            std::cout << "integral: " << i << '\n';
+        },
+            [](auto& i) {
+            std::cout << "other:    " << i << '\n';
+        });
+
+    return 0;
+
+
+
+    constexpr integer a = 2;
+    constexpr integer b = 4;
+    constexpr integer c = 4;
+    constexpr integer x = 8;
+    constexpr integer y = 4;
+
+    static_assert(1 | a and a | 0);
+    static_assert((a | b) && (b | c) ? a | c : true);
+    static_assert((a | b) && (a | c) ? a | (b * x + c * y) : true);
+
+    constexpr auto l = []() {
+        int a = 0, b = 1;
+        kaixo::tfor<10>([&]<auto I>{
+            a += b;
+        });
+        return a;
+    };
+
+    constexpr auto res = l();
+
+    constexpr UndirectedGraph<5, 7> graph{
+        Edge{ 0, 1, 45. }, Edge{ 0, 2, 30. },
+        Edge{ 1, 2, 15. }, Edge{ 1, 3, 10. },
+        Edge{ 1, 4, 20. }, Edge{ 2, 3, 30. },
+        Edge{ 3, 4, 35. },
+    };
+
+    //constexpr auto sp = graph.shortest_path(0);
+    //constexpr auto mst = graph.minimum_spanning_tree();
+    //constexpr auto sp1 = mst.shortest_path(0);
+
+    //constexpr auto sp = graph.shortest_path(0);
+    //constexpr auto mst = graph.minimum_spanning_tree();
+    //constexpr auto sp1 = mst.shortest_path(0);
+
+    //using my_parser = parser<
+    //    p<"char"> = satisfy < [](std::string_view str, auto c) -> result<char> {
+    //        if (str.size() > 0 && str[0] == c) 
+    //            return { true, str.substr(1), str[0] };
+    //        else return { false };
+    //    } >,
+    //    p<"word"> = satisfy < [](std::string_view str, std::string_view word) -> result<std::string_view> {
+    //        bool matches = str.substr(0, std::size(word)) == word;
+    //        if (matches) return { true, str.substr(std::size(word)), str.substr(0, std::size(word)) };
+    //        else return { false };
+    //    } >,
+    //    p<"symbol"> = p<"char">('a') * p<"char">('b') * p<"char">('c') * p<"char">('d') * p<"char">('e')
+    //>;
+    //    
+    //constexpr auto res = my_parser::parse<"symbol">("abcdef");
+    //constexpr auto resv = res.value.value;
+
+
+    constexpr auto h = heap{ 9, 39, 29, 30, 10, 69, 30, 63, 53, 2, 3, 8, 32, 11, 22 };
+
+    std::cout << h;
+
+    constexpr auto m = dfa<3, 2>{ {
+        {.fun{ { '0', 0 }, { '1', 1 } }, .accept = true },
+        {.fun{ { '0', 2 }, { '1', 0 } } },
+        {.fun{ { '0', 1 }, { '1', 2 } } },
+    } };
+    constexpr auto ae = m.accepts("1001");
+
     using enum TuringMachine<>::Direction;
     enum : std::size_t { _ = 2, HALT = TuringMachine<>::HALT };
     TuringMachine<> machine{
@@ -2719,4 +3612,277 @@ void print_struct(auto& data)
         if ((i + 1) % _bytesperrow == 0)
             std::cout << std::endl;
     }
+}
+
+// group(operation):
+//  - Closure: all results of operation -> group
+//  - Identity: XI = IX = X
+//  - Inverse: AB = BA = I
+//  - associativity: (ab)c = a(bc) for all a,b,c
+// if:
+//  ab = ba for all a,b: commutative (Abelian)
+
+#include <utility>
+
+struct Data {
+    int value = 10;
+
+    int Test() { return Test(*this); }
+    static int Test(Data self) {
+        return self.value;
+    }
+};
+
+
+struct clvalue_test {
+    template<class Ty>
+    constexpr operator const Ty& ();
+};
+
+struct rvalue_test {
+    template<class Ty>
+    constexpr operator Ty && ();
+};
+
+struct lvalue_test {
+    template<class Ty> requires (!std::is_const_v<Ty>)
+        constexpr operator Ty& ();
+};
+
+constexpr auto value_tester = [](auto fun) {
+    enum { VALUE, CLVALUE, RVALUE, LVALUE, OTHER };
+    if constexpr (std::invocable<decltype(fun), rvalue_test>
+        && std::invocable<decltype(fun), lvalue_test>) return VALUE;
+    else if constexpr (std::invocable<decltype(fun), clvalue_test>) return CLVALUE;
+    else if constexpr (std::invocable<decltype(fun), rvalue_test>) return RVALUE;
+    else if constexpr (std::invocable<decltype(fun), lvalue_test>) return LVALUE;
+    else return OTHER;
+};
+
+int test(const int&) { return 0; };
+
+template<class Ty>
+struct storage {
+    Ty value;
+    constexpr operator Ty() const { return value; }
+};
+
+template<class Ty> storage(Ty&)->storage<Ty&>;
+template<class Ty> storage(const Ty&)->storage<const Ty&>;
+template<class Ty> storage(Ty&&)->storage<Ty>;
+
+//template<class F, class ...Tys>
+//constexpr auto curry(F&& f, Tys&&... ps) {
+//	if constexpr (std::invocable<F, Tys...>) {
+//		return f(std::forward<Tys>(ps)...);
+//	} else {
+//		return [f, ...ps = storage{ std::forward<Tys>(ps) }]
+//			<class Arg, class ...Args>(Arg&& arg, Args&&... args) {
+//			return curry(f, ps..., storage{ std::forward<Arg>(arg) }, 
+//				storage{ std::forward<Args>(args) }...);
+//		};
+//	}
+//}
+
+//template<class F, class ...Tys>
+//constexpr auto curry(F&& f, Tys&&... ps) {
+//	if constexpr (std::invocable<F, Tys...>) {
+//		return f(std::forward<Tys>(ps)...);
+//	} else {
+//		return [f, ...ps = storage{ std::forward<Tys>(ps) }]
+//			<class Arg, class ...Args>(Arg&& arg, Args&&... args) {
+//			return curry(f, ps.value..., std::forward<Arg>(arg), 
+//				std::forward<Args>(args)...);
+//		};
+//	}
+//}
+
+#include <utility>
+#include <tuple>
+
+template<class F, class ...Tys>
+constexpr auto curry(F&& f, Tys&&... ps) {
+    constexpr bool invocable = requires{ f(std::forward<Tys>(ps)...); };
+    if constexpr (invocable) {
+        return f(std::forward<Tys>(ps)...);
+    }
+    else {
+        return[f = std::move(f), ps = std::forward_as_tuple(std::forward<Tys>(ps)...)]
+            <class Arg, class ...Args>(Arg && arg, Args&&... args) {
+            return[f = std::move(f), tuple = std::tuple_cat(std::move(ps), std::tuple<Arg&&, Args&&...>(
+                std::forward<Arg>(arg), std::forward<Args>(args)...))]
+                <std::size_t ...Is>(std::index_sequence<Is...>) {
+                return curry(std::move(f), std::get<Is>(tuple)...);
+            }(std::make_index_sequence<sizeof...(Tys) + 1 + sizeof...(Args)>{});
+        };
+    }
+}
+
+//template<class F, class ...Tys>
+//constexpr auto curry(F&& f, Tys&&... ps) {
+//	if constexpr (std::invocable<F, Tys...>) {
+//		return f(std::forward<Tys>(ps)...);
+//	} else {
+//		return [f, ...ps = ps]
+//			<class Arg, class ...Args>(Arg&& arg, Args&&... args) {
+//			return curry(f, ps..., std::forward<Arg>(arg), 
+//				std::forward<Args>(args)...);
+//		};
+//	}
+//}
+
+constexpr int add(int a, int b, int c, int d) {
+    return a + b + c + d;
+}
+
+#include <iostream>
+
+struct Ataa {
+    int value;
+    Ataa(int value = 1) : value(value) { std::cout << "Construct\n"; }
+    Ataa(const Ataa& a) : value(a.value) { std::cout << "Copy\n"; }
+    Ataa(Ataa&& a) : value(a.value) { std::cout << "Move\n"; }
+    ~Ataa() { std::cout << "Destroy\n"; }
+};
+
+int add2(const Ataa& a, Ataa& b, Ataa& c, Ataa&& d) {
+    return a.value + b.value + c.value + d.value;
+}
+
+#include <vector>
+#include <array>
+
+template<class Ty, std::size_t Size>
+struct finite_group {
+    constexpr finite_group(std::array<Ty, Size> elements, Ty(*op)(Ty, Ty))
+        : elements(elements), op(op) {
+
+    }
+
+    constexpr const Ty& identity() const {
+        for (auto& i : elements) {
+            bool done = true;
+            for (auto& j : elements) {
+                if (op(i, j) != j) {
+                    done = false;
+                    break;
+                }
+            }
+            if (done) return i;
+        }
+    }
+
+    std::array<Ty, Size> elements{};
+    Ty(*op)(Ty, Ty) = nullptr;
+};
+
+#include <numeric>
+#include <ranges>
+
+template<class Ty, std::size_t N>
+struct permutation {
+    std::array<Ty, N> data{};
+
+    constexpr permutation(std::array<Ty, N>&& data) : data(std::move(data)) {}
+    constexpr permutation(std::ranges::range auto&& a) {
+        std::ranges::copy(std::move(a), data.begin());
+    }
+
+    constexpr permutation operator*(const permutation& other) const {
+        return std::views::transform(other.data, [&](auto& v) { return data[v]; });
+    }
+};
+
+template<class Ty, std::size_t N>
+struct cycle_notation {
+    std::array<std::pair<Ty, Ty>, N> data{};
+
+    constexpr cycle_notation() {}
+    constexpr cycle_notation(std::array<std::pair<Ty, Ty>, N>&& data) : data(data) {}
+    constexpr cycle_notation(auto&& a) {
+        std::ranges::copy(std::move(a), data.begin());
+    }
+
+    template<class ...Tys> requires (std::convertible_to<Ty, Tys> && ...)
+        constexpr auto operator()(Tys&&... vals) const
+        -> cycle_notation<Ty, N + sizeof...(Tys)> {
+        std::array<std::pair<Ty, Ty>, N + sizeof...(Tys)> res{};
+        std::copy(data.begin(), data.end(), res.begin());
+        std::array<Ty, sizeof...(Tys)> in{ static_cast<Ty>(vals)... };
+        for (std::size_t i = 0; i < sizeof...(Tys); ++i)
+            res[i + N] = { in[i], in[(i + 1) % (sizeof...(Tys))] };
+        return { res };
+    }
+
+    constexpr operator permutation<Ty, N>() const {
+        std::array<Ty, N> res{};
+        for (auto& i : data) {
+            res[i.first] = i.second;
+        }
+        return { std::move(res) };
+    }
+};
+
+template<class Ty, class ...Tys>
+constexpr cycle_notation<Ty, sizeof...(Tys) + 1> cycle(Ty&& ty, Tys&&... tys) {
+    return cycle_notation<Ty, 0>{}(std::forward<Ty>(ty), std::forward<Tys>(tys)...);
+}
+
+template<class Ty> struct json_type {};
+template<std::size_t N> struct json_tag {
+    char value[N - 1];
+    constexpr json_tag(const char(&val)[N]) : value() { std::copy_n(val, N - 1, value); }
+    constexpr operator std::string_view() const { return { value, N - 1 }; }
+    constexpr std::string_view str() const { return { value, N - 1 }; }
+};
+
+struct json {
+    constexpr json(auto...) {}
+    constexpr auto operator[](auto) const { return 0; }
+};
+
+template<json_tag Name, class Ty>
+struct json_member;
+
+constexpr json_tag jm_x{ "x" };
+template<class Ty> struct json_member<jm_x, Ty> { Ty x; };
+constexpr json_tag jm_y{ "y" };
+template<class Ty> struct json_member<jm_y, Ty> { Ty y; };
+
+
+template<class Ty>
+struct vec2 :
+    json_member<"x", Ty>,
+    json_member<"y", Ty> {};
+
+template<json_tag Name>
+struct json_assign {
+    template<class Ty>
+    constexpr auto operator=(Ty&& val) const {
+        return json_member<Name, Ty>{ std::forward<Ty>(val) };
+    }
+};
+
+//template<json_tag Name>
+//constexpr auto operator""m() {
+//	return json_assign<Name>{};
+//}
+
+
+constexpr std::size_t ipow(std::size_t x, std::size_t p) {
+    if (p == 0) return 1ull;
+    else if (p == 1) return x;
+    else {
+        const auto tmp = ipow(x, p / 2);
+        if (p % 2 == 0) return tmp * tmp;
+        else return x * tmp * tmp;
+    }
+}
+
+constexpr std::size_t modpow(std::size_t base, std::size_t power, std::size_t mod) {
+    auto view = std::views::iota(0ull, sizeof(power))
+        | std::views::transform([](auto v) { return (1ull << v); })
+        | std::views::filter([=](auto v) { return power & v; });
+    auto op = [=](auto res, auto c) { return (res * (ipow(base, c) % mod)) % mod; };
+    return std::accumulate(view.begin(), view.end(), 1ull, op);
 }

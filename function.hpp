@@ -5,7 +5,7 @@ namespace kaixo {
     template<class Return, class ...Args>
     class function_storage {
     public:
-        virtual Return call(Args&&...) = 0;
+        constexpr virtual Return call(Args&&...) = 0;
         std::size_t ref_count = 1;
     };
 
@@ -16,10 +16,10 @@ namespace kaixo {
     public:
         Func function;
 
-        typed_function_storage(Func&& f)
+        constexpr typed_function_storage(Func&& f)
             : function(std::forward<Func>(f)) {}
 
-        Return call(Args&&...args) override {
+        constexpr Return call(Args&&...args) override {
             return function(std::forward<Args>(args)...);
         }
     };
@@ -32,10 +32,10 @@ namespace kaixo {
         Return(Object::* function)(Args...);
         Object& obj;
 
-        member_function_storage(Return(Object::* function)(Args...), Object& obj)
+        constexpr member_function_storage(Return(Object::* function)(Args...), Object& obj)
             : function(function), obj(obj) {}
 
-        Return call(Args&&...args) override {
+        constexpr Return call(Args&&...args) override {
             return (obj.*function)(std::forward<Args>(args)...);
         }
     };
@@ -51,26 +51,26 @@ namespace kaixo {
         constexpr function() = default;
 
         template<class Type>
-        function(result_type(Type::* a)(Args...), Type& t)
+        constexpr function(result_type(Type::* a)(Args...), Type& t)
             : storage(new member_function_storage<Type, result_type(Args...)>{ a, t }) {}
 
         template<std::invocable<Args...> Func>
-        function(Func&& t)
+        constexpr function(Func&& t)
             : storage(new typed_function_storage<Func, result_type(Args...)>{ std::forward<Func>(t) }) {}
 
-        function(const function& f)
+        constexpr function(const function& f)
             : storage(f.storage) {
             if (storage) storage->ref_count++;
         }
 
-        function(function&& f)
+        constexpr function(function&& f)
             : storage(f.storage) {
             f.storage = nullptr;
         }
 
         constexpr ~function() { clean(); }
 
-        auto& operator=(const function& f) {
+        constexpr auto& operator=(const function& f) {
             clean();
             storage = f.storage;
             if (storage)
@@ -78,18 +78,18 @@ namespace kaixo {
             return *this;
         }
 
-        auto& operator=(function&& f) {
+        constexpr auto& operator=(function&& f) {
             clean();
             storage = f.storage;
             f.storage = nullptr;
             return *this;
         }
 
-        inline result_type operator()(Args ...args) const {
+        constexpr inline result_type operator()(Args ...args) const {
             return storage->call(std::forward<Args>(args)...);
         }
 
-        inline operator bool() const { return storage; }
+        constexpr inline operator bool() const { return storage; }
 
         function_storage<result_type, Args...>* storage = nullptr;
 

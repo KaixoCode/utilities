@@ -39,29 +39,29 @@ namespace kaixo {
         using argument_types = std::tuple<Args...>;
 
         template<class ...Tys> 
-        pa_function(Tys&&...f) requires std::constructible_from<function<result_type(Args...)>, Tys...>
+        constexpr pa_function(Tys&&...f) requires std::constructible_from<function<result_type(Args...)>, Tys...>
             : function(std::forward<Tys>(f)...) {}
 
-        auto& operator=(pa_function&& f) {
+        constexpr auto& operator=(pa_function&& f) {
             function = std::move(f.function);
             return *this;
         }
 
-        auto& operator=(const pa_function& f) {
+        constexpr auto& operator=(const pa_function& f) {
             function = f.function;
             return *this;
         }
 
         template<class ...Tys> requires (are_first_n<result_type(Args...), Tys...> && sizeof...(Tys) < sizeof...(Args) && sizeof...(Tys) > 0)
-        inline pa_function<typename last_n_args<result_type(Args...), sizeof...(Args) - sizeof...(Tys)>::type> operator()(Tys&&...args) const {
+            constexpr inline pa_function<typename last_n_args<result_type(Args...), sizeof...(Args) - sizeof...(Tys)>::type> operator()(Tys&&...args) const {
             auto function = this->function;
             return [func = std::move(function), ...args = std::forward<Tys>(args)] (auto...rest) -> result_type {
                 return func(args..., std::forward<decltype(rest)>(rest)...); };
         }
 
-        inline result_type operator()(Args ...args) const { return function(std::forward<Args>(args)...); }
+        constexpr inline result_type operator()(Args ...args) const { return function(std::forward<Args>(args)...); }
 
-        inline operator bool() const { return function; }
+        constexpr inline operator bool() const { return function; }
 
     protected:
         function<result_type(Args...)> function;

@@ -26,6 +26,7 @@ add_library(utilities STATIC
   "${utilities_SOURCE_DIR}/meta_struct.hpp"
   "${utilities_SOURCE_DIR}/typed_any.hpp"
   "${utilities_SOURCE_DIR}/constexpr_parser.hpp"
+  "${utilities_SOURCE_DIR}/instances.hpp"
 )
 
 set_target_properties(utilities PROPERTIES LINKER_LANGUAGE CXX)
