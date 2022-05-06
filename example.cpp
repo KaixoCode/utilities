@@ -8,11 +8,14 @@
 
 #include <vector>
 
+template<class Ty> requires (std::same_as<Ty, int>)
+struct Test {};;
+
 int main() {
     std::tuple<void, int, double, void, float>;
 
     using pack = kaixo::pack<int, float, double, float, long, unsigned>;
-    using filtered = pack::filter<[]<class Ty>{ return sizeof(Ty) <= 4; }>;
+    using filtered = pack::filter<[]<std::integral Ty>{}>;
     filtered::size;
 
     static_assert(std::same_as<pack::element<3>, float>);
@@ -30,6 +33,5 @@ int main() {
 
     using my_pack = kaixo::pack<double, double, double>;
     my_pack::insert<2, int>::size;
-
 
 }

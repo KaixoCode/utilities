@@ -463,11 +463,30 @@ namespace kaixo {
     using sub = kaixo::take<E - S, kaixo::drop<S, Ty>>;
 
     namespace detail {
+        // Fake lambda used for filtering
+        template<class L>
+        struct fake_lambda : L {
+            // Operator can't be instantiated with Ty
+            template<class Ty> requires (!requires (L l) {
+                { l.operator()<Ty>() }; })
+            consteval bool operator()() { return false; }
+            // Operator can be instantiated and returns a bool
+            template<class Ty> requires requires (L l) {
+                { l.operator()<Ty>() } -> std::same_as<bool>; }
+            consteval bool operator()() { // Call operator
+                return L::template operator()<Ty>();
+            }
+            // Operator can be instantiated but returns void
+            // This means constraint on template parameter.
+            template<class Ty> requires requires (L l) {
+                { l.operator()<Ty>() } -> std::same_as<void>; }
+            consteval bool operator()() { return true; }
+        };
 
         // Count amount of types in Args after filtering
         template<auto Lambda, class ...Args>
         consteval std::size_t count_filter_impl() {
-            return ((static_cast<std::size_t>(Lambda.operator()<Args>())) + ...);
+            return ((static_cast<std::size_t>(fake_lambda{ Lambda }.operator()<Args>())) + ...);
         }
         template<auto Lambda, class ...Args>
         constexpr std::size_t count_filter = count_filter_impl<Lambda, Args...>();
@@ -479,7 +498,7 @@ namespace kaixo {
             std::array<std::size_t, count_filter<Lambda, Args...>> _indices{};
             std::size_t _index = 0;
             std::size_t _match = 0;
-            ((Lambda.operator()<Args>() ? 
+            ((fake_lambda{ Lambda }.operator()<Args>() ?
                 _indices[_match++] = _index++ : ++_index), ...);
             return _indices;
         }
@@ -504,6 +523,9 @@ namespace kaixo {
     // Filter the template parameters of Ty using a templated lambda
     template<class Ty, auto Lambda>
     using filter = typename detail::filter_impl<Ty, Lambda>::type;
+
+    template<auto Lambda, class ...Args>
+    using tfor = decltype((Lambda.operator()<Args>(), ...));
 
     // Template pack helper stuff
     template<class ...Args>
@@ -604,6 +626,7 @@ namespace kaixo {
         // Remove duplicates from Args
         using unique = kaixo::unique<pack>;
 
+        // Filter using templated lambda
         template<auto Lambda>
         using filter = kaixo::filter<pack, Lambda>;
     };
