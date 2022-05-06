@@ -3886,3 +3886,1652 @@ constexpr std::size_t modpow(std::size_t base, std::size_t power, std::size_t mo
     auto op = [=](auto res, auto c) { return (res * (ipow(base, c) % mod)) % mod; };
     return std::accumulate(view.begin(), view.end(), 1ull, op);
 }
+
+
+
+template <class T, class Tuple, size_t... Is>
+constexpr T construct_from_tuple(Tuple& tuple, std::index_sequence<Is...>) {
+    return T{ std::get<Is>(tuple)... };
+}
+
+template <class T, class Tuple>
+constexpr T construct_from_tuple(Tuple& tuple) {
+    return construct_from_tuple<T>(tuple,
+        std::make_index_sequence<std::tuple_size_v<std::decay_t<Tuple>>>{}
+    );
+}
+
+// String literal wrapper for template parameter
+template<std::size_t N>
+struct tag {
+    constexpr static auto size = N - 1;
+    char value[N - 1];
+    constexpr tag(std::string_view view) : value() { std::copy_n(view.data(), N - 1, value); }
+    constexpr tag(const char(&val)[N]) : value() { std::copy_n(val, N - 1, value); }
+    constexpr operator std::string_view() const { return { value, N - 1 }; }
+    constexpr std::string_view str() const { return { value, N - 1 }; }
+    constexpr bool operator==(const tag& other) const { return str() == other.str(); }
+    template<std::size_t M> requires (M != N)
+        constexpr bool operator==(const tag<M>&) const { return false; }
+};
+
+
+
+template<bool Parsed, tag Remainder, class Ty = std::string_view>
+struct result_type {
+
+    using value_type = Ty;
+
+    constexpr static auto parsed = Parsed;
+    constexpr static auto remainder = Remainder;
+    Ty value{ };
+};
+
+struct dud {};
+template<class ...Parsers>
+struct and_parser_t {
+    constexpr static auto size = sizeof...(Parsers);
+
+    template<class Grammar, tag Str>
+    using value_type = typename decltype(parse<Grammar, Str>())::template value_type;
+
+    template<std::size_t I>
+    using parser = std::tuple_element_t<I, std::tuple<Parsers...>>;
+
+    template<class Grammar, tag Str>
+    consteval static auto parse() {
+        return parse_i<0, Grammar, Str>();
+    }
+
+    template<std::size_t I, class Grammar, tag Str>
+    consteval static auto parse_i() {
+        if constexpr (I == size) return result_type<true, Str, std::tuple<>>{ {} };
+        else {
+            constexpr auto res = parser<I>::template parse<Grammar, Str>();
+            if constexpr (res.parsed) {
+                constexpr auto recu = parse_i<I + 1, Grammar, res.remainder>();
+                if constexpr (!recu.parsed) return result_type<false, Str>{};
+                else {
+                    constexpr auto tuple = std::tuple_cat(std::tuple{ res.value }, recu.value);
+                    return result_type<true, recu.remainder, decltype(tuple)>{ std::move(tuple) };
+                }
+            }
+            else return result_type<false, Str>{};
+        }
+    }
+};
+
+template<class ...Parsers>
+struct or_parser_t {
+    constexpr static auto size = sizeof...(Parsers);
+
+    template<class Grammar, tag Str>
+    using value_type = typename decltype(parse<Grammar, Str>())::template value_type;
+
+    template<std::size_t I>
+    using parser = std::tuple_element_t<I, std::tuple<Parsers...>>;
+
+    template<class Grammar, tag Str>
+    consteval static auto parse() {
+        return parse_i<0, Grammar, Str>();
+    }
+
+    template<std::size_t I, class Grammar, tag Str>
+    consteval static auto parse_i() {
+        if constexpr (I == size) return result_type<false, Str>{ };
+        else {
+            constexpr auto res = parser<I>::template parse<Grammar, Str>();
+            if constexpr (res.parsed) return res;
+            else return parse_i<I + 1, Grammar, Str>();
+        }
+    }
+};
+
+template<tag Name, class Parser>
+struct named_parser {
+    constexpr static auto name = Name;
+    using parser = Parser;
+
+    template<class Grammar, tag Str>
+    using value_type = Parser::template value_type<Grammar, Str>;
+
+    template<class Parser, tag Str>
+    consteval static auto parse() {
+        return parser::template parse<Parser, Str>();
+    }
+};
+
+template<tag Name, auto Lambda = 0>
+struct token {
+    constexpr static auto name = Name;
+
+    template<class Grammar, tag Str>
+    using value_type = typename decltype(parse<Grammar, Str>())::value_type;
+
+    template<class Grammar, tag Str>
+    consteval static auto parse() {
+        if constexpr (std::same_as<int, decltype(Lambda)>) {
+            if constexpr (Str.str().starts_with(Name.str())) {
+                constexpr auto size = Str.size - Name.size;
+                if constexpr (size == 0)
+                    return result_type<true, "\0", value_type<Grammar, Str>>{ Name.str() };
+                else {
+                    constexpr auto new_str = Str.str().substr(Name.size);
+                    return result_type < true, tag<size + 1>{ new_str }, value_type<Grammar, Str >> { Name.str() };
+                }
+            }
+            else return result_type<false, Str>{};
+        }
+        else return Lambda.template operator() < Grammar, Str > ();
+    }
+};
+
+template<tag Name>
+struct non_terminal {
+    constexpr static auto name = Name;
+
+    template<class Grammar, tag Str>
+    using value_type = std::decay_t<decltype(Grammar::template get<Name>)>::template value_type<Grammar, Str>;
+
+    template<class Parser>
+    consteval auto operator<<=(Parser) const { return named_parser<Name, Parser>{}; }
+
+    template<class Grammar, tag Str>
+    consteval static auto parse() {
+        return Grammar::template get<Name>.template parse<Grammar, Str>();
+    }
+};
+
+template<class Ty, class Parser>
+struct typed_parser {
+    using type = Ty;
+    using parser = Parser;
+
+    template<class Grammar, tag Str>
+    using value_type = typename decltype(parse<Grammar, Str>())::template value_type<Grammar, Str>;
+
+    template<class Grammar, tag Str>
+    consteval static auto parse() {
+        constexpr auto res = Parser::template parse<Grammar, Str>();
+        if constexpr (res.parsed)
+            return result_type<true, res.remainder, type>{ construct(res.value) };
+        else return result_type<false, Str>{};
+    }
+
+    template<class Ty>
+    consteval static auto construct(const Ty& value) {
+        if constexpr (kaixo::specialization<Ty, std::tuple>)
+            return construct_from_tuple<type>(value);
+        else return type{ value };
+    }
+};
+
+template<auto ...Parsers>
+struct parser {
+    template<tag Name>
+    static constexpr auto get_impl(auto& P, auto&... Ps) {
+        if constexpr (std::decay_t<decltype(P)>::name == Name) return P;
+        else return get_impl<Name>(Ps...);
+    }
+
+    template<tag Name>
+    static constexpr auto get = get_impl<Name>(Parsers...);
+
+    template<tag Name, tag Str>
+    consteval static auto parse() {
+        return get<Name>.template parse<parser, Str>();
+    }
+};
+
+template<class A, class B> requires (!kaixo::specialization<A, and_parser_t> && !kaixo::specialization<B, and_parser_t>)
+consteval auto operator*(A, B) { return and_parser_t<A, B>{}; }
+template<class A, class ...Bs> requires (!kaixo::specialization<A, and_parser_t>)
+consteval auto operator*(and_parser_t<Bs...>, A) { return and_parser_t<Bs..., A>{}; }
+template<class A, class ...Bs> requires (!kaixo::specialization<A, and_parser_t>)
+consteval auto operator*(A, and_parser_t<Bs...>) { return and_parser_t<A, Bs...>{}; }
+
+template<class A, class B> requires (!kaixo::specialization<A, or_parser_t> && !kaixo::specialization<B, or_parser_t>)
+consteval auto operator|(A, B) { return or_parser_t<A, B>{}; }
+template<class A, class ...Bs> requires (!kaixo::specialization<A, or_parser_t>)
+consteval auto operator|(or_parser_t<Bs...>, A) { return or_parser_t<Bs..., A>{}; }
+template<class A, class ...Bs> requires (!kaixo::specialization<A, or_parser_t>)
+consteval auto operator|(A, or_parser_t<Bs...>) { return or_parser_t<A, Bs...>{}; }
+
+template<class Ty>
+struct type_t {
+    using type = Ty;
+};
+
+template<class Ty>
+constexpr auto t = type_t<Ty>{};
+
+template<class A, class B>
+consteval auto operator^(type_t<A>, B) {
+    return typed_parser<A, B>{};
+}
+
+
+#include <vector>
+#include <iostream>
+
+#include <numbers>
+
+namespace kaixo {
+    enum class AngleType { Degrees, Radians };
+
+    namespace detail {
+        using namespace std::numbers;
+        template<AngleType A, AngleType B, class Out, class In>
+        constexpr decltype(auto) convert(const In& v) {
+            if constexpr (A == B) {
+                if constexpr (std::same_as<std::decay_t<In>, std::decay_t<Out>>) return v;
+                else return static_cast<Out>(v);
+            }
+            else if (A == AngleType::Radians) return static_cast<Out>(180. * v / pi_v<double>);
+            else if (A == AngleType::Degrees) return static_cast<Out>(pi_v<double> *v / 180.);
+        }
+    }
+
+    template<class Ty, AngleType Vy = AngleType::Radians>
+    class AngleBase {
+    public:
+        constexpr AngleBase() {}
+        template<std::convertible_to<Ty> T>
+        constexpr AngleBase(const T& v) : m_Value(static_cast<Ty>(v)) {}
+        template<std::convertible_to<Ty> T, AngleType V>
+        constexpr AngleBase(AngleBase<T, V> v) : m_Value(detail::convert<V, Vy, Ty>(v.value())) {}
+
+        constexpr decltype(auto) degrees() { return detail::convert<Vy, AngleType::Degrees, Ty>(value()); }
+        constexpr decltype(auto) radians() { return detail::convert<Vy, AngleType::Radians, Ty>(value()); }
+        constexpr decltype(auto) degrees() const { return detail::convert<Vy, AngleType::Degrees, Ty>(value()); }
+        constexpr decltype(auto) radians() const { return detail::convert<Vy, AngleType::Radians, Ty>(value()); }
+
+        constexpr Ty& value() { return m_Value; }
+        constexpr Ty const& value() const { return m_Value; }
+
+        constexpr explicit operator AngleBase<Ty, AngleType::Degrees>() const { return degrees(); }
+        constexpr explicit operator AngleBase<Ty, AngleType::Radians>() const { return radians(); }
+
+        constexpr explicit operator Ty& () { return value(); }
+        constexpr explicit operator Ty const& () const { return value(); }
+
+    protected:
+        Ty m_Value{};
+    };
+
+    template<class Ty> using Degrees = AngleBase<Ty, AngleType::Degrees>;
+    template<class Ty> using Radians = AngleBase<Ty, AngleType::Radians>;
+}
+
+
+template<class Ty>
+concept range_type = requires (Ty a, Ty b) {
+    { a == b } -> std::convertible_to<bool>;
+    { ++a } -> std::convertible_to<Ty>;
+    { a + b } -> std::convertible_to<Ty>;
+    { a = a + b } -> std::convertible_to<Ty>;
+};
+
+template<range_type Ty>
+struct range {
+    using value_type = Ty;
+    using reference = Ty&;
+    using const_reference = const Ty&;
+    using difference_type = std::ptrdiff_t;
+    using size_type = std::size_t;
+
+    class iterator {
+    public:
+        using value_type = Ty;
+        using reference = Ty&;
+        using const_reference = const Ty&;
+        using difference_type = std::ptrdiff_t;
+        using size_type = std::size_t;
+
+        constexpr iterator(Ty value, const range* r) : m_Value(value), m_Range(r) {}
+
+        constexpr iterator& operator++() { m_Value = m_Value + m_Range->difference; return *this; }
+        constexpr Ty const& operator*() const { return m_Value; }
+        constexpr bool operator==(const iterator& other) const { return other.m_Value == m_Value; }
+
+    private:
+        Ty m_Value;
+        const range* m_Range;
+    };
+
+    using const_iterator = iterator;
+
+    constexpr iterator begin() const { return { a, this }; }
+    constexpr iterator end() const { return { b, this }; }
+
+    Ty a{};
+    Ty b{};
+    Ty difference{ [] { Ty v{}; return ++v; }() };
+};
+
+template<class Ty> range(Ty, Ty)->range<Ty>;
+template<class Ty> range(Ty, Ty, Ty)->range<Ty>;
+
+#include <map>
+
+struct State {
+    void* data{ nullptr };
+
+    template<class Ty> void assign() {
+        if constexpr (sizeof(Ty) <= sizeof data)
+            new (&data) Ty{};
+        else data = new Ty;
+    }
+
+    template<class Ty> Ty const& get() const {
+        if constexpr (sizeof(Ty) <= sizeof data)
+            return *static_cast<Ty*>((void*)&data);
+        else return *static_cast<Ty*>(data);
+    }
+
+    template<class Ty> Ty& get() {
+        if constexpr (sizeof(Ty) <= sizeof data)
+            return *static_cast<Ty*>((void*)&data);
+        else return *static_cast<Ty*>(data);
+    }
+
+    template<class Ty> void clean() {
+        delete static_cast<Ty*>(data);
+    }
+};
+
+template<class Ty>
+struct StateId {
+    std::string_view id;
+    constexpr const char* get() const { return id.data(); }
+    constexpr bool operator==(std::string_view view) const {
+        return id.data() == view.data();
+    }
+    constexpr friend bool operator==(std::string_view view, const StateId& id) {
+        return id.id.data() == view.data();
+    }
+};
+
+struct StateListener {
+    virtual void update(std::string_view id, State& state) = 0;
+};
+
+class Object {
+public:
+    template<class Ty>
+    Ty get(const StateId<Ty>& id) const {
+        if (!m_States.contains(id.get()))
+            return {};
+        auto const& _state = m_States.at(id.get());
+        return _state.get<Ty>();
+    }
+
+    template<class Ty, std::convertible_to<Ty> T>
+    Ty set(const StateId<Ty>& id, T&& val) {
+        if (!m_States.contains(id.get()))
+            m_States[id.get()].assign<Ty>();
+        auto& _state = m_States[id.get()];
+        _state.get<Ty>() = std::forward<T>(val);
+        for (auto& i : m_Listeners)
+            i->update(id.id, _state);
+        return _state.get<Ty>();
+    }
+
+    template<std::derived_from<StateListener> Ty>
+    void link(Ty& l) {
+        m_Listeners.push_back(dynamic_cast<StateListener*>(&l));
+    }
+
+private:
+    std::map<const char*, State> m_States{};
+    std::vector<StateListener*> m_Listeners;
+};
+
+constexpr StateId<bool> Hovering{ "Hovering" };
+constexpr StateId<bool> Focused{ "Focused" };
+constexpr StateId<int> Pressed{ "Pressed" };
+
+struct MyObject : public Object, public StateListener {
+
+    MyObject() {
+        link(*this);
+    }
+
+    void update(std::string_view id, State& state) override {
+
+        if (Hovering == id) {
+            std::cout << state.get<bool>() << "\n";
+        }
+
+        return;
+    }
+
+};
+
+template<class Ty> struct delegate;
+
+template<class R, class ...A>
+struct delegate<R(A...)> {
+
+    template<class Obj>
+    constexpr delegate(Obj& o, R(Obj::* fun)(A...))
+        : object_ptr(static_cast<void*>(&o)),
+        fun_ptr(mem_method<Obj>) {
+        new (&storage) mem_storage<Obj>{ fun };
+    }
+
+    template<std::invocable<A...> Lambda>
+        requires (sizeof(Lambda) <= sizeof(void*)
+    && !std::convertible_to<Lambda, R(*)(A...)>)
+        constexpr delegate(Lambda lambda)
+        : fun_ptr(small_lambda_method<Lambda>) {
+        new (&object_ptr) Lambda{ std::move(lambda) };
+    }
+
+    template<std::invocable<A...> Lambda>
+        requires (sizeof(Lambda) > sizeof(void*)
+    && !std::convertible_to<Lambda, R(*)(A...)>)
+        constexpr delegate(Lambda lambda)
+        : fun_ptr(big_lambda_method<Lambda>),
+        cleanup(cleanup_method<Lambda>) {
+        object_ptr = new Lambda{ std::move(lambda) };
+    }
+
+    template<std::invocable<A...> Lambda>
+        requires (std::convertible_to<Lambda, R(*)(A...)>)
+    constexpr delegate(Lambda lambda)
+        : fun_ptr(fun_ptr_method) {
+        new (&storage) (R(*)(A...)){ (R(*)(A...)) lambda };
+    }
+
+    template<class Obj>
+    constexpr delegate& operator=(std::pair<Obj&, R(Obj::*)(A...)> a) {
+        clean();
+        object_ptr = static_cast<void*>(&a.first);
+        new (&storage) mem_storage<Obj>{ a.second };
+        fun_ptr = mem_method<Obj>;
+        return *this;
+    }
+
+    template<std::invocable<A...> Lambda>
+        requires (sizeof(Lambda) <= sizeof(void*)
+    && !std::convertible_to<Lambda, R(*)(A...)>)
+        constexpr delegate& operator=(Lambda lambda) {
+        clean();
+        fun_ptr = small_lambda_method<Lambda>;
+        new (&object_ptr) Lambda{ std::move(lambda) };
+        return *this;
+    }
+
+    template<std::invocable<A...> Lambda>
+        requires (sizeof(Lambda) > sizeof(void*)
+    && !std::convertible_to<Lambda, R(*)(A...)>)
+        constexpr delegate& operator=(Lambda lambda) {
+        clean();
+        fun_ptr = big_lambda_method<Lambda>;
+        object_ptr = new Lambda{ std::move(lambda) };
+        cleanup = cleanup_method<Lambda>;
+        return *this;
+    }
+
+    template<std::invocable<A...> Lambda>
+        requires (std::convertible_to<Lambda, R(*)(A...)>)
+    constexpr delegate& operator=(Lambda lambda) {
+        clean();
+        fun_ptr = fun_ptr_method;
+        new (&storage) (R(*)(A...)){ (R(*)(A...)) lambda };
+        return *this;
+    }
+
+    template<std::convertible_to<A> ...Args>
+    constexpr R operator()(Args...args) {
+        return (*fun_ptr)(object_ptr, storage, args...);
+    }
+
+    constexpr ~delegate() { clean(); }
+
+private:
+    template<class Obj>
+    struct mem_storage {
+        R(Obj::* fun)(A...);
+    };
+    struct dummy {};
+    constexpr static auto mem_fun_size = sizeof(mem_storage<dummy>);
+
+    void* object_ptr = nullptr;
+    R(*fun_ptr)(void*, uint8_t(&)[mem_fun_size], A...);
+    uint8_t storage[mem_fun_size]{};
+    void(*cleanup)(void*) = nullptr;
+
+    constexpr void clean() {
+        if (cleanup) {
+            cleanup(object_ptr);
+            cleanup = nullptr;
+        }
+    }
+
+    template<class Obj>
+    constexpr static void cleanup_method(void* obj) {
+        delete static_cast<Obj*>(obj);
+    }
+
+    template<class Obj>
+    constexpr static R mem_method(void* o, uint8_t(&fun)[mem_fun_size], A...args) {
+        return (static_cast<Obj*>(o)->*reinterpret_cast<mem_storage<Obj>*>(&fun)->fun)(args...);
+    }
+
+    template<class Lambda>
+    constexpr static R small_lambda_method(void* o, uint8_t(&fun)[mem_fun_size], A...args) {
+        return (*reinterpret_cast<Lambda*>(&o))(args...);
+    }
+
+    template<class Lambda>
+    constexpr static R big_lambda_method(void* o, uint8_t(&fun)[mem_fun_size], A...args) {
+        return (*static_cast<Lambda*>(o))(args...);
+    }
+
+    constexpr static R fun_ptr_method(void* o, uint8_t(&fun)[mem_fun_size], A...args) {
+        return (*reinterpret_cast<R(**)(A...)>(&fun))(args...);
+    }
+};
+
+struct Type {
+    int thing(int a) {
+        std::cout << a << '\n';
+        return a;
+    }
+};
+
+struct Functor {
+    int operator()(int a) { return a + 1; }
+};
+struct Functor2 {
+    int m1 = 10;
+    int m2 = 20;
+    int m3 = 30;
+    int operator()(int a) { return a + m1 + m2 + m3; }
+};
+
+#include <functional>
+
+
+template<std::size_t N, class CharType = char>
+struct string_literal {
+    constexpr static std::size_t npos = std::basic_string_view<CharType>::npos;
+
+    using view_type = std::basic_string_view<CharType>;
+    using size_type = std::size_t;
+    using difference_type = std::ptrdiff_t;
+    using value_type = CharType;
+    using reference = CharType&;
+    using const_reference = const CharType&;
+    using pointer = CharType*;
+    using const_pointer = const CharType*;
+
+    class const_iterator {
+    public:
+        using iterator_category = std::random_access_iterator_tag;
+        using size_type = std::size_t;
+        using difference_type = std::ptrdiff_t;
+        using value_type = const CharType;
+        using reference = const CharType&;
+
+        constexpr const_iterator(const const_iterator&) = default;
+        constexpr const_iterator(const_iterator&&) = default;
+        constexpr const_iterator& operator=(const const_iterator&) = default;
+        constexpr const_iterator& operator=(const_iterator&&) = default;
+        constexpr const_iterator() : m_Ptr(nullptr) {}
+        constexpr const_iterator(const CharType* ptr) : m_Ptr(ptr) {}
+
+        constexpr reference operator*() const { return *m_Ptr; }
+        constexpr const_iterator& operator+=(difference_type d) { m_Ptr += d; return *this; }
+        constexpr const_iterator& operator-=(difference_type d) { m_Ptr -= d; return *this; }
+        constexpr const_iterator& operator++() { ++m_Ptr; return *this; }
+        constexpr const_iterator& operator--() { --m_Ptr; return *this; }
+        constexpr const_iterator operator++(int) { auto _c = *this; ++m_Ptr; return _c; }
+        constexpr const_iterator operator--(int) { auto _c = *this; --m_Ptr; return _c; }
+
+        constexpr reference operator[](difference_type d) const { return m_Ptr[d]; }
+
+        constexpr auto operator<=>(const const_iterator& other) const = default;
+
+        friend constexpr const_iterator operator+(difference_type a, const const_iterator& b) { return { a + b.m_Ptr }; }
+        friend constexpr const_iterator operator+(const const_iterator& a, difference_type b) { return { a.m_Ptr + b }; }
+        friend constexpr const_iterator operator-(difference_type a, const const_iterator& b) { return { a - b.m_Ptr }; }
+        friend constexpr const_iterator operator-(const const_iterator& a, difference_type b) { return { a.m_Ptr - b }; }
+        friend constexpr difference_type operator-(const const_iterator& a, const const_iterator& b) { return a.m_Ptr - b.m_Ptr; }
+    protected:
+        const CharType* m_Ptr;
+    };
+
+    class iterator : public const_iterator {
+    public:
+        using iterator_category = std::random_access_iterator_tag;
+        using size_type = std::size_t;
+        using difference_type = std::ptrdiff_t;
+        using value_type = CharType;
+        using reference = CharType&;
+
+        constexpr iterator(const iterator&) = default;
+        constexpr iterator(iterator&&) = default;
+        constexpr iterator& operator=(const iterator&) = default;
+        constexpr iterator& operator=(iterator&&) = default;
+        constexpr iterator() : const_iterator(nullptr) {}
+        constexpr iterator(CharType* ptr) : const_iterator(ptr) {}
+
+        constexpr reference operator*() const { return *const_cast<CharType*>(this->m_Ptr); }
+        constexpr iterator& operator+=(difference_type d) { this->m_Ptr += d; return *this; }
+        constexpr iterator& operator-=(difference_type d) { this->m_Ptr -= d; return *this; }
+        constexpr iterator& operator++() { ++this->m_Ptr; return *this; }
+        constexpr iterator& operator--() { --this->m_Ptr; return *this; }
+        constexpr iterator operator++(int) { auto _c = *this; ++this->m_Ptr; return _c; }
+        constexpr iterator operator--(int) { auto _c = *this; --this->m_Ptr; return _c; }
+
+        constexpr reference operator[](difference_type d) const { return const_cast<CharType*>(this->m_Ptr)[d]; }
+
+        constexpr auto operator<=>(const iterator& other) const = default;
+
+        friend constexpr iterator operator+(difference_type a, const iterator& b) { return { a + b.m_Ptr }; }
+        friend constexpr iterator operator+(const iterator& a, difference_type b) { return { a.m_Ptr + b }; }
+        friend constexpr iterator operator-(difference_type a, const iterator& b) { return { a - b.m_Ptr }; }
+        friend constexpr iterator operator-(const iterator& a, difference_type b) { return { a.m_Ptr - b }; }
+        friend constexpr difference_type operator-(const iterator& a, const iterator& b) { return a.m_Ptr - b.m_Ptr; }
+    };
+
+    using reverse_iterator = std::reverse_iterator<iterator>;
+    using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+
+    constexpr ~string_literal() = default;
+    constexpr string_literal() = default;
+    constexpr string_literal(const CharType(&data)[N]) {
+        std::copy_n(data, N, m_Data);
+    }
+
+    constexpr string_literal(string_literal&&) = default;
+    constexpr string_literal(const string_literal&) = default;
+    constexpr string_literal& operator=(string_literal&&) = default;
+    constexpr string_literal& operator=(const string_literal&) = default;
+
+    template<std::size_t I> requires (I < N)
+        constexpr string_literal& operator=(const CharType(&data)[I]) {
+        std::copy_n(data, I, m_Data);
+    }
+
+    constexpr iterator begin() { return { m_Data }; }
+    constexpr iterator end() { return { m_Data + size() }; }
+    constexpr const_iterator begin() const { return { m_Data }; }
+    constexpr const_iterator end() const { return { m_Data + size() }; }
+    constexpr const_iterator cbegin() const { return begin(); }
+    constexpr const_iterator cend() const { return end(); }
+    constexpr reverse_iterator rbegin() { return end(); }
+    constexpr reverse_iterator rend() { return begin(); }
+    constexpr const_reverse_iterator rbegin() const { return end(); }
+    constexpr const_reverse_iterator rend() const { return begin(); }
+    constexpr const_reverse_iterator crbegin() const { return end(); }
+    constexpr const_reverse_iterator crend() const { return begin(); }
+
+    constexpr reference at(size_type d) { return m_Data[d]; }
+    constexpr const_reference at(size_type d) const { return m_Data[d]; }
+    constexpr reference operator[](size_type d) { return m_Data[d]; }
+    constexpr const_reference operator[](size_type d) const { return m_Data[d]; }
+    constexpr reference front() { return m_Data[0]; }
+    constexpr const_reference front() const { return m_Data[0]; }
+    constexpr reference back() { return m_Data[size() - 1]; }
+    constexpr const_reference back() const { return m_Data[size() - 1]; }
+
+    constexpr pointer data() { return m_Data; }
+    constexpr const_pointer data() const { return m_Data; }
+    constexpr const_pointer c_str() const { return m_Data; }
+    constexpr size_type size() const { return N - 1; }
+    constexpr size_type length() const { return size(); }
+    constexpr size_type max_size() const { return size(); }
+    constexpr bool empty() const { return false; }
+    constexpr void swap(string_literal& other) { std::swap(data(), other.data()); }
+
+    constexpr view_type view() const { return { data(), size() }; }
+    constexpr operator view_type() const { return { data(), size() }; }
+
+    template<std::size_t I>
+    constexpr auto operator==(const string_literal<I, CharType>& other) const {
+        if constexpr (I != N) return false;
+        else return view() == other.view();
+    };
+    template<std::size_t I>
+    constexpr auto operator<=>(const string_literal<I, CharType>& other) const { return view() <=> other.view(); }
+
+    constexpr auto starts_with(view_type t) const { return view().starts_with(t); }
+    constexpr auto ends_with(view_type t) const { return view().ends_with(t); }
+    constexpr auto substr(size_type pos = 0, size_type count = npos) const { return view().substr(pos, count); }
+    constexpr auto find(std::string_view t, size_type pos = 0) const { return view().find(t, pos); }
+    constexpr auto rfind(view_type t, size_type pos = 0) const { return view().rfind(t, pos); }
+    constexpr auto find_first_of(view_type t, size_type pos = 0) const { return view().find_first_of(t, pos); }
+    constexpr auto find_first_not_of(view_type t, size_type pos = 0) const { return view().find_first_not_of(t, pos); }
+    constexpr auto find_last_of(view_type t, size_type pos = 0) const { return view().find_last_of(t, pos); }
+    constexpr auto find_last_not_of(view_type t, size_type pos = 0) const { return view().find_last_not_of(t, pos); }
+
+    CharType m_Data[N]{};
+};
+
+
+#include <array>
+
+template<string_literal Str>
+struct meta {
+    constexpr static auto definition = Str;
+
+    struct member {
+        std::string_view name{};
+    };
+
+    constexpr static std::size_t member_count = []() {
+        std::size_t _count = 0;
+        for (auto& i : definition) if (i == ';') ++_count;
+        return _count;
+    }();
+
+    constexpr static std::array<member, member_count> members = []() {
+        std::array<member, member_count> _members{};
+        auto _view = definition.view();
+
+        std::size_t _index = 0;
+        while (true) {
+            auto _end = _view.find_first_of(';');
+            if (_end == decltype(definition)::npos) break;
+            auto _sub = _view.substr(0, _end);
+            auto _last = _sub.find_last_of(' ');
+            auto _name = _sub.substr(_last + 1);
+            _members[_index++].name = _name;
+            _view = _view.substr(_end + 1);
+        }
+
+        return _members;
+    }();
+};
+
+template<auto Ptr, string_literal Name>
+struct Member {
+    constexpr static auto ptr = Ptr;
+    constexpr static auto name = Name;
+};
+
+template<class Type>
+struct Meta {
+    template<class Ty>
+    struct Member {
+        Type::Ty* ptr;
+        std::string_view name;
+    };
+};
+
+
+#define META(Name)  struct Name {                                            \
+    using Type = Name;                                                       \
+    template<auto Ptr, string_literal Name>                                  \
+    struct Variable {                                                        \
+        using type = kaixo::member_type_t<decltype(Ptr)>;                    \
+        constexpr static auto _n_Type = 0;                                   \
+        constexpr static auto ptr = Ptr;                                     \
+        constexpr static auto name = Name.view();                            \
+    };                                                                       \
+    template<class> struct SignaturedFunction;                               \
+    struct GeneralFunction {                                                 \
+        virtual void _n_Link() = 0;                                          \
+    };                                                                       \
+    template<class R, class ...As>                                           \
+    struct SignaturedFunction<R(As...)> : GeneralFunction {                  \
+        virtual void _n_Link() override {};                                  \
+        constexpr SignaturedFunction(R(*fun)(Type&, As...)) : fun(fun) {}    \
+        R(*fun)(Type&, As...);                                               \
+    };                                                                       \
+    struct FunctionBase {                                                    \
+        const GeneralFunction* fun;                                          \
+        template<class Ret, class ...Args>                                   \
+        constexpr Ret invoke(Type& v, Args...args) const {                   \
+            auto _self = dynamic_cast<const Type::template                   \
+                SignaturedFunction<Ret(Args...)>*>(fun);                     \
+            if (!_self) throw "Wrong call!";                                 \
+            else return _self->fun(v, args...);                              \
+        }                                                                    \
+        template<class Ret, class ...Args>                                   \
+        constexpr Ret invoke(const Type& v, Args...args) const {             \
+            auto _self = dynamic_cast<const Type::template                   \
+                SignaturedFunction<Ret(Args...)>*>(fun);                     \
+            if (!_self) throw "Wrong call!";                                 \
+            else return _self->fun(v, args...);                              \
+        }                                                                    \
+        template<class Sig>                                                  \
+        constexpr bool invocable() const {                                   \
+            auto _self = dynamic_cast<const Type::template                   \
+                SignaturedFunction<Sig>*>(fun);                              \
+            return _self != nullptr;                                         \
+        }                                                                    \
+    };                                                                       \
+    struct GeneralVariable {                                                 \
+        virtual void _n_Link() = 0;                                          \
+    };                                                                       \
+    template<class Ty>                                                       \
+    struct TypedVariable : GeneralVariable {                                 \
+        virtual void _n_Link() override {};                                  \
+        constexpr TypedVariable(Ty Type::* var) : var(var) {}                \
+        Ty Type::* var;                                                      \
+    };                                                                       \
+    struct VariableBase {                                                    \
+        const GeneralVariable* var;                                          \
+        template<class Ty>                                                   \
+        constexpr Ty& as(Type& v) const {                                    \
+            auto _self = dynamic_cast<const Type::template                   \
+                TypedVariable<Ty>*>(var);                                    \
+            if (!_self) throw "Wrong call!";                                 \
+            else return v.*(_self->var);                                     \
+        }                                                                    \
+        template<class Ty>                                                   \
+        constexpr const Ty& as(const Type& v) const {                        \
+            auto _self = dynamic_cast<const Type::template                   \
+                TypedVariable<Ty>*>(var);                                    \
+            if (!_self) throw "Wrong call!";                                 \
+            else return v.*(_self->var);                                     \
+        }                                                                    \
+        template<class Ty>                                                   \
+        constexpr bool is() const {                                          \
+            auto _self = dynamic_cast<const Type::template                   \
+                TypedVariable<Ty>*>(var);                                    \
+            return _self != nullptr;                                         \
+        }                                                                    \
+    };                                                                       \
+    template<auto Ptr, string_literal Name>                                  \
+    struct Function {                                                        \
+        constexpr static auto _n_Type = 1;                                   \
+        constexpr static auto ptr = Ptr;                                     \
+        constexpr static auto name = Name.view();                            \
+        using signature = kaixo::signature_t<decltype(ptr)>;                 \
+        using return_type = kaixo::function_return_t<signature>;             \
+        using argument_types = kaixo::function_args_t<signature>;            \
+        template<class ...Args>                                              \
+        constexpr static decltype(auto) invoke(Type& v, Args&&...as) {       \
+            return (v.*ptr)(std::forward<Args>(as)...);                      \
+        }                                                                    \
+        template<class ...Args>                                              \
+        constexpr static decltype(auto) invoke(const Type& v, Args&&...as) { \
+            return (v.*ptr)(std::forward<Args>(as)...);                      \
+        }                                                                    \
+    };                                                                       \
+    template<auto Ptr, string_literal Name>                                  \
+        requires (std::is_member_object_pointer_v<decltype(Ptr)>)            \
+    struct Function<Ptr, Name> {                                             \
+        constexpr static auto _n_Type = 1;                                   \
+        constexpr static auto ptr = Ptr;                                     \
+        constexpr static auto name = Name.view();                            \
+        template<class ...Args>                                              \
+        constexpr static decltype(auto) invoke(Type& v, Args&&...as) {       \
+            return (v.*ptr)(std::forward<Args>(as)...);                      \
+        }                                                                    \
+        template<class ...Args>                                              \
+        constexpr static decltype(auto) invoke(const Type& v, Args&&...as) { \
+            return (v.*ptr)(std::forward<Args>(as)...);                      \
+        }                                                                    \
+    };                                                                       \
+    template<std::size_t I> struct _n_Members { using type = void; };        \
+    constexpr static std::size_t _n_Start = __COUNTER__;                     \
+
+#define END_META                                                                          \
+    template<std::size_t I> using _n_Members_t = _n_Members<I>::type;                     \
+    constexpr static std::size_t _n_End = __COUNTER__;                                    \
+    constexpr static std::size_t _n_Member_count = _n_End - _n_Start - 1;                 \
+    constexpr static std::size_t variable_count =                                         \
+    []<std::size_t ...Is>(std::index_sequence<Is...>){                                    \
+        std::size_t _count = 0;                                                           \
+        ((Type::template _n_Members_t<Is>::_n_Type == 0                                   \
+            ? (++_count, true) : false), ...);                                            \
+        return _count;                                                                    \
+    }(std::make_index_sequence<Type::_n_Member_count>{});                                 \
+    constexpr static std::size_t function_count =                                         \
+    []<std::size_t ...Is>(std::index_sequence<Is...>){                                    \
+        std::size_t _count = 0;                                                           \
+        ((Type::template _n_Members_t<Is>::_n_Type == 1                                   \
+            ? (++_count, true) : false), ...);                                            \
+        return _count;                                                                    \
+    }(std::make_index_sequence<Type::_n_Member_count>{});                                 \
+    template<std::size_t I> using variable = decltype(                                    \
+    [](){                                                                                 \
+        constexpr auto try_n = []                                                         \
+        <std::size_t N, std::size_t M>(auto& s) {                                         \
+            if constexpr (std::same_as<void, Type::template _n_Members_t<N>>) return 0;   \
+            else if constexpr (Type::template _n_Members_t<N>::_n_Type == 0) {            \
+                if constexpr (M == 0) return Type::template _n_Members_t<N>{};            \
+                else return s.operator()<N + 1, M - 1>(s);                                \
+            } else return s.operator()<N + 1, M>(s);                                      \
+        };                                                                                \
+        return try_n.operator()<0, I>(try_n);                                             \
+    }());                                                                                 \
+    template<std::size_t I> using function = decltype(                                    \
+    [](){                                                                                 \
+        constexpr auto try_n = []                                                         \
+        <std::size_t N, std::size_t M>(auto& s) {                                         \
+            if constexpr (std::same_as<void, Type::template _n_Members_t<N>>) return 0;   \
+            else if constexpr (Type::template _n_Members_t<N>::_n_Type == 1) {            \
+                if constexpr (M == 0) return Type::template _n_Members_t<N>{};            \
+                else return s.operator()<N + 1, M - 1>(s);                                \
+            } else return s.operator()<N + 1, M>(s);                                      \
+        };                                                                                \
+        return try_n.operator()<0, I>(try_n);                                             \
+    }());                                                                                 \
+    template<std::size_t I, class ...As>                                                  \
+    constexpr static decltype(auto) _n_Fun_type_t(Type & v, As ...as) {                   \
+        return (v.*(Type::template function<I>::ptr))(as...);                             \
+    };                                                                                    \
+    template<std::size_t I>                                                               \
+    constexpr static auto _n_Fun_types =                                                  \
+        Type::template SignaturedFunction<kaixo::minimal_signature_t                      \
+            <decltype(Type::template function<I>::ptr)>>{ _n_Fun_type_t<I> };             \
+    constexpr static auto functions() {                                                   \
+        return []<std::size_t ...Is>(std::index_sequence<Is...>) {                        \
+            return std::array<FunctionBase, Type::function_count>{                        \
+            dynamic_cast<const GeneralFunction*>(&Type::template _n_Fun_types<Is>)... };  \
+        }(std::make_index_sequence<Type::function_count>{});                              \
+    }                                                                                     \
+    template<std::size_t I>                                                               \
+    constexpr static auto _n_Var_types =                                                  \
+        Type::template TypedVariable<typename Type::template variable<I>::type>{          \
+            Type::template variable<I>::ptr };                                            \
+    constexpr static auto variables() {                                                   \
+        return []<std::size_t ...Is>(std::index_sequence<Is...>) {                        \
+            return std::array<VariableBase, Type::variable_count>{                        \
+            dynamic_cast<const GeneralVariable*>(&Type::template _n_Var_types<Is>)... };  \
+        }(std::make_index_sequence<Type::variable_count>{});                              \
+    }                                                                                     \
+};
+
+#define VAR(ty, name, init) ty name init; \
+template<> struct _n_Members<__COUNTER__ - _n_Start - 1> { using type = Variable<&Type::name, #name>; };
+#define FUN(pre, name, def) pre name def; \
+template<> struct _n_Members<__COUNTER__ - _n_Start - 1> { using type = Function<&Type::name, #name>; };
+#define TFUN(pre, name, def) pre name def; \
+struct _twrapper_##name {                                        \
+    constexpr _twrapper_##name(Type& self) : self(self) {}       \
+    Type& self;                                                  \
+    template<class ...Args> requires                             \
+    requires(Type& self, Args&&...args) {                        \
+        { self.name(std::forward<Args>(args)...) };              \
+    }                                                            \
+    constexpr decltype(auto) operator()(Args&&...args) const {   \
+        return self.name(std::forward<Args>(args)...);           \
+    }                                                            \
+} _fun_##name{ *this };                                          \
+template<> struct _n_Members<__COUNTER__ - _n_Start - 1> { using type = Function<&Type::_fun_##name, #name>; };
+
+//META(Carrot)
+//    VAR(int, a, { 3 })
+//    VAR(double, b, { 31 })
+//    FUN(constexpr double, add, (int a, int b) const { return a + b; })
+//END_META
+
+template<class Ty, std::size_t N>
+struct NamedArray : std::array<Ty, N> {
+    constexpr Ty& operator[](std::size_t i) {
+        return std::array<Ty, N>::operator[](i);
+    }
+
+    constexpr const Ty& operator[](std::size_t i)const {
+        return std::array<Ty, N>::operator[](i);
+    }
+
+    constexpr bool has(std::string_view name) const {
+        for (auto& e : *this) {
+            if (e.name() == name) return true;
+        }
+        return false;
+    }
+
+    constexpr Ty& operator[](std::string_view name) {
+        for (auto& e : *this) {
+            if (e.name() == name) return e;
+        }
+        throw std::exception("Bad access");
+    }
+
+    constexpr const Ty& operator[](std::string_view name) const {
+        for (auto& e : *this) {
+            if (e.name() == name) return e;
+        }
+        throw std::exception("Bad access");
+    }
+};
+
+template<auto Ptr, string_literal Name>
+struct Function {
+    constexpr static auto ptr = Ptr;
+    constexpr static auto name = Name.view();
+    using signature = kaixo::signature_t<decltype(ptr)>;
+    using return_type = kaixo::function_return_t<signature>;
+    using argument_types = kaixo::function_args_t<signature>;
+    template<class ...Args>
+    constexpr static decltype(auto) invoke(Type& v, Args&&...as) {
+        return (v.*ptr)(std::forward<Args>(as)...);
+    }
+    template<class ...Args>
+    constexpr static decltype(auto) invoke(const Type& v, Args&&...as) {
+        return (v.*ptr)(std::forward<Args>(as)...);
+    }
+};
+
+template<auto Lambda, string_literal Name>
+    requires (kaixo::has_fun_op<decltype(Lambda)>)
+struct Function<Lambda, Name> {
+    constexpr static auto ptr = Lambda;
+    constexpr static auto name = Name.view();
+    template<class ...Args>
+    constexpr static decltype(auto) invoke(Type& v, Args&&...as) {
+        return (v.*ptr)(std::forward<Args>(as)...);
+    }
+    template<class ...Args>
+    constexpr static decltype(auto) invoke(const Type& v, Args&&...as) {
+        return (v.*ptr)(std::forward<Args>(as)...);
+    }
+};
+
+template<class ...Funs>
+struct Functions {
+    using Type = kaixo::member_class_t<std::decay_t<decltype(
+        kaixo::template head_t<std::tuple<Funs...>>::ptr)>>;
+
+    constexpr static std::size_t count = sizeof...(Funs);
+    template<class> struct SignaturedFunction;
+    struct GeneralFunction {
+        constexpr GeneralFunction(std::string_view view)
+            : name(view) {}
+        std::string_view name{};
+        virtual void _n_Link() = 0;
+    };
+    template<class R, class ...As>
+    struct SignaturedFunction<R(As...)> : GeneralFunction {
+        virtual void _n_Link() override {};
+        constexpr SignaturedFunction(R(*fun)(Type&, As...), std::string_view name)
+            : fun(fun), GeneralFunction(name) {}
+        R(*fun)(Type&, As...);
+    };
+    struct FunctionBase {
+        const GeneralFunction* fun;
+        constexpr auto name() const { return fun->name; }
+        template<class Ret, class ...Args>
+        constexpr Ret invoke(const Type& v, Args...args) const {
+            auto _self = dynamic_cast<const SignaturedFunction<Ret(Args...)>*>(fun);
+            if (!_self) throw "Wrong call!"; else return _self->fun(*const_cast<Type*>(&v), args...);
+        }
+        template<class Sig>
+        constexpr bool invocable() const {
+            auto _self = dynamic_cast<const SignaturedFunction<Sig>*>(fun);
+            return _self != nullptr;
+        }
+    };
+
+    template<std::size_t I> using function = std::tuple_element_t<I, std::tuple<Funs...>>;
+
+    template<std::size_t I, class ...As>
+    constexpr static decltype(auto) _n_Fun_type_t(Type& v, As ...as) {
+        return (v.*(function<I>::ptr))(as...);
+    };
+
+    template<std::size_t I>
+    constexpr static auto _n_Fun_types = SignaturedFunction<kaixo::minimal_signature_t<
+        decltype(Functions::template function<I>::ptr)>>{
+        &_n_Fun_type_t<I>, Functions::template function<I>::name };
+
+    constexpr static auto functions() {
+        return[]<std::size_t ...Is>(std::index_sequence<Is...>) {
+            return NamedArray<FunctionBase, count>{
+                dynamic_cast<const GeneralFunction*>(&_n_Fun_types<Is>)... };
+        }(std::make_index_sequence<count>{});
+    }
+};
+
+template<>
+struct Functions<> {
+    constexpr static std::size_t count = 0;
+
+    constexpr static auto functions() {
+        return;
+    }
+};
+
+template<auto Ptr, string_literal Name>
+struct Variable {
+    using type = std::decay_t<kaixo::member_type_t<decltype(Ptr)>>;
+    constexpr static auto ptr = Ptr;
+    constexpr static auto name = Name.view();
+};
+
+template<class ...Vars>
+struct Variables {
+    using Type = kaixo::member_class_t<std::decay_t<decltype(
+        kaixo::template head_t<std::tuple<Vars...>>::ptr)>>;
+
+    constexpr static std::size_t count = sizeof...(Vars);
+
+    struct GeneralVariable {
+        constexpr GeneralVariable(std::string_view view)
+            : name(view) {}
+        std::string_view name{};
+        virtual void _n_Link() = 0;
+    };
+
+    template<class Ty>
+    struct TypedVariable : GeneralVariable {
+        virtual void _n_Link() override {};
+        constexpr TypedVariable(Ty Type::* var, std::string_view name)
+            : var(var), GeneralVariable(name) {}
+        Ty Type::* var;
+    };
+
+    struct VariableBase {
+        const GeneralVariable* var;
+        constexpr auto name() const { return var->name; }
+        template<class Ty>
+        constexpr Ty& as(Type& v) const {
+            auto _self = dynamic_cast<const TypedVariable<Ty>*>(var);
+            if (!_self) throw "Wrong call!"; else return v.*(_self->var);
+        }
+        template<class Ty>
+        constexpr Ty Type::* as() const {
+            auto _self = dynamic_cast<const TypedVariable<Ty>*>(var);
+            if (!_self) throw "Wrong call!"; else return _self->var;
+        }
+        template<class Ty>
+        constexpr const Ty& as(const Type& v) const {
+            auto _self = dynamic_cast<const TypedVariable<Ty>*>(var);
+            if (!_self) throw "Wrong call!"; else return v.*(_self->var);
+        }
+        template<class Ty>
+        constexpr bool is() const {
+            auto _self = dynamic_cast<const TypedVariable<Ty>*>(var);
+            return _self != nullptr;
+        }
+    };
+
+    template<std::size_t I> using variable = std::tuple_element_t<I, std::tuple<Vars...>>;
+
+    template<std::size_t I>
+    constexpr static auto _n_Var_types = TypedVariable<Variables::template variable<I>::type>{
+        Variables::template variable<I>::ptr, Variables::template variable<I>::name };
+
+    constexpr static auto variables() {
+        return[]<std::size_t ...Is>(std::index_sequence<Is...>) {
+            return NamedArray<VariableBase, count>{
+                dynamic_cast<const GeneralVariable*>(&_n_Var_types<Is>)... };
+        }(std::make_index_sequence<count>{});
+    }
+};
+
+template<class Vars, class Funs>
+struct Reflect : Vars, Funs {};
+
+struct Potato {
+    int a = 3;
+    double b = 4;
+
+    constexpr double add(int a, int b) const { return a + b; }
+
+    using reflect = Reflect<
+        Variables<
+        Variable<&Potato::a, "a">,
+        Variable<&Potato::b, "b">
+        >,
+        Functions<
+        Function<&Potato::add, "add">
+        >
+    >;
+};
+
+template<class Ty>
+struct PointBase {
+    Ty x;
+    Ty y;
+};
+
+template<class Ty>
+struct Point : PointBase<Ty>, Reflect<
+    Variables<
+    Variable<&PointBase<Ty>::x, "x">,
+    Variable<&PointBase<Ty>::y, "y">
+    >, Functions<>
+> {};
+
+
+template<class Ty>
+constexpr auto distance2(auto& p1, auto& p2) {
+    constexpr auto v1 = std::decay_t<decltype(p1)>::variables();
+    constexpr auto v2 = std::decay_t<decltype(p2)>::variables();
+
+    if constexpr (v1.has("x") && v1.has("y") && v2.has("x") && v2.has("y")) {
+        constexpr auto x1 = v1["x"];
+        constexpr auto x2 = v2["x"];
+        constexpr auto y1 = v1["y"];
+        constexpr auto y2 = v2["y"];
+
+        if constexpr (x1.is<Ty>() && x2.is<Ty>() && y1.is<Ty>() && y2.is<Ty>()) {
+            constexpr auto x1v = x1.as<Ty>();
+            constexpr auto x2v = x2.as<Ty>();
+            constexpr auto y1v = y1.as<Ty>();
+            constexpr auto y2v = y2.as<Ty>();
+
+            return
+                (p1.*x1v - p2.*x2v) * (p1.*x1v - p2.*x2v) +
+                (p1.*y1v - p2.*y2v) * (p1.*y1v - p2.*y2v);
+        }
+        else return;
+    }
+    else return;
+}
+
+struct Data {
+    int a = 10;
+    int b = 20;
+};
+
+template<auto Ptr>
+struct Thing {};
+
+
+
+
+struct dynamic_tuple {
+
+    constexpr dynamic_tuple() = default;
+
+    template<class ...Args>
+    constexpr dynamic_tuple(Args&&...args) {
+        constexpr std::size_t _size = ((sizeof(Args)) + ...);
+        data.reserve(_size);
+        (push_back(args), ...);
+    }
+
+    template<class Ty>
+    constexpr std::decay_t<Ty>& push_back(Ty&& ty) {
+        return emplace_back<std::decay_t<Ty>>(std::forward<Ty>(ty));
+    }
+
+    template<class Ty, class...Args>
+    constexpr Ty& emplace_back(Args&& ...args) {
+        info.push_back(entry_info{ &typeid(Ty), (info.empty() ? 0ull : info.back().offset) + sizeof(Ty) });
+        data.resize(data.size() + sizeof(Ty));
+        return *std::construct_at((Ty*)(&data.at(data.size() - sizeof(Ty))), std::forward<Args>(args)...);
+    }
+
+    struct entry {
+        uint8_t* value;
+        const type_info* type;
+
+        template<class Ty> constexpr bool is() const { return *type == typeid(Ty); }
+        template<class Ty> constexpr Ty& as() const { return *(Ty*)(value); }
+        template<class Ty> constexpr operator Ty& () const { return *(Ty*)(value); }
+    };
+
+    struct const_entry {
+        const uint8_t* value;
+        const type_info* type;
+
+        template<class Ty> constexpr bool is() const { return *type == typeid(Ty); }
+        template<class Ty> constexpr const Ty& as() const { return *(const Ty*)(value); }
+        template<class Ty> constexpr operator const Ty& () const { return *(const Ty*)(value); }
+    };
+
+    constexpr entry operator[](std::size_t i) { return { data.data() + info[i].offset, info[i + 1].type }; }
+    constexpr const_entry operator[](std::size_t i) const { return { data.data() + info[i].offset, info[i + 1].type }; }
+
+    struct entry_info {
+        const type_info* type;
+        std::size_t offset;
+    };
+
+    struct iterator {
+        std::vector<entry_info>::iterator info;
+        uint8_t* data;
+
+        constexpr iterator& operator++() { ++info; return *this; }
+        constexpr entry operator*() { return { data + info[-1].offset, info->type }; }
+        constexpr bool operator==(const iterator& o) const { return info == o.info; }
+    };
+
+    constexpr iterator begin() { return { info.begin() + 1, data.data() }; };
+    constexpr iterator end() { return { info.end(), data.data() }; };
+
+    std::vector<entry_info> info{ { 0, 0 } };
+    std::vector<uint8_t> data{};
+};
+
+
+struct uv_entry {
+    constexpr virtual ~uv_entry() = default;
+};
+
+template<class Ty>
+struct uv_typed_entry : uv_entry {
+    Ty value{};
+    template<class ...Args>
+    constexpr uv_typed_entry(Args&&...args)
+        : value(std::forward<Args>(args)...) {}
+};
+
+class uv_element {
+    uv_entry* value{ nullptr };
+public:
+    constexpr uv_element(uv_entry* value) : value(value) {}
+    constexpr uv_element() = default;
+    constexpr ~uv_element() { delete value; }
+
+    constexpr uv_element(uv_element&& o) noexcept
+        : value(o.value) {
+        o.value = nullptr;
+    }
+
+    constexpr uv_element& operator=(uv_element&& o) noexcept {
+        value = o.value, o.value = nullptr;
+        return *this;
+    }
+
+    constexpr uv_element(const uv_element& o) = delete;
+    constexpr uv_element& operator=(const uv_element& o) = delete;
+
+    template<class Ty> requires (!std::same_as<uv_element, std::decay_t<Ty>>)
+        constexpr uv_element& operator=(Ty&& arg) {
+        assign<std::decay_t<Ty>>(std::forward<Ty>(arg));
+        return *this;
+    }
+
+    template<class Ty, class ...Args>
+    constexpr void assign(Args&&...args) {
+        delete value;
+        value = dynamic_cast<uv_entry*>(
+            new uv_typed_entry<Ty>{ std::forward<Args>(args)... });
+    }
+
+    template<class Ty>
+    constexpr Ty& as() {
+        if (auto _self = dynamic_cast<uv_typed_entry<Ty>*>(value))
+            return _self->value;
+        else throw;
+    }
+
+    template<class Ty>
+    constexpr const Ty& as() const {
+        if (auto _self = dynamic_cast<const uv_typed_entry<Ty>*>(value))
+            return _self->value;
+        else throw;
+    }
+
+    template<class Ty>
+    constexpr explicit operator Ty& () {
+        if (auto _self = dynamic_cast<uv_typed_entry<Ty>*>(value))
+            return _self->value;
+        else throw;
+    }
+
+    template<class Ty>
+    constexpr explicit operator const Ty& () const {
+        if (auto _self = dynamic_cast<const uv_typed_entry<Ty>*>(value))
+            return _self->value;
+        else throw;
+    }
+
+    template<class Ty>
+    constexpr bool is() const {
+        return dynamic_cast<const uv_typed_entry<Ty>*>(value) != nullptr;
+    }
+};
+
+class untyped_vector : std::vector<uv_element> {
+    using parent = std::vector<uv_element>;
+public:
+    using value_type = parent::value_type;
+    using reference = parent::reference;
+    using const_reference = parent::const_reference;
+    using pointer = parent::pointer;
+    using const_pointer = parent::const_pointer;
+    using size_type = parent::size_type;
+    using difference_type = parent::difference_type;
+    using iterator = parent::iterator;
+    using const_iterator = parent::const_iterator;
+    using reverse_iterator = parent::reverse_iterator;
+    using const_reverse_iterator = parent::const_reverse_iterator;
+
+    template<class ...Args>
+    constexpr untyped_vector(Args&& ...args) {
+        parent::reserve(sizeof...(Args));
+        (this->push_back(std::forward<Args>(args)), ...);
+    }
+
+    template<class Ty>
+    constexpr void push_back(Ty&& arg) {
+        this->emplace_back<std::decay_t<Ty>>(std::forward<Ty>(arg));
+    }
+
+    template<class Ty, class ...Args>
+    constexpr Ty& emplace_back(Args&&...args) {
+        auto _ptr = new uv_typed_entry<Ty>(std::forward<Args>(args)...);
+        parent::emplace_back(dynamic_cast<uv_entry*>(_ptr));
+        return _ptr->value;
+    }
+
+    using parent::operator=;
+    using parent::assign;
+    using parent::at;
+    using parent::operator[];
+    using parent::front;
+    using parent::back;
+    using parent::data;
+    using parent::begin;
+    using parent::cbegin;
+    using parent::rbegin;
+    using parent::crbegin;
+    using parent::end;
+    using parent::cend;
+    using parent::rend;
+    using parent::crend;
+    using parent::empty;
+    using parent::size;
+    using parent::max_size;
+    using parent::reserve;
+    using parent::capacity;
+    using parent::shrink_to_fit;
+    using parent::clear;
+    using parent::erase;
+    using parent::pop_back;
+    using parent::resize;
+    using parent::swap;
+};
+
+
+
+template<class ...Args>
+struct Struct {
+    constexpr static std::size_t bytes = (sizeof(Args) + ...);
+
+    template<std::size_t I>
+    constexpr static std::size_t member_size = sizeof(std::tuple_element_t<I, std::tuple<Args...>>);
+
+    template<std::size_t I>
+    using member_type = std::tuple_element_t<I, std::tuple<Args...>>;
+
+    template<std::size_t I> struct member_t {
+        constexpr static std::size_t value = member_size<I - 1> +member_t<I - 1>::value;
+        using type = member_type<I>;
+    };
+    template<> struct member_t<0> { constexpr static std::size_t value = 0; };
+    template<std::size_t I> constexpr static auto member = member_t<I>{};
+
+    template<class Member>
+    constexpr auto operator->*(const Member&) const -> Member::type const& {
+        return *(const Member::type*)(&data[Member::value]);
+    }
+
+    uint8_t data[bytes]{};
+};
+
+
+template<class DataClass>
+concept data_class = requires() {
+    typename DataClass::access_tier;
+    typename DataClass::dependencies;
+};
+
+template<std::size_t Level>
+struct tier : std::integral_constant<std::size_t, Level> {};
+
+template<class Me, class ...Tys>
+struct dependency_selector {
+    static_assert(((Tys::access_tier::value
+        <= Me::access_tier::value) && ...), "Invalid Dependency");
+};
+
+template<class Me>
+struct dependency_selector<Me> {};
+
+class Cache {
+public:
+    using access_tier = tier<0>;
+    using dependencies = dependency_selector<Cache>;
+};
+
+class TransitionsTradeBlocker {
+public:
+    using access_tier = tier<2>;
+    using dependencies = dependency_selector<TransitionsTradeBlocker, Cache>;
+};
+
+class SettingsManager {
+public:
+    using access_tier = tier<1>;                                    // vvv  Won't work  vvv
+    using dependencies = dependency_selector<SettingsManager, Cache, TransitionsTradeBlocker>;
+};
+
+
+template<class Ty, std::size_t I>
+using greater_than = Ty;
+
+#include <source_location>
+
+namespace contracts {
+
+    template<std::size_t I>
+    struct arg_t {
+        constexpr static auto value = I;
+        constexpr static decltype(auto) get(auto& vals) {
+            return std::get<value>(vals);
+        }
+    };
+
+    template<auto Lambda>
+    struct condition_t {
+        constexpr static auto value = Lambda;
+        constexpr static decltype(auto) get(auto& vals) {
+            return value(vals);
+        }
+    };
+
+
+    template<class A, class B>
+    constexpr auto operator>(A, B) {
+        return condition_t < [](auto& vals) -> decltype(auto) {
+            return A::get(vals) > B::get(vals);
+        } > {};
+    }
+
+    template<class A, class B>
+    constexpr auto operator+(A, B) {
+        return condition_t < [](auto& vals) -> decltype(auto) {
+            return A::get(vals) + B::get(vals);
+        } > {};
+    }
+
+    template<std::size_t I>
+    constexpr auto arg = arg_t<I>{};
+
+    template<auto Condition, class ...Args>
+    constexpr void pre(Args&&...args) {
+        const std::tuple _tuple{ std::forward<Args>(args)... };
+        if (!Condition.get(_tuple))
+            throw std::runtime_error("Condition was not satisfied.");
+    }
+}
+
+using namespace contracts;
+
+constexpr auto difference(auto a, auto b) {
+    pre<(arg<0> > arg<1>)>(a, b);
+    return a - b;
+}
+
+
+void aoinenoa() {
+
+    auto resae = difference(11, 10);
+
+    using my_struct = Struct<int, double, float>;
+
+    my_struct inst{};
+
+    auto vale = inst->*my_struct::member<1>;
+
+    constexpr auto as = my_struct::member<1>;
+
+
+
+    constexpr Point<double> p1{ 1, 2 };
+    constexpr Point<double> p2{ 2, 4 };
+
+    dynamic_tuple tpl{ 1, 10. };
+    tpl.emplace_back<float>(20.f);
+
+    for (auto i : tpl) {
+        if (i.is<double>())     std::cout << "double: " << i.as<double>() << '\n';
+        else if (i.is<int>())   std::cout << "int:    " << i.as<int>() << '\n';
+        else if (i.is<float>()) std::cout << "float:  " << i.as<float>() << '\n';
+    }
+
+    if (tpl[0].is<int>())    std::cout << "int:    " << tpl[0].as<int>() << '\n';
+    if (tpl[1].is<double>()) std::cout << "double: " << tpl[1].as<double>() << '\n';
+    if (tpl[2].is<float>())  std::cout << "float:  " << tpl[2].as<float>() << '\n';
+
+    //constexpr auto var = Carrot::variables()[0];
+    //if constexpr (var.is<int>()) {
+    //    int& value = var.as<int>(cal);
+    //}
+
+    //auto& fun = Carrot::functions()[0];
+    //if (fun.invocable<double(int, int)>()) {
+    //    double res = fun.invoke<double>(cal, 1, 1);
+    //}
+
+    Type thing;
+    delegate<int(int)> d{ thing, &Type::thing };
+    int res = d(1.f);
+
+    constexpr auto aeff = sizeof(delegate<int(int)>);
+    constexpr auto girn = sizeof(std::function<int(int)>);
+
+    d = [](int a) { return a + 1; };
+    res = d(1);
+
+    int a1 = 10;
+    int a2 = 20;
+    d = [a1, a2](int a) { return a + a1 + a2; };
+    res = d(1);
+
+    int b1 = 10;
+    int b2 = 20;
+    int b3 = 30;
+    d = [b1, b2, b3](int a) { return a + b1 + b2 + b3; };
+    res = d(1);
+
+    d = Functor{};
+    res = d(1);
+
+    d = Functor2{};
+    res = d(1);
+
+    MyObject obj;
+    obj.set(Hovering, true);
+    bool v = obj.get(Hovering);
+    obj.set(Hovering, false);
+
+    return 0;
+}
