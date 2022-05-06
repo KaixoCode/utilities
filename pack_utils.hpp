@@ -2,6 +2,20 @@
 
 namespace kaixo {
     namespace detail {
+        // Single, non-templated type -> Ty<T>
+        template<class T, template<class...> class Ty>
+        struct move_types_impl { using type = Ty<T>; };
+        // Convert T<Args...> to Ty<Args...>
+        template<template<class...> class T, class ...Args, template<class...> class Ty>
+        struct move_types_impl<T<Args...>, Ty> { using type = Ty<Args...>; };
+    }
+
+    // Move template types from one class to another if first class 
+    // isn't templated, it will itself be used as template argument
+    template<class T, template<class...> class Ty>
+    using move_types = typename detail::move_types_impl<T, Ty>::type;
+
+    namespace detail {
         // Change type to Ty, used in fold expressions
         template<class, class Ty>
         using change = Ty;
@@ -171,6 +185,9 @@ namespace kaixo {
         using head = element<0>;
         using init = take<size - 1>;
         using last = element<size - 1>;
+        template<template<class...> class Ty> using as = kaixo::move_types<pack, Ty>;
+        template<class ...Tys> using append = pack<Args..., Tys...>;
+        template<class ...Tys> using prepend = pack<Tys..., Args...>;
     };
 
     template<template<class...> class Ty, class ...Args>
