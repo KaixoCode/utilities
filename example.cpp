@@ -12,7 +12,9 @@ int main() {
     std::tuple<void, int, double, void, float>;
 
     using pack = kaixo::pack<int, float, double, float, long, unsigned>;
-    
+    using filtered = pack::filter<[]<class Ty>{ return sizeof(Ty) <= 4; }>;
+    filtered::size;
+
     static_assert(std::same_as<pack::element<3>, float>);
     static_assert(std::same_as<pack::head, int>);
     static_assert(std::same_as<pack::last, unsigned>);

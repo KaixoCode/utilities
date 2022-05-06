@@ -195,6 +195,7 @@ namespace kaixo {
         detail::indices_except_all_impl<Args...>(std::type_identity<Ty>{});
 
     namespace detail {
+        // Count unique types in Args
         template<class ...Args>
         consteval std::size_t count_unique_impl() {
             std::size_t _index = 0;
@@ -211,8 +212,9 @@ namespace kaixo {
     namespace detail {
         // Find indices of all first occurrences of types in Args
         template<class ...Args>
-        consteval std::array<std::size_t, unique_count<Args...>> first_indices_impl() {
-            std::array<std::size_t, unique_count<Args...>> _result{};
+        consteval std::array<std::size_t, 
+            kaixo::unique_count<Args...>> first_indices_impl() {
+            std::array<std::size_t, kaixo::unique_count<Args...>> _result{};
             std::size_t _index = 0;
             std::size_t _match = 0;
             (((kaixo::index<Args, Args...> == _index) ?
@@ -386,7 +388,8 @@ namespace kaixo {
             template<class> struct helper;
             template<std::size_t ...Is>
             struct helper<std::index_sequence<Is...>> {
-                using type = Tuple<element<kaixo::first_indices<Args...>[Is], Args...>...>;
+                using type = Tuple<element<
+                    kaixo::first_indices<Args...>[Is], Args...>...>;
             };
             using type = typename helper<
                 std::make_index_sequence<unique_count<Args...>>>::type;
@@ -458,6 +461,49 @@ namespace kaixo {
     // Keeps all template parameters of Ty from index S to E 
     template<std::size_t S, std::size_t E, class Ty>
     using sub = kaixo::take<E - S, kaixo::drop<S, Ty>>;
+
+    namespace detail {
+
+        // Count amount of types in Args after filtering
+        template<auto Lambda, class ...Args>
+        consteval std::size_t count_filter_impl() {
+            return ((static_cast<std::size_t>(Lambda.operator()<Args>())) + ...);
+        }
+        template<auto Lambda, class ...Args>
+        constexpr std::size_t count_filter = count_filter_impl<Lambda, Args...>();
+
+        // Get all indices that match the filter
+        template<auto Lambda, class ...Args>
+        consteval std::array<std::size_t, 
+            count_filter<Lambda, Args...>> filter_indices_impl() {
+            std::array<std::size_t, count_filter<Lambda, Args...>> _indices{};
+            std::size_t _index = 0;
+            std::size_t _match = 0;
+            ((Lambda.operator()<Args>() ? 
+                _indices[_match++] = _index++ : ++_index), ...);
+            return _indices;
+        }
+        template<auto Lambda, class ...Args>
+        constexpr std::array<std::size_t, count_filter<Lambda, Args...>> 
+            filter_indices = filter_indices_impl<Lambda, Args...>();
+
+        // Apply filter
+        template<class, auto> struct filter_impl;
+        template<auto Lambda, template<class...> class Tuple, class ...Args>
+        struct filter_impl<Tuple<Args...>, Lambda> {
+            template<class> struct helper;
+            template<std::size_t ...Is>
+            struct helper<std::index_sequence<Is...>> {
+                using type = Tuple<element<filter_indices<Lambda, Args...>[Is], Args...>...>;
+            };
+            using type = typename helper<
+                std::make_index_sequence<count_filter<Lambda, Args...>>>::type;
+        };
+    }
+
+    // Filter the template parameters of Ty using a templated lambda
+    template<class Ty, auto Lambda>
+    using filter = typename detail::filter_impl<Ty, Lambda>::type;
 
     // Template pack helper stuff
     template<class ...Args>
@@ -557,6 +603,9 @@ namespace kaixo {
 
         // Remove duplicates from Args
         using unique = kaixo::unique<pack>;
+
+        template<auto Lambda>
+        using filter = kaixo::filter<pack, Lambda>;
     };
 
     template<template<class...> class Ty, class ...Args>
