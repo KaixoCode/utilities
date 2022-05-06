@@ -6,10 +6,6 @@
 
 namespace kaixo {
 
-    // Check if Ty in Args
-    template<class Ty, class ...Args>
-    constexpr bool contains = (std::same_as<Ty, Args> || ...);
-
     // Not found
     constexpr std::size_t npos = static_cast<std::size_t>(-1);
 
@@ -69,9 +65,9 @@ namespace kaixo {
         template<class Ty, class ...Args>
         consteval std::size_t index_impl() {
             std::size_t _index = 0; // use short-circuit to increment until
-            ((++_index, std::same_as<Ty, Args>) || ...); // first occurence
+            ((std::same_as<Ty, Args> ? true : (++_index, false)) || ...); // first occurence
             // - 1 because we included the type itself
-            return _index == sizeof...(Args) ? npos : _index - 1;
+            return _index == sizeof...(Args) ? npos : _index;
         }
 
         // Find index of last occurence of Ty in Args
@@ -108,7 +104,7 @@ namespace kaixo {
             std::array<std::size_t, (count_impl<Tys, Args...> +...)> _result{};
             std::size_t _index = 0;
             std::size_t _match = 0;
-            ((contains<Args, Tys...> ? _result[_match++] = _index++ : ++_index), ...);
+            ((count_impl<Args, Tys...> > 0 ? _result[_match++] = _index++ : ++_index), ...);
             return _result;
         }
 
@@ -134,7 +130,7 @@ namespace kaixo {
                 (count_impl<Tys, Args...> +...)> _result{};
             std::size_t _index = 0;
             std::size_t _match = 0;
-            ((contains<Args, Tys...> ? ++_index : _result[_match++] = _index++), ...);
+            ((count_impl<Args, Tys...> > 0 ? ++_index : _result[_match++] = _index++), ...);
             return _result;
         }
 
@@ -162,15 +158,15 @@ namespace kaixo {
     using element = typename decltype(
         detail::element_impl<I>(detail::indexer<Args...>{}))::type;
 
-    // Get index of first occurence of Ty in Args
+    // Get index of first occurrence of Ty in Args
     template<class Ty, class ...Args>
     constexpr std::size_t index = detail::index_impl<Ty, Args...>();
 
-    // Get index of last occurence of Ty in Args
+    // Get index of last occurrence of Ty in Args
     template<class Ty, class ...Args>
     constexpr std::size_t last_index = detail::last_index_impl<Ty, Args...>();
 
-    // Get number of occurences of Ty in Args
+    // Get number of occurrences of Ty in Args
     template<class Ty, class ...Args>
     constexpr std::size_t count = detail::count_impl<Ty, Args...>;
 
@@ -178,12 +174,12 @@ namespace kaixo {
     template<class Ty, class ...Args>
     constexpr bool occurs = count<Ty, Args...> > 0;
 
-    // Indices of all occurences of Ty in Args
+    // Indices of all occurrences of Ty in Args
     template<class Ty, class ...Args>
     constexpr std::array<std::size_t, count<Ty, Args...>>
         indices = detail::indices_impl<Ty, Args...>();
 
-    // Indices of all occurences of all template parameters of Ty in Args
+    // Indices of all occurrences of all template parameters of Ty in Args
     template<class Ty, class ...Args>
     constexpr auto indices_all = 
         detail::indices_all_impl<Args...>(std::type_identity<Ty>{});
@@ -199,6 +195,31 @@ namespace kaixo {
         detail::indices_except_all_impl<Args...>(std::type_identity<Ty>{});
 
     namespace detail {
+        template<class ...Args>
+        consteval std::size_t count_unique_impl() {
+            std::size_t _index = 0;
+            std::size_t _match = 0;
+            ((_match += kaixo::index<Args, Args...> == _index++), ...);
+            return _match;
+        }
+    }
+
+    // Amount of unique types in Args
+    template<class ...Args>
+    constexpr std::size_t unique_count = detail::count_unique_impl<Args...>();
+
+    namespace detail {
+        // Find indices of all first occurrences of types in Args
+        template<class ...Args>
+        consteval std::array<std::size_t, unique_count<Args...>> first_indices_impl() {
+            std::array<std::size_t, unique_count<Args...>> _result{};
+            std::size_t _index = 0;
+            std::size_t _match = 0;
+            (((kaixo::index<Args, Args...> == _index) ?
+                _result[_match++] = _index++ : ++_index), ...);
+            return _result;
+        }
+
         // Keep the first N Args in Tuple
         template<std::size_t, class> struct take_impl;
         template<std::size_t N, template<class...> class Tuple, class ...Args>
@@ -320,7 +341,7 @@ namespace kaixo {
             using type = typename helper<
                 std::make_index_sequence<sizeof...(Args) - sizeof...(I)>>::type;
         };
-
+        
         // Append Ty to Args
         template<class, class> struct append_impl;
         template<class Ty, template<class...> class Tuple, class ...Args>
@@ -349,6 +370,26 @@ namespace kaixo {
             template<class...> class Tuple, class ...Args>
         struct prepend_all_impl<Ty<Tys...>, Tuple<Args...>> {
             using type = Tuple<Tys..., Args...>;
+        };
+    }
+
+    // Get indices of first occurrences of all types in Args
+    template<class ...Args>
+    constexpr auto first_indices = detail::first_indices_impl<Args...>();
+
+    namespace detail {
+
+        // Erase all indices I from Args
+        template<class> struct unique_impl;
+        template<template<class...> class Tuple, class ...Args>
+        struct unique_impl<Tuple<Args...>> {
+            template<class> struct helper;
+            template<std::size_t ...Is>
+            struct helper<std::index_sequence<Is...>> {
+                using type = Tuple<element<kaixo::first_indices<Args...>[Is], Args...>...>;
+            };
+            using type = typename helper<
+                std::make_index_sequence<unique_count<Args...>>>::type;
         };
     }
 
@@ -405,10 +446,14 @@ namespace kaixo {
     // Erase index I from the template parameters of Ty
     template<std::size_t I, class Ty>
     using erase = typename detail::erase_impl<I, Ty>::type;
-
+    
     // Erase all indices Is from the template parameters of Ty
     template<class Ty, std::size_t ...Is>
     using erase_all = typename detail::erase_all_impl<Ty, Is...>::type;
+
+    // Keep unique template parameters of Ty
+    template<class Ty>
+    using unique = typename detail::unique_impl<Ty>::type;
 
     // Keeps all template parameters of Ty from index S to E 
     template<std::size_t S, std::size_t E, class Ty>
@@ -417,8 +462,12 @@ namespace kaixo {
     // Template pack helper stuff
     template<class ...Args>
     struct pack {
+
         // Amount of template arguments
         constexpr static std::size_t size = sizeof...(Args);
+
+        // Amount of unique template arguments
+        constexpr static std::size_t unique_count = kaixo::unique_count<Args...>;
 
         // Sum of sizes of all template arguments
         constexpr static std::size_t bytes = (sizeof(Args) + ...);
@@ -505,6 +554,9 @@ namespace kaixo {
 
         // Reverse Args
         using reverse = kaixo::reverse<pack>;
+
+        // Remove duplicates from Args
+        using unique = kaixo::unique<pack>;
     };
 
     template<template<class...> class Ty, class ...Args>
