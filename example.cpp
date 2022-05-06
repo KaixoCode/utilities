@@ -12,6 +12,7 @@ int main() {
     std::tuple<void, int, double, void, float>;
 
     using pack = kaixo::pack<int, float, double, float, long, unsigned>;
+    pack::reverse::size;
     
     static_assert(std::same_as<pack::element<3>, float>);
     static_assert(std::same_as<pack::head, int>);
@@ -25,4 +26,5 @@ int main() {
     static_assert(std::same_as<pack::remove<float>::remove<double>, kaixo::pack<int, long, unsigned>>);
     static_assert(pack::last_index<std::string> == kaixo::npos);
     static_assert(std::same_as<pack::sub<2, 3>, kaixo::pack<double>>);
+
 }

@@ -1,4 +1,8 @@
+#include <concepts>
+#include <cstddef>
 #include <array>
+#include <utility>
+#include <type_traits>
 
 namespace kaixo {
 
@@ -14,7 +18,8 @@ namespace kaixo {
         template<class T, template<class...> class Ty>
         struct move_types_impl { using type = Ty<T>; };
         // Convert T<Args...> to Ty<Args...>
-        template<template<class...> class T, class ...Args, template<class...> class Ty>
+        template<template<class...> class T,
+            class ...Args, template<class...> class Ty>
         struct move_types_impl<T<Args...>, Ty> { using type = Ty<Args...>; };
     }
 
@@ -45,6 +50,17 @@ namespace kaixo {
         template<class ...Args>
         using indexer = indexer_impl<std::index_sequence_for<Args...>, Args...>;
 
+        // Indexer implementation inherits all reversely indexed args
+        template<class, class...> struct reverse_indexer_impl;
+        template<std::size_t ...Is, class ...Args>
+        struct reverse_indexer_impl<std::index_sequence<Is...>, Args...>
+            : indexed<sizeof...(Args) - Is - 1, Args>... {};
+
+        // Create reverse indexer for pack
+        template<class ...Args>
+        using reverse_indexer = reverse_indexer_impl<
+            std::index_sequence_for<Args...>, Args...>;
+
         // Get type from index using the indexer and overload resolution
         template<std::size_t I, class Ty>
         consteval indexed<I, Ty> element_impl(indexed<I, Ty>) {};
@@ -74,17 +90,20 @@ namespace kaixo {
 
         // Find indices of all occurence of Ty in Args
         template<class Ty, class ...Args>
-        consteval std::array<std::size_t, count_impl<Ty, Args...>> indices_impl() {
+        consteval std::array<std::size_t, 
+            count_impl<Ty, Args...>> indices_impl() {
             std::array<std::size_t, count_impl<Ty, Args...>> _result{};
             std::size_t _index = 0;
             std::size_t _match = 0;
-            ((std::same_as<Ty, Args> ? _result[_match++] = _index++ : ++_index), ...);
+            ((std::same_as<Ty, Args> ? 
+                _result[_match++] = _index++ : ++_index), ...);
             return _result;
         }
         
         // Find indices of all occurence of Ty in Args
         template<class ...Args, template<class...> class Ty, class ...Tys>
-        consteval std::array<std::size_t, (count_impl<Tys, Args...> +...)> indices_all_impl(
+        consteval std::array<std::size_t, 
+            (count_impl<Tys, Args...> +...)> indices_all_impl(
             std::type_identity<Ty<Tys...>>) {
             std::array<std::size_t, (count_impl<Tys, Args...> +...)> _result{};
             std::size_t _index = 0;
@@ -97,10 +116,12 @@ namespace kaixo {
         template<class Ty, class ...Args>
         consteval std::array<std::size_t, sizeof...(Args)
             - count_impl<Ty, Args...>> indices_except_impl() {
-            std::array<std::size_t, sizeof...(Args) - count_impl<Ty, Args...>> _result{};
+            std::array<std::size_t, sizeof...(Args) - 
+                count_impl<Ty, Args...>> _result{};
             std::size_t _index = 0;
             std::size_t _match = 0;
-            ((std::same_as<Ty, Args> ? ++_index : _result[_match++] = _index++), ...);
+            ((std::same_as<Ty, Args> 
+                ? ++_index : _result[_match++] = _index++), ...);
             return _result;
         }
 
@@ -109,13 +130,32 @@ namespace kaixo {
         consteval std::array<std::size_t, sizeof...(Args)
             - (count_impl<Tys, Args...> + ...)> indices_except_all_impl(
                 std::type_identity<Ty<Tys...>>) {
-            std::array<std::size_t, sizeof...(Args) - (count_impl<Tys, Args...> +...)> _result{};
+            std::array<std::size_t, sizeof...(Args) - 
+                (count_impl<Tys, Args...> +...)> _result{};
             std::size_t _index = 0;
             std::size_t _match = 0;
             ((contains<Args, Tys...> ? ++_index : _result[_match++] = _index++), ...);
             return _result;
         }
+
+        // Reverse Args
+        template<class> struct reverse_impl;
+        template<template<class...> class Tuple, class ...Args> 
+        struct reverse_impl<Tuple<Args...>> {
+            template<class> struct helper;
+            template<std::size_t... Is>
+            struct helper<std::index_sequence<Is...>> {
+                using type = Tuple<typename decltype(
+                    detail::element_impl<Is>(
+                        detail::reverse_indexer<Args...>{}))::type...>;
+            };
+            using type = typename helper<std::index_sequence_for<Args...>>::type;
+        };
     }
+
+    // Reverses the template parameters in Ty
+    template<class Ty>
+    using reverse = typename detail::reverse_impl<Ty>::type;
 
     // Get type at index I in pack Args
     template<std::size_t I, class ...Args>
@@ -145,7 +185,8 @@ namespace kaixo {
 
     // Indices of all occurences of all template parameters of Ty in Args
     template<class Ty, class ...Args>
-    constexpr auto indices_all = detail::indices_all_impl<Args...>(std::type_identity<Ty>{});
+    constexpr auto indices_all = 
+        detail::indices_all_impl<Args...>(std::type_identity<Ty>{});
 
     // Indices of all types except Ty in Args
     template<class Ty, class ...Args>
@@ -154,7 +195,8 @@ namespace kaixo {
     
     // Indices of all types except the template parameters of Ty in Args
     template<class Ty, class ...Args>
-    constexpr auto indices_except_all = detail::indices_except_all_impl<Args...>(std::type_identity<Ty>{});
+    constexpr auto indices_except_all = 
+        detail::indices_except_all_impl<Args...>(std::type_identity<Ty>{});
 
     namespace detail {
         // Keep the first N Args in Tuple
@@ -178,7 +220,8 @@ namespace kaixo {
             struct helper<std::index_sequence<Is...>> {
                 using type = Tuple<element<Is + N, Args...>...>;
             };
-            using type = typename helper<std::make_index_sequence<sizeof...(Args) - N>>::type;
+            using type = typename helper<
+                std::make_index_sequence<sizeof...(Args) - N>>::type;
         };
 
         // Remove Ty from Args
@@ -188,7 +231,8 @@ namespace kaixo {
             template<class> struct helper;
             template<std::size_t ...Is>
             struct helper<std::index_sequence<Is...>> {
-                using type = Tuple<element<kaixo::indices_except<Ty, Args...>[Is], Args...>...>;
+                using type = Tuple<element<
+                    kaixo::indices_except<Ty, Args...>[Is], Args...>...>;
             };
             using type = typename helper<std::make_index_sequence<
                 sizeof...(Args) - count_impl<Ty, Args...>>>::type;
@@ -196,12 +240,14 @@ namespace kaixo {
 
         // Remove Tys from Args
         template<class, class> struct remove_all_impl;
-        template<template<class...> class Ty, class ...Tys, template<class...> class Tuple, class ...Args>
+        template<template<class...> class Ty, class ...Tys, 
+            template<class...> class Tuple, class ...Args>
         struct remove_all_impl<Ty<Tys...>, Tuple<Args...>> {
             template<class> struct helper;
             template<std::size_t ...Is>
             struct helper<std::index_sequence<Is...>> {
-                using type = Tuple<element<kaixo::indices_except_all<Ty<Tys...>, Args...>[Is], Args...>...>;
+                using type = Tuple<element<
+                    kaixo::indices_except_all<Ty<Tys...>, Args...>[Is], Args...>...>;
             };
             using type = typename helper<std::make_index_sequence<
                 sizeof...(Args) - (count_impl<Tys, Args...> +...)>>::type;
@@ -214,7 +260,8 @@ namespace kaixo {
             template<class> struct helper;
             template<std::size_t ...Is>
             struct helper<std::index_sequence<Is...>> {
-                using type = Tuple<element<kaixo::indices<Ty, Args...>[Is], Args...>...>;
+                using type = Tuple<element<
+                    kaixo::indices<Ty, Args...>[Is], Args...>...>;
             };
             using type = typename helper<std::make_index_sequence<
                 count_impl<Ty, Args...>>>::type;
@@ -222,12 +269,14 @@ namespace kaixo {
 
         // Keeps Tys in Args
         template<class, class> struct keep_all_impl;
-        template<template<class...> class Ty, class ...Tys, template<class...> class Tuple, class ...Args>
+        template<template<class...> class Ty, class ...Tys, 
+            template<class...> class Tuple, class ...Args>
         struct keep_all_impl<Ty<Tys...>, Tuple<Args...>> {
             template<class> struct helper;
             template<std::size_t ...Is>
             struct helper<std::index_sequence<Is...>> {
-                using type = Tuple<element<kaixo::indices_all<Ty<Tys...>, Args...>[Is], Args...>...>;
+                using type = Tuple<element<
+                    kaixo::indices_all<Ty<Tys...>, Args...>[Is], Args...>...>;
             };
             using type = typename helper<std::make_index_sequence<
                 (count_impl<Tys, Args...> +...)>>::type;
@@ -251,9 +300,11 @@ namespace kaixo {
             template<class> struct helper;
             template<std::size_t ...Is>
             struct helper<std::index_sequence<Is...>> {
-                using type = Tuple<element<generate_indices<sizeof...(Args), I>[Is], Args...>...>;
+                using type = Tuple<element<
+                    generate_indices<sizeof...(Args), I>[Is], Args...>...>;
             };
-            using type = typename helper<std::make_index_sequence<sizeof...(Args) - 1>>::type;
+            using type = typename helper<
+                std::make_index_sequence<sizeof...(Args) - 1>>::type;
         };
 
         // Erase all indices I from Args
@@ -263,9 +314,11 @@ namespace kaixo {
             template<class> struct helper;
             template<std::size_t ...Is>
             struct helper<std::index_sequence<Is...>> {
-                using type = Tuple<element<generate_indices<sizeof...(Args), I...>[Is], Args...>...>;
+                using type = Tuple<element<
+                    generate_indices<sizeof...(Args), I...>[Is], Args...>...>;
             };
-            using type = typename helper<std::make_index_sequence<sizeof...(Args) - sizeof...(I)>>::type;
+            using type = typename helper<
+                std::make_index_sequence<sizeof...(Args) - sizeof...(I)>>::type;
         };
 
         // Append Ty to Args
@@ -449,6 +502,9 @@ namespace kaixo {
         // Create a sub pack from index S to index E of Args
         template<std::size_t S, std::size_t E> 
         using sub = kaixo::sub<S, E, pack>;
+
+        // Reverse Args
+        using reverse = kaixo::reverse<pack>;
     };
 
     template<template<class...> class Ty, class ...Args>
