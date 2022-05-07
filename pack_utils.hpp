@@ -524,8 +524,47 @@ namespace kaixo {
     template<class Ty, auto Lambda>
     using filter = typename detail::filter_impl<Ty, Lambda>::type;
 
-    template<auto Lambda, class ...Args>
-    using tfor = decltype((Lambda.operator()<Args>(), ...));
+    template<class ...Args> struct pack;
+
+    namespace detail {
+        // Merge sort for types
+        template<auto Lambda, class ...As>
+        constexpr auto merge_sort_merge(kaixo::pack<As...>, kaixo::pack<>) {
+            return kaixo::pack<As...>{};
+        }
+        template<auto Lambda, class ...Bs>
+        constexpr auto merge_sort_merge(kaixo::pack<>, kaixo::pack<Bs...>) {
+            return kaixo::pack<Bs...>{};
+        }
+        template<auto Lambda, class A, class ...As, class B, class ...Bs>
+        constexpr auto merge_sort_merge(kaixo::pack<A, As...>, kaixo::pack<B, Bs...>) {
+            if constexpr (Lambda.operator()<A, B>())
+                return kaixo::append_all<
+                decltype(merge_sort_merge<Lambda>(
+                    kaixo::pack<As...>{}, 
+                    kaixo::pack<B, Bs...>{})),
+                kaixo::pack<A>>{};
+            else 
+                return kaixo::append_all<
+                decltype(merge_sort_merge<Lambda>(
+                    kaixo::pack<A, As...>{}, 
+                    kaixo::pack<Bs...>{})),
+                kaixo::pack<B>>{};
+        }
+        template<auto Lambda, class ...Args>
+        constexpr auto merge_sort(kaixo::pack<Args...>) {
+            if constexpr (kaixo::pack<Args...>::size > 1) {
+                constexpr std::size_t mid = kaixo::pack<Args...>::size / 2;
+                constexpr auto left = merge_sort<Lambda>(kaixo::pack<Args...>::take<mid>{});
+                constexpr auto right = merge_sort<Lambda>(kaixo::pack<Args...>::drop<mid>{});
+
+                return merge_sort_merge<Lambda>(left, right);
+            } else return kaixo::pack<Args...>{};
+        }
+
+        template<auto Lambda, class Ty>
+        using sort_impl = decltype(merge_sort<Lambda>(Ty{}));
+    }
 
     // Template pack helper stuff
     template<class ...Args>
@@ -538,7 +577,7 @@ namespace kaixo {
         constexpr static std::size_t unique_count = kaixo::unique_count<Args...>;
 
         // Sum of sizes of all template arguments
-        constexpr static std::size_t bytes = (sizeof(Args) + ...);
+        constexpr static std::size_t bytes = (sizeof(Args) + ... + 0);
 
         // First index of Ty in Args
         template<class Ty> 
@@ -629,8 +668,26 @@ namespace kaixo {
         // Filter using templated lambda
         template<auto Lambda>
         using filter = kaixo::filter<pack, Lambda>;
+
+        template<auto Lambda>
+        using sort = detail::sort_impl<Lambda, pack>;
     };
 
-    template<template<class...> class Ty, class ...Args>
-    struct pack<Ty<Args...>> : pack<Args...> {};
+    template<>
+    struct pack<> {
+        constexpr static std::size_t size = 0;
+        constexpr static std::size_t unique_count = 0;
+        constexpr static std::size_t bytes = 0;
+    };
+
+    namespace detail {
+        template<class> struct as_pack_impl;
+        template<template<class ...> class Ty, class ...Args> 
+        struct as_pack_impl<Ty<Args...>> {
+            using type = kaixo::pack<Args...>;
+        };
+    }
+
+    template<class Ty>
+    using as_pack = typename detail::as_pack_impl<Ty>::type;
 }

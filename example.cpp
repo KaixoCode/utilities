@@ -11,12 +11,26 @@
 template<class Ty> requires (std::same_as<Ty, int>)
 struct Test {};;
 
+
+
+
+
 int main() {
     std::tuple<void, int, double, void, float>;
 
     using pack = kaixo::pack<int, float, double, float, long, unsigned>;
     using filtered = pack::filter<[]<std::integral Ty>{}>;
     filtered::size;
+    pack::take<0>::size;
+
+    // Tuple with lots of types, unordered
+    using my_tuple = std::tuple<std::string, double, short, int, char>;
+    // Sorter to sort types by their size
+    constexpr auto my_sorter = []<class A, class B>{ return sizeof(A) < sizeof(B); };
+    // Sort the tuple using the custom sorter
+    using sorted_tuple = kaixo::as_pack<my_tuple>::sort<my_sorter>::as<std::tuple>;
+    static_assert(std::same_as<sorted_tuple, std::tuple<char, short, int, double, std::string>>);
+
 
     static_assert(std::same_as<pack::element<3>, float>);
     static_assert(std::same_as<pack::head, int>);
