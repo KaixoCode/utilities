@@ -526,6 +526,9 @@ namespace kaixo {
 
     template<class ...Args> struct pack;
 
+    template<auto V>
+    struct value { constexpr static decltype(auto) get() { return V; }; };
+
     namespace detail {
         // Merge sort for types
         template<auto Lambda, class ...As>
@@ -536,9 +539,20 @@ namespace kaixo {
         constexpr auto merge_sort_merge(kaixo::pack<>, kaixo::pack<Bs...>) {
             return kaixo::pack<Bs...>{};
         }
+        template<auto Lambda, class A, class B>
+        constexpr auto merge_sort_lambda(
+            std::type_identity<A>, std::type_identity<B>) {
+            return Lambda.template operator()<A, B>();
+        }
+        template<auto Lambda, auto A, auto B>
+        constexpr auto merge_sort_lambda(
+            std::type_identity<value<A>>, std::type_identity<value<B>>) {
+            return Lambda(A, B);
+        }
         template<auto Lambda, class A, class ...As, class B, class ...Bs>
         constexpr auto merge_sort_merge(kaixo::pack<A, As...>, kaixo::pack<B, Bs...>) {
-            if constexpr (Lambda.operator()<A, B>())
+            if constexpr (merge_sort_lambda<Lambda>(
+                std::type_identity<A>{}, std::type_identity<B>{}))
                 return kaixo::append_all<
                 decltype(merge_sort_merge<Lambda>(
                     kaixo::pack<As...>{}, 
@@ -564,6 +578,16 @@ namespace kaixo {
 
         template<auto Lambda, class Ty>
         using sort_impl = decltype(merge_sort<Lambda>(Ty{}));
+
+        template<auto Lambda, class ...Args>
+        struct for_each_impl {
+            using type = decltype(Lambda.template operator()<Args...>());
+        };
+
+        template<auto Lambda, auto ...Vs>
+        struct for_each_impl<Lambda, value<Vs>...> {
+            using type = kaixo::value<(Lambda(Vs...))>;
+        };
     }
 
     // Template pack helper stuff
@@ -671,6 +695,9 @@ namespace kaixo {
 
         template<auto Lambda>
         using sort = detail::sort_impl<Lambda, pack>;
+
+        template<auto Lambda>
+        using for_each = typename detail::for_each_impl<Lambda, Args...>::type;
     };
 
     template<>
@@ -690,4 +717,7 @@ namespace kaixo {
 
     template<class Ty>
     using as_pack = typename detail::as_pack_impl<Ty>::type;
+
+    template<auto ...Values>
+    using to_pack = kaixo::pack<value<Values>...>;
 }
