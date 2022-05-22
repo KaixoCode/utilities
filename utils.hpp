@@ -167,6 +167,17 @@ namespace kaixo {
         template<class Ty, class C> struct member_type<Ty C::*> { using type = Ty; };
         template<class> struct member_class;
         template<class Ty, class C> struct member_class<Ty C::*> { using type = C; };
+        template<class Ty, class C> struct member_class<Ty C::* const> { using type = C; };
+        template<class Ty, class C> struct member_class<Ty C::* volatile> { using type = C; };
+        template<class Ty, class C> struct member_class<Ty C::* volatile const> { using type = C; };
+        template<class Ty, class C> struct member_class<Ty C::* &> { using type = C; };
+        template<class Ty, class C> struct member_class<Ty C::* const& > { using type = C; };
+        template<class Ty, class C> struct member_class<Ty C::* volatile& > { using type = C; };
+        template<class Ty, class C> struct member_class<Ty C::* volatile const&> { using type = C; };
+        template<class Ty, class C> struct member_class<Ty C::*&&> { using type = C; };
+        template<class Ty, class C> struct member_class<Ty C::* const&& > { using type = C; };
+        template<class Ty, class C> struct member_class<Ty C::* volatile&& > { using type = C; };
+        template<class Ty, class C> struct member_class<Ty C::* volatile const&&> { using type = C; };
     }
     // get the function signature of a (member) function or a lambda/functor
     template<class Ty> using signature_t = typename detail::signature<Ty>::type;
@@ -194,37 +205,6 @@ namespace kaixo {
 
     // is specialization of std::tuple
     template<class Ty> concept is_tuple = specialization<Ty, std::tuple>;
-
-    namespace detail {
-        template<std::size_t N, is_tuple> struct drop;
-        template<class ...Tys> struct drop<0, std::tuple<Tys...>> {
-            using type = std::tuple<Tys...>;
-        };
-        template<std::size_t N, class Ty, class ...Tys> struct drop<N, std::tuple<Ty, Tys...>>
-        : drop<N - 1, std::tuple<Tys...>> {};
-    }
-    // drop first N types from tuple
-    template<std::size_t N, is_tuple Ty> using drop_t = typename detail::drop<N, Ty>::type;
-
-    namespace detail {
-        template<std::size_t N, is_tuple, is_tuple> struct take;
-        template<class ...Tys, class ...Rem> struct take<0, std::tuple<Tys...>, std::tuple<Rem...>> {
-            using type = std::tuple<Tys...>;
-        };
-        template<std::size_t N, class Ty, class ...Tys, class ...Rem> struct take<N, std::tuple<Tys...>, std::tuple<Ty, Rem...>>
-        : take<N - 1, std::tuple<Tys..., Ty>, std::tuple<Rem...>> {};
-    }
-    // take first N types from tuple
-    template<std::size_t N, is_tuple Ty> using take_t = typename detail::take<N, std::tuple<>, Ty>::type;
-
-    // remove first type from tuple
-    template<is_tuple Ty> using tail_t = drop_t<1, Ty>;
-    // first type of tuple
-    template<is_tuple Ty> using head_t = std::tuple_element_t<0, Ty>;
-    // remove last type from tuple
-    template<is_tuple Ty> using init_t = take_t<std::tuple_size_v<Ty> -1, Ty>;
-    // last type of tuple
-    template<is_tuple Ty> using last_t = std::tuple_element_t<std::tuple_size_v<Ty> -1, Ty>;
 
     namespace detail {
         template<std::size_t I, class Tuple, std::size_t... Is>
@@ -269,29 +249,6 @@ namespace kaixo {
 
     // concat tuples
     template<is_tuple ...Tys> using tuple_cat_t = decltype(std::tuple_cat(std::declval<Tys>()...));
-
-    namespace detail {
-        template<class T, is_tuple, is_tuple> struct remove;
-        template<class T, class ...Tys> struct remove<T, std::tuple<Tys...>, std::tuple<>> {
-            using type = std::tuple<Tys...>;
-        };
-        template<class T, class Ty, class ...Rem, class ...Tys> struct remove<T, std::tuple<Tys...>, std::tuple<Ty, Rem...>>
-        : remove<T, std::tuple<Tys..., Ty>, std::tuple<Rem...>> {};
-        template<class T, class ...Rem, class ...Tys> struct remove<T, std::tuple<Tys...>, std::tuple<T, Rem...>>
-        : remove<T, std::tuple<Tys...>, std::tuple<Rem...>> {};
-    }
-    // remove type from tuple
-    template<class T, is_tuple Ty> using remove_t = typename detail::remove<T, std::tuple<>, Ty>::type;
-
-    namespace detail {
-        struct dud {}; // dud type
-        template<class Ty, class T> struct remove_all;
-        template<class Ty, class ...E> struct remove_all<Ty, std::tuple<E...>> {
-            using type = remove_t<dud, std::tuple<std::conditional_t<in_tuple<E, Ty>, dud, E>...>>; // If in tuple: dud, otherwise type
-        };
-    }
-    // removes all types in tuple from other tuple
-    template<is_tuple A, is_tuple B> using remove_all_t = typename detail::remove_all<A, B>::type;
 
     namespace detail {
         template<class ...Tys> struct as_tuple { using type = std::tuple<Tys...>; };

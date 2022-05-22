@@ -5535,3 +5535,763 @@ void aoinenoa() {
 
     return 0;
 }
+
+struct HeapChecker {
+
+    static inline std::vector<void*> allocated{};
+
+    constexpr static void add(void* ptr) {
+        allocated.push_back(ptr);
+    }
+
+    constexpr static std::size_t check(void* ptr) {
+        return std::erase(allocated, ptr);
+    }
+};
+
+struct RefCounted {
+};
+
+
+
+struct Object {
+    constexpr Object()
+        : refs(HeapChecker::check(this)) {}
+
+    constexpr virtual ~Object() = default;
+
+    constexpr void remember() { if (refs) ++refs; }
+    constexpr void forget() { if (refs && --refs == 0) delete this; }
+
+    static void* operator new(std::size_t size) {
+        void* _ptr = ::operator new(size);
+        HeapChecker::add(_ptr);
+        return _ptr;
+    }
+
+private:
+    std::size_t refs;
+};
+
+template<std::derived_from<Object> Ty>
+struct Ptr {
+
+    constexpr Ptr() = default;
+
+    template<std::derived_from<Ty> T>
+    constexpr Ptr(Ptr<T>&& val)
+        : value(val.value) {
+        val.value = nullptr;
+    }
+
+    template<std::derived_from<Ty> T>
+    constexpr Ptr(const Ptr<T>& val)
+        : value(val.value) {
+        if (value) value->remember();
+    }
+
+    template<std::derived_from<Ty> T>
+    constexpr Ptr(T*&& val) : value(val) {}
+
+    template<std::derived_from<Ty> T>
+    constexpr Ptr(T*& val) : value(val) { val->remember(); }
+
+    template<std::derived_from<Ty> T>
+    constexpr Ptr& operator=(Ptr<T>&& val) {
+        if (value) value->forget();
+        value = val.value;
+        val.value = nullptr;
+        return *this;
+    }
+
+    template<std::derived_from<Ty> T>
+    constexpr Ptr& operator=(const Ptr<T>& val) {
+        if (value) value->forget();
+        value = val.value;
+        if (value) value->remember();
+        return *this;
+    }
+
+    template<std::derived_from<Ty> T>
+    constexpr Ptr& operator=(T*&& val) {
+        if (value) value->forget();
+        value = val;
+        return *this;
+    }
+
+    template<std::derived_from<Ty> T>
+    constexpr Ptr& operator=(T*& val) {
+        if (value) value->forget();
+        value = val;
+        if (value) value->remember();
+        return *this;
+    }
+
+    constexpr ~Ptr() { if (value) value->forget(); }
+
+    constexpr Ty* operator->() { return value; }
+    constexpr const Ty* operator->() const { return value; }
+    constexpr Ty& operator*() { return *value; }
+    constexpr const Ty& operator*() const { return *value; }
+
+private:
+    Ty* value = nullptr;
+
+    template<std::derived_from<Object>>
+    friend struct Ptr;
+};
+
+
+
+
+//namespace kaixo {
+//    template<class> struct delegate;
+//    template<class Ret, class ...Args>
+//    struct delegate<Ret(Args...)> {
+//        using return_type = Ret;
+//        using argument_types = pack<Args...>;
+//        using function_type = Ret(Args...);
+//    private:
+//        using stored_function_type = Ret(uint8_t*, Args...);
+//        template<class Ty> // Check if type is small (8 bytes)
+//        constexpr static bool small = 
+//            sizeof(std::decay_t<Ty>) <= sizeof(uint8_t) * 8;
+//        template<class Ty> // Check if type convertible to fun ptr
+//        constexpr static bool to_ptr = // (usually lambda)
+//            std::convertible_to<std::decay_t<Ty>, function_type*>;
+//
+//        // Small functor
+//        struct small_functor {
+//            constexpr small_functor(Functor&& functor)
+//                : functor(std::forward<Functor>(functor)){}
+//
+//            std::decay_t<Functor> functor{};
+//
+//            template<class Functor>
+//            static return_type call(uint8_t* data, Args...args) {
+//                small_functor* _data = std::bit_cast<small_functor*>(data);
+//                return (_data->functor)(args...);
+//            }
+//        };
+//
+//    public:
+//
+//        template<std::invocable<Args...> Functor>
+//            requires (to_ptr<Functor>)
+//        consteval delegate(const Functor& functor) {
+//            function_type* _ptr = functor;
+//        }
+//
+//        template<std::invocable<Args...> Functor> 
+//            requires (small<Functor> && !to_ptr<Functor>) 
+//        constexpr delegate(Functor&& functor) 
+//            : ptr(&small_functor<Functor>::call) {
+//            small_functor<Functor> const* _data = static_cast<small_functor<Functor>*>(static_cast<void*>(data));
+//
+//            //small_functor<Functor> const* _data = std::bit_cast<small_functor<Functor> const*>(&data[0]);
+//            std::construct_at(_data, std::forward<Functor>(functor));
+//        }
+//
+//        constexpr return_type operator()(Args...args) {
+//            return (*ptr)(data, args);
+//        }
+//
+//        uint8_t data[8]{};
+//        stored_function_type* ptr = nullptr;
+//    };
+//}
+
+
+#include "pack_utils.hpp"
+#include "utils.hpp"
+#include "string_literal.hpp"
+
+using namespace kaixo;
+namespace kaixo {
+    template<class Ty> 
+    concept has_dependencies = requires () { typename Ty::dependencies; };
+    template<class> 
+    struct dependencies_t { using type = pack<>; };
+    template<has_dependencies Ty> 
+    struct dependencies_t<Ty> { using type = typename Ty::dependencies; };
+    template<class Ty>
+    using dependencies = typename dependencies_t<Ty>::type;
+
+    template<class Ty, class Var>
+    concept has_name = Ty::name == Var::name;
+
+    template<string_literal Name, class Ty>
+    struct named_value {
+        constexpr static auto name = Name;
+        using value_type = Ty;
+        Ty value;
+    };
+
+    template<string_literal Name>
+    struct var_t {
+        using dependencies = pack<var_t>;
+        using definitions = pack<var_t>;
+        constexpr static string_literal name = Name;
+
+        template<class Ty> constexpr auto operator=(Ty&& value) const {
+            return named_value<name, Ty>{ std::forward<Ty>(value) };
+        }
+    };
+
+    template<string_literal Name> constexpr auto var = var_t<Name>{};
+    template<class Ty> concept is_var = requires() { Ty::name; };
+
+    template<class ...Args>
+    struct named_tuple : std::tuple<Args...> {
+        using std::tuple<Args...>::tuple;
+
+        template<class Var> constexpr decltype(auto) get() const {
+            // Filter the arguments by name and get the first one, then get the
+            // index of that type in the pack, so we can use the std::get function
+            constexpr auto filter = []<has_name<Var>>{};
+            using named_value_type = pack<Args...>::template filter<filter>::head;
+            constexpr std::size_t index = pack<Args...>::template index<named_value_type>;
+            return std::get<index>(*this).value;
+        }
+    };
+    template<class ...Args> named_tuple(Args...)->named_tuple<Args...>;
+
+    template<class Lambda, class Dependencies>
+    struct expression : Lambda, Dependencies {
+        using dependencies = Dependencies::unique;
+
+        template<class ...Args>
+        constexpr decltype(auto) operator()(Args&&... vals) const {
+            return Lambda::operator()(named_tuple{ std::forward<Args>(vals)... });
+        }
+    };
+    template<class Ty>
+    concept is_expression = specialization<Ty, expression>;
+
+    template<class Ty, class ...Args>
+    constexpr decltype(auto) use(Ty& v, const named_tuple<Args...>& vals) {
+        if constexpr (is_expression<Ty>) return v(vals);
+        else if constexpr (is_var<Ty>) return vals.get<Ty>();
+        else return v;
+    }
+
+    template<class A, class B>
+    concept valid_op = is_var<std::decay_t<A>> || is_expression<std::decay_t<A>>
+                    || is_var<std::decay_t<B>> || is_expression<std::decay_t<B>>;
+
+#define def_op(op)                                                  \
+    template<class Av, class Bv> requires valid_op<Av, Bv>          \
+    constexpr auto operator op(Av&& a, Bv&& b) {                    \
+        using A = std::decay_t<Av>;                                 \
+        using B = std::decay_t<Bv>;                                 \
+        if constexpr (is_var<A> && !is_var<B>) {                    \
+            return expression{ [                                    \
+                b = std::forward<Bv>(b)                             \
+            ] <class...Args>(const named_tuple<Args...>&vals) {     \
+                return vals.get<A>() op use(b, vals);               \
+            }, concat<dependencies<A>, dependencies<B>>{} };        \
+        } else if constexpr (!is_var<A> && is_var<B>) {             \
+            return expression{ [                                    \
+                a = std::forward<Av>(a)                             \
+            ] <class...Args>(const named_tuple<Args...>&vals) {     \
+                return use(a, vals) op vals.get<B>();               \
+            }, concat<dependencies<A>, dependencies<B>>{} };        \
+        } else if constexpr (is_var<A> && is_var<B>) {              \
+            return expression{ [                                    \
+            ] <class...Args>(const named_tuple<Args...>&vals) {     \
+                return vals.get<A>() op vals.get<B>();              \
+            }, concat<dependencies<A>, dependencies<B>>{} };        \
+        } else {                                                    \
+            return expression{ [                                    \
+                a = std::forward<Av>(a), b = std::forward<Bv>(b)    \
+            ] <class...Args>(const named_tuple<Args...>&vals) {     \
+                return use(a, vals) op use(b, vals);                \
+            }, concat<dependencies<A>, dependencies<B>>{} };        \
+        }                                                           \
+    }
+
+    def_op(+) def_op(-) def_op(*) def_op(/) def_op(%) def_op(&&) def_op(||)
+    def_op(|) def_op(&) def_op(^) def_op(==) def_op(!=) def_op(<<) def_op(>>)
+    def_op(<=) def_op(>=) def_op(>) def_op(<) def_op(+=)
+#undef def_op
+}
+
+#include <cassert>
+
+
+template<std::size_t, bool = false> struct int_type;
+
+template<> struct int_type<1, true> { using type = bool; };
+template<> struct int_type<8, true> { using type = uint8_t; };
+template<> struct int_type<16, true> { using type = uint16_t; };
+template<> struct int_type<32, true> { using type = uint32_t; };
+template<> struct int_type<64, true> { using type = uint64_t; };
+template<> struct int_type<1, false> { using type = bool; };
+template<> struct int_type<8, false> { using type = int8_t; };
+template<> struct int_type<16, false> { using type = int16_t; };
+template<> struct int_type<32, false> { using type = int32_t; };
+template<> struct int_type<64, false> { using type = int64_t; };
+
+consteval std::size_t up_2_pow(std::size_t v) {
+    if (v < 8) return 8;
+    else if (v < 16) return 16;
+    else if (v < 32) return 32;
+    else return 64;
+}
+
+template<std::size_t S, bool U>
+struct int_mask {
+    using value_type = typename int_type<up_2_pow(S), U>::type;
+    value_type value : S{};
+
+    constexpr int_mask() = default;
+    constexpr int_mask(value_type v) : value(v) {}
+    constexpr int_mask& operator=(value_type v) { value = v; return *this; }
+
+    constexpr operator value_type () const { return value; }
+};
+
+template<std::size_t S> 
+struct int_type<S, false> {
+    using type = int_mask<S, false>;
+};
+
+template<std::size_t S> 
+struct int_type<S, true> {
+    using type = int_mask<S, true>;
+};
+
+template<std::size_t S, bool U = false> using int_t = typename int_type<S, U>::type;
+
+template<class Ty>
+struct TypeInfo {
+
+    constexpr static std::size_t size = sizeof(Ty);
+    constexpr static std::string_view name = []() {
+        std::string_view _name = __FUNCSIG__;
+        return _name.substr(29, _name.size() - 68);
+    }();
+};
+
+#include <memory>
+
+
+namespace kaixo {
+    template<class> class delegate;
+    template<class Ret, class ...Args>
+    class delegate<Ret(Args...)> {
+        template<class> struct functor;
+        template<class Functor> 
+            requires (sizeof(std::decay_t<Functor>) <= 16)
+        struct functor<Functor> {
+            std::decay_t<Functor> fun;
+            constexpr static Ret invoke(void* data, Args...args) {
+                return static_cast<functor*>(data)->fun(std::forward<Args>(args)...);
+            }
+            constexpr static void clean(void* data) {}
+        };
+
+        template<class Functor>
+            requires (sizeof(std::decay_t<Functor>) > 16)
+        struct functor<Functor> {
+            std::unique_ptr<std::decay_t<Functor>> fun;
+            constexpr functor(Functor functor)
+                : fun(std::make_unique<std::decay_t<Functor>>(
+                    std::forward<Functor>(functor))) {}
+            constexpr static Ret invoke(void* data, Args...args) {
+                return (*static_cast<functor*>(data)->fun)(std::forward<Args>(args)...);
+            }
+            constexpr static void clean(void* data) {
+                (static_cast<functor*>(data)->fun).release(); 
+            }
+        };
+
+        template<class Obj, class Fun>
+        struct mem_fun {
+            Obj* obj; Fun fun;
+            constexpr static Ret invoke(void* data, Args...args) {
+                mem_fun* _fun = static_cast<mem_fun*>(data);
+                return (_fun->obj->*_fun->fun)(std::forward<Args>(args)...);
+            }
+        };
+
+        struct fun_ptr {
+            Ret(*fun)(Args...);
+            constexpr static Ret invoke(void* data, Args...args) {
+                return static_cast<fun_ptr*>(data)->fun(std::forward<Args>(args)...);
+            }
+        };
+    public:
+        template<std::invocable<Args...> Arg>
+        constexpr delegate(Arg&& arg) 
+            : fun(&functor<Arg>::invoke), clean(&functor<Arg>::clean) {
+            new (data) functor<Arg>{ std::forward<Arg>(arg) };
+        }
+
+        template<class Obj, class Fun>
+        constexpr delegate(Obj& obj, Fun fun)
+            : fun(&mem_fun<Obj, Fun>::invoke) { 
+            new (data) mem_fun<Obj, Fun>(&obj, fun); 
+        }
+
+        constexpr delegate(Ret(*fun)(Args...)) 
+            : fun(&fun_ptr::invoke) { new (data) fun_ptr{ fun }; }
+
+        constexpr Ret operator()(Args...args) const {
+            return (*fun)(const_cast<void*>(static_cast<const void*>(data)), 
+                std::forward<Args>(args)...);
+        }
+
+        constexpr ~delegate() { if (clean) clean(static_cast<void*>(data)); }
+
+        uint8_t data[16];
+        Ret(*fun)(void*, Args...) = nullptr;
+        void(*clean)(void*) = nullptr;
+    };
+
+
+    template<class Lambda>
+    delegate(Lambda)->delegate<minimal_signature_t<Lambda>>;
+    template<class Obj, class Fun>
+    delegate(Obj&, Fun)->delegate<minimal_signature_t<Fun>>;
+}
+
+#include <functional>
+#include <iostream>
+
+struct A {
+    int value;
+    A(int value = 0) : value(value) { std::cout << "Construct\n"; }
+    A(const A& a) : value(a.value) { std::cout << "Copy\n"; }
+    A(A&& a) : value(a.value) { std::cout << "Move\n"; }
+    ~A() { std::cout << "Destroy\n"; }
+};
+
+
+int add(A& a, A& b) {
+    return a.value + b.value;
+}
+
+
+struct Functor {
+    int a = 10;
+    constexpr int operator()(int b) {
+        return a + b;
+    }
+
+    constexpr int add(int b) const { return a + b; }
+};
+
+
+struct RTTI_in_place {
+    template<class Ty>
+    constexpr static void destroy_impl(void* const ptr) {
+        std::destroy_at(static_cast<Ty*>(ptr));
+    }
+
+    template<class Ty>
+    constexpr static void move_impl(void* const dst, void* const src) {
+        std::construct_at(static_cast<Ty*>(dst), std::move(*static_cast<Ty*>(src)));
+    }
+
+    template<class Ty>
+    constexpr static void copy_impl(void* const dst, const void* const src) {
+        std::construct_at(static_cast<Ty*>(dst), *static_cast<const Ty*>(src));
+    }
+
+    template<class Ty>
+    constexpr static RTTI_in_place create() {
+        return RTTI_in_place{ destroy_impl<Ty>, move_impl<Ty>, copy_impl<Ty> };
+    }
+
+    void(*destroy)(void* const);
+    void(*move)(void* const, void* const);
+    void(*copy)(void* const, const void* const);
+};
+
+struct RTTI_dynamic {
+    template<class Ty>
+    constexpr static void destroy_impl(void* const ptr) {
+        ::delete static_cast<Ty*>(ptr);
+    }
+
+    template<class Ty>
+    constexpr static void* move_impl(void* const src) {
+        return ::new Ty{ std::move(*static_cast<Ty*>(src)) };
+    }
+
+    template<class Ty>
+    constexpr static void* copy_impl(const void* const src) {
+        return ::new Ty{ std::move(*static_cast<const Ty*>(src)) };
+    }
+
+    template<class Ty>
+    constexpr static RTTI_dynamic create() {
+        return RTTI_dynamic{ destroy_impl<Ty>, move_impl<Ty>, copy_impl<Ty> };
+    }
+
+    void(*destroy)(void* const) = nullptr;
+    void*(*move)(void* const) = nullptr;
+    void*(*copy)(const void* const) = nullptr;
+};
+
+struct Any {
+
+    template<class Ty>
+    constexpr Any(Ty&& me) {
+        using type = std::decay_t<Ty>;
+        m_Data.rtti = RTTI_dynamic::create<type>();
+        m_Data.ptr = ::new type{ std::forward<Ty>(me) };
+    }
+
+    struct Data {
+        constexpr Data() {}
+        constexpr Data(const Data& data) : ptr(data.copy()), rtti(data.rtti) {}
+        constexpr Data(Data&& data) noexcept : ptr(data.ptr), rtti(data.rtti) { data.ptr = nullptr, data.rtti = {}; }
+
+        void* ptr = nullptr;
+        RTTI_dynamic rtti{};
+
+        constexpr void* copy() const { return rtti.copy(ptr); }
+        constexpr void* move() const { return rtti.move(ptr); }
+    };
+
+    Data m_Data;
+};
+
+namespace kaixo {
+
+    struct multi_fun_base { virtual ~multi_fun_base() {}; };
+
+    template<class> struct callable_multi_fun_base;
+    template<class Ret, class ...Args>
+    struct callable_multi_fun_base<Ret(Args...)> 
+        : virtual multi_fun_base { // Virtual inheritance for single base
+        virtual Ret call(void*, Args...) = 0;
+    };
+
+    template<class, class> struct callable_multi_fun;
+    template<class Fun, class Ret, class ...Args>
+    struct callable_multi_fun<Fun, Ret(Args...)> : callable_multi_fun_base<Ret(Args...)> {
+        virtual Ret call(void* fun, Args...args) override {
+            return (*static_cast<Fun*>(fun))(args...);
+        }
+    };
+
+    template<class Fun, class... Sigs> // Inherit base for all signatures
+    struct multi_fun_start : callable_multi_fun<Fun, Sigs>... {};
+
+    struct multi_fun_storage_base {
+        virtual ~multi_fun_storage_base() {};
+        virtual void* get() = 0;
+    };
+
+    template<class Fun> struct multi_fun_storage : multi_fun_storage_base  {
+        Fun fun; // Simple function wrapper
+        virtual void* get() override { return &fun; };
+    };
+
+    template<class ...Sigs> struct multi_fun {
+        multi_fun(auto fun) // vvv Create instance for all signatures given fun
+            : ptr(new multi_fun_start<std::decay_t<decltype(fun)>, Sigs...>{}),
+            data(new multi_fun_storage<std::decay_t<decltype(fun)>>{ fun }) {}
+        ~multi_fun() { delete ptr; delete data; }
+
+        template<class Sig> auto call(auto...args) {
+            auto _c = dynamic_cast<callable_multi_fun_base<Sig>*>(ptr);
+            return (*_c).call(data->get(), args...);
+        }
+
+        multi_fun_base* ptr;
+        multi_fun_storage_base* data;
+    };
+}
+
+
+
+template<size_t N, class C>
+struct incrementer {
+    friend constexpr auto magic_incr(incrementer<N, C>);
+};
+
+template<size_t N, class C, size_t V>
+struct incrementer_def {
+    friend constexpr auto magic_incr(incrementer<N, C>) { return V; };
+};
+
+template<size_t N, class C, class>
+concept checker_c = requires() {
+    magic_incr(incrementer<N, C>{});
+};
+
+// This checker first checks if the magic_incr friend function has been defined for N
+// in any case, because everything in the boolean expression needs to be valid code
+// the incrementer_def is evaluated, creating the definition for the magic_incr friend
+// function anyway. So the next time this checker is evaluated for N, it will be valid.
+// we need a unique class T to reevaluate N each time.
+template<size_t N, class C, class T>
+struct checker : std::bool_constant<checker_c<N, C, T> && (sizeof(incrementer_def<N, C, N + 1>), true)> {};
+
+template<size_t, class, auto>
+struct incr;
+
+template<size_t V, class C, auto L> requires (!checker<V, C, decltype(L)>::value)
+struct incr<V, C, L> {
+    constexpr static size_t get() { return V; }
+};
+
+template<size_t V, class C, auto L> requires (checker<V, C, decltype(L)>::value)
+struct incr<V, C, L> : incr<V + 1, C, L> {
+    using incr<V + 1, C, L>::get;
+};
+
+// 
+struct dud {};
+template<std::size_t, class, class...>
+constexpr auto vtable = dud{}; // Not found: convertible to bool
+
+template<auto> struct unq {};
+
+template<auto V>
+constexpr unq<V> unq_v{};
+
+template<auto Mf, class Base, class ...Args>
+constexpr auto find_impl(Base* me, Args ...args) {
+    using ret = kaixo::function_return_t<kaixo::minimal_signature_t<decltype(Mf)>>;
+    // Function id
+    constexpr auto _id1 = incr<0, dud, unq_v<Mf>>::get();
+    constexpr auto _id2 = incr<0, Base, unq_v<Mf>>::get();
+    auto test = [&]<std::size_t I>(auto & f) -> ret {
+        // Make sure it recurses till we get to a non-lambda
+        if constexpr (!std::same_as<decltype(::vtable<I, decltype(Mf), Args...>), const dud>) {
+            // Make sure we have the correct function
+            if constexpr (vtable<I, decltype(Mf), Args...>.second == _id2) {
+                // Find derived type from first argument
+                using type = kaixo::member_class_t<decltype(vtable<I, decltype(Mf), Args...>.first)>;
+                // Try dynamic cast
+                if (auto _ptr = dynamic_cast<type*>(me)) {
+                    return (_ptr->*(vtable<I, decltype(Mf), Args...>.first))(args...);
+                }
+            }
+            // Recurse if not correct derived
+            return f.operator()<I+1>(f);
+        }
+    };
+
+    return test.operator()<0>(test);
+}
+
+#define toverride(b, d, f) \
+template<class ...Args> constexpr auto \
+vtable<(incr<0, b, []{}>::get()), decltype(&b::f<Args...>), Args...>\
+    = std::pair{ &d::f<Args...>, (incr<0, b, unq_v<&b::f<Args...>>>::get()) };
+
+struct Base {
+    constexpr virtual ~Base() {}
+
+    template<class Arg>
+    constexpr int my_fun1(Arg arg) { return find_impl<&Base::my_fun1<Arg>>(this, arg); }
+
+    template<class Arg>
+    constexpr int my_fun2(Arg arg) { return find_impl<&Base::my_fun2<Arg>>(this, arg); }
+};
+
+struct Derived1 : Base {
+
+    template<class Arg>
+    constexpr int my_fun1(Arg arg) {
+        std::cout << "called my_fun1 on Derived1 with: " << typeid(Arg).name() << "\n"; 
+        return 1;
+    }
+
+    template<class Arg>
+    constexpr int my_fun2(Arg arg) {
+        std::cout << "called my_fun2 on Derived1 with: " << typeid(Arg).name() << "\n"; 
+        return 2;
+    }
+};
+
+//toverride(Base, Derived1, my_fun1);
+//toverride(Base, Derived1, my_fun2);
+
+struct Derived2 : Derived1 {
+    template<class Arg>
+    constexpr int my_fun1(Arg arg) {
+        std::cout << "called my_fun1 on Derived2 with: " << typeid(Arg).name() << "\n";        
+        return 3;
+    }
+
+    template<class Arg>
+    constexpr int my_fun2(Arg arg) {
+        std::cout << "called my_fun2 on Derived2 with: " << typeid(Arg).name() << "\n";
+        return 4;
+    }
+};
+
+//toverride(Base, Derived2, my_fun1);
+//toverride(Base, Derived2, my_fun2);
+
+
+
+#include <string>
+
+namespace ta {
+    template<size_t N, class C> struct incrementer {
+        friend constexpr auto magic_incr(incrementer<N, C>);
+    };
+
+    template<size_t N, class C, size_t V> struct incrementer_def {
+        friend constexpr auto magic_incr(incrementer<N, C>) { return V; };
+    };
+
+    template<size_t N, class C, class> concept checker_c = requires() {
+        magic_incr(incrementer<N, C>{});
+    };
+
+    template<size_t N, class C, class T>
+    struct checker : std::bool_constant<checker_c<N, C, T> && (sizeof(incrementer_def<N, C, N + 1>), true)> {};
+
+    template<size_t, auto, auto> struct incr;
+
+    template<size_t V, auto C, auto L> requires (!checker<V, decltype(C), decltype(L)>::value)
+        struct incr<V, C, L> {
+        constexpr static size_t get() { return V; }
+    };
+
+    template<size_t V, auto C, auto L> requires (checker<V, decltype(C), decltype(L)>::value)
+        struct incr<V, C, L> : incr<V + 1, C, L> {
+        using incr<V + 1, C, L>::get;
+    };
+}
+struct dud {};
+struct type_array {};
+template<type_array Arr, std::size_t I> constexpr auto type_array_v = dud{};
+template<type_array Arr, std::size_t I> using type_array_t = decltype(type_array_v<Arr, I>);
+
+template<type_array Arr>
+struct type_array_i {
+    template<std::size_t I>
+    using element = typename std::decay_t<type_array_t<Arr, I>>::type;
+
+    constexpr static std::size_t size = []() {
+        constexpr auto finder = []<std::size_t N>(auto& finder) {
+            if constexpr (std::same_as<type_array_t<Arr, N>, const dud>) return N;
+            else return finder.template operator()<(N+1)>(finder);
+        };
+        return finder.template operator()<0>(finder);
+    }();
+};
+
+#define push(a, t) template<> constexpr auto type_array_v<a, (ta::incr<0, a, []{}>::get())> = std::type_identity<t>{};
+
+constexpr type_array my_arr;
+
+push(my_arr, int);
+push(my_arr, float);
+push(my_arr, std::string);
+
+static_assert(type_array_i<my_arr>::size == 3ull);
+static_assert(std::same_as<type_array_i<my_arr>::element<0>, int>);
+static_assert(std::same_as<type_array_i<my_arr>::element<1>, float>);
+static_assert(std::same_as<type_array_i<my_arr>::element<2>, std::string>);
+
