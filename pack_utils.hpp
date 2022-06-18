@@ -1,3 +1,4 @@
+#pragma once
 #include <concepts>
 #include <cstddef>
 #include <array>
@@ -145,7 +146,7 @@ namespace kaixo {
         template<class Ty, class ...Args>
         constexpr std::array<std::size_t, sizeof...(Args) - count<Ty, Args...>>
             indices_except = indices_except_impl<Ty, Args...>();
-
+        
         // Find indices of all types except Ty in Args
         template<class ...Args, template<class...> class Ty, class ...Tys>
         consteval std::array<std::size_t, sizeof...(Args)
@@ -536,6 +537,9 @@ namespace kaixo {
         template<class ...Tys> // All indices of all types in Args except those in Tys
         constexpr static auto indices_except = detail::indices_except_all<pack<Tys...>, Args...>;
 
+        template<auto Lambda> // All indices of all types that match the filter
+        constexpr static auto indices_filter = detail::filter_indices<Lambda, Args...>;
+
         template<class ...Tys> // Remove all Tys from Args
         using remove = detail::remove_all<pack<Tys...>, pack>;
 
@@ -627,6 +631,9 @@ namespace kaixo {
         template<auto ...Tys> // All indices of all values in Args except those in Tys
         constexpr static auto indices_except = detail::indices_except_all<pack<value<Tys>...>, value<Args>...>;
 
+        template<auto Lambda> // All indices of all types that match the filter
+        constexpr static auto indices_filter = detail::filter_indices<Lambda, value<Args>...>;
+
         template<auto ...Tys> // Remove all Tys from Args
         using remove = detail::remove_all<pack<value<Tys>...>, pack>;
 
@@ -716,6 +723,9 @@ namespace kaixo {
 
         template<class ...Tys> // All indices of all types in Args except those in Tys
         constexpr static auto indices_except = std::array<std::size_t, 0>{};
+
+        template<auto Lambda> // All indices of all types that match the filter
+        constexpr static auto indices_filter = std::array<std::size_t, 0>{};
 
         template<class ...Tys> // Remove all Tys from Args
         using remove = kaixo::pack<>;
@@ -814,8 +824,26 @@ namespace kaixo {
     template<class Ty, class ...Args> // All indices of types in Args except Ty
     constexpr static auto indices_except = detail::indices_except<Ty, Args...>;
 
+    template<auto Lambda, class ...Args> // All indices of all types that match the filter
+    constexpr static auto indices_filter = detail::filter_indices<Lambda, Args...>;
+
     template<std::size_t I, class ...Args> // Get element at index I
     using element = detail::element<I, Args...>;
+
+    template<class A, class B> // Remove all Tys from Args
+    using remove = detail::remove_all<A, B>;
+
+    template<class A, class B> // Only keep all Tys in Args
+    using keep = detail::keep_all<A, B>;
+
+    template<std::size_t N, class A> // Get first N elements in Args
+    using take = detail::take<N, A>;
+
+    template<std::size_t N, class A> // Remove first N elements from Args
+    using drop = detail::drop<N, A>;
+
+    template<class A> // Remove first element from Args
+    using tail = drop<1, A>;
 
     template<class ...Args> // First element in Args
     using head = element<0, Args...>;
@@ -823,14 +851,32 @@ namespace kaixo {
     template<class ...Args> // Last element in Args
     using last = element<size<Args...> -1, Args...>;
 
+    template<class A, std::size_t I, class B> // Insert the types Tys in Args at index I
+    using insert = detail::insert_all<I, A, B>;
+
+    template<class A, std::size_t ...Is> // Erase indices Is from Args
+    using erase = detail::erase_all<A, Is...>;
+
+    // Create a sub pack from index S to index E of Args
+    template<class A, std::size_t S, std::size_t E>
+    using sub = detail::sub<S, E, A>;
+
+    // Reverse Args
+    template<class A>
+    using reverse = detail::reverse<A>;
+
+    // Remove duplicates from Args
+    template<class A>
+    using unique = detail::unique<A>;
+
     namespace detail {
-        template<class, class>struct concat_impl;
-        template<template<class...> class A, class ...As, class ...Bs>
-        struct concat_impl<A<As...>, A<Bs...>> {
-            using type = A<As..., Bs...>;
-        };
+        template<class...>struct concat_impl;
+        template<template<class...> class A, class ...As>
+        struct concat_impl<A<As...>> { using type = A<As...>; };
+        template<template<class...> class A, class ...As, class ...Bs, class ...Rest>
+        struct concat_impl<A<As...>, A<Bs...>, Rest...> { using type = typename concat_impl<A<As..., Bs...>, Rest...>::type; };
     }
 
-    template<class A, class B>
-    using concat = typename detail::concat_impl<A, B>::type;
+    template<class ...Args>
+    using concat = typename detail::concat_impl<Args...>::type;
 }

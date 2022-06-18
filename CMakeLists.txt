@@ -30,6 +30,7 @@ add_library(utilities STATIC
   "${utilities_SOURCE_DIR}/pack_utils.hpp"
   "${utilities_SOURCE_DIR}/string_literal.hpp"
   "${utilities_SOURCE_DIR}/callable.hpp"
+  "${utilities_SOURCE_DIR}/delegate.hpp"
 )
 
 set_target_properties(utilities PROPERTIES LINKER_LANGUAGE CXX)

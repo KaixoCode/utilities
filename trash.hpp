@@ -6295,3 +6295,321 @@ static_assert(std::same_as<type_array_i<my_arr>::element<0>, int>);
 static_assert(std::same_as<type_array_i<my_arr>::element<1>, float>);
 static_assert(std::same_as<type_array_i<my_arr>::element<2>, std::string>);
 
+
+
+template<class T>
+struct is_callable_impl {
+private:
+    typedef char(&yes)[1];
+    typedef char(&no)[2];
+
+    struct Fallback { void operator()(); };
+    struct Derived : T, Fallback { };
+
+    template<typename U, U> struct Check;
+
+    template<typename>
+    static yes test(...);
+
+    template<typename C>
+    static no test(Check<void (Fallback::*)(), &C::operator()>*);
+
+public:
+    constexpr static bool value = sizeof(test<Derived>(0)) == sizeof(yes);
+};
+
+template<class T> requires (std::is_fundamental_v<T>)
+struct is_callable_impl<T> {
+    constexpr static bool value = false;
+};
+
+template<class T>
+concept is_callable = is_callable_impl<T>::value;
+
+template<class Ty>
+constexpr static auto check_invocable(Ty&& v) {
+    if constexpr (std::invocable<Ty>) return check_invocable(std::forward<Ty>(v)());
+    else return std::forward<Ty>(v);
+}
+
+template<class, class> struct fun_arity {};
+template<class Fun>
+struct fun_arity<Fun, kaixo::pack<>> : std::integral_constant<std::size_t, 0> {};
+template<class Fun, class ...Tys>
+struct fun_arity<Fun, kaixo::pack<Tys...>>
+    : std::conditional_t<std::invocable<Fun, Tys...>, // if invocable
+    std::integral_constant<std::size_t, sizeof...(Tys)>, // Get integral constant
+    fun_arity<Fun, typename kaixo::template pack<Tys...>::init>>{}; // Otherwise, remove head and recurse
+
+template<class Fun1, class Fun2, class Args, std::size_t ...Is, std::size_t ...Ns>
+constexpr auto invoke_double_impl(Fun1& fun1, Fun2& fun2, Args&& args, std::index_sequence<Is...>, std::index_sequence<Ns...>) {
+    return ((fun1 << (fun2 << ... << std::get<Is>(args))) << ... << std::get<Ns + sizeof...(Is)>(args));
+}
+
+template<class Fun1, class Fun2, class ...Tys> requires requires (Fun1& fun1, Fun2& fun2, std::tuple<Tys&&...> args) {
+    { invoke_double_impl(fun1, fun2, args, std::make_index_sequence<fun_arity<Fun2, kaixo::pack<Tys...>>::value>{},
+        std::make_index_sequence<sizeof...(Tys) - fun_arity<Fun2, kaixo::pack<Tys...>>::value>{}) };
+}
+constexpr auto invoke_double(Fun1& fun1, Fun2& fun2, Tys&&...args) {
+    constexpr auto arity = fun_arity<Fun2, kaixo::pack<Tys...>>::value;
+    return invoke_double_impl(fun1, fun2, std::forward_as_tuple(std::forward<Tys>(args)...),
+        std::make_index_sequence<arity>{}, std::make_index_sequence<sizeof...(Tys) - arity>{});
+}
+
+template<is_callable Fun, class Arg>
+constexpr auto operator<<(Fun f, Arg&& v) {
+    if constexpr (std::invocable<Fun, Arg&&>) return check_invocable(f(v));
+    else if constexpr (is_callable<std::decay_t<Arg>>) return[v, f = f]<class ...Tys>
+        (Tys&&...args) {
+        return invoke_double(v, f, std::forward<Tys>(args)...);
+    };
+    else return[v = std::forward<Arg>(v), f = f]<class ...Args>(Args&& ...args)
+        requires (std::invocable<Fun, Arg&&, Args&&...>) {
+        return check_invocable(f(v, std::forward<Args>(args)...));
+    };
+}
+
+namespace kaixo {
+
+    // general type traits, concept, and helpers:
+
+    // The entire structure makes use of definitions and dependencies
+    // to deduce necessary arguments to lazily evaluated expressions.
+    template<class Ty> concept has_dependencies = requires () { typename Ty::dependencies; };
+    template<class Ty> concept has_definitions = requires () { typename Ty::definitions; };
+    template<class Ty> concept is_named = requires() { Ty::name; };
+
+    // General way to retrieve dependencies and definitions from any 
+    // type, even ones that don't have any.
+    template<class> struct dependencies_t { using type = pack<>; };
+    template<has_dependencies Ty> struct dependencies_t<Ty> { using type = typename Ty::dependencies; };
+    template<class Ty> using dependencies = typename dependencies_t<Ty>::type;
+    template<class> struct definitions_t { using type = pack<>; };
+    template<has_definitions Ty> struct definitions_t<Ty> { using type = typename Ty::definitions; };
+    template<class Ty> using definitions = typename definitions_t<Ty>::type;
+
+    // For the purpose of list comprehension, we only 
+    // need a begin and end method for iterating.
+    template<class Ty> concept is_container = requires(const Ty ty) {
+        { ty.begin() }; { ty.end() };
+    };
+
+    // fundamental classes:
+
+    // Named value is used inside the named tuple, 
+    // links a constexpr name to a value of type Ty
+    template<string_literal Name, class Ty>
+    struct named_value {
+        constexpr static auto name = Name;
+        using value_type = Ty;
+        Ty value;
+    };
+
+    // Type wrapper for a constexpr name 
+    template<string_literal Name>
+    struct var_t {
+        using dependencies = pack<var_t>; // to make life easier later on, a var 
+        using definitions = pack<var_t>; // depends on itself, and defines itself
+        constexpr static auto name = Name;
+
+        // Assignment operator to create a named_value
+        template<class Ty> constexpr auto operator=(Ty&& value) const {
+            return named_value<name, Ty>{ std::forward<Ty>(value) };
+        }
+    };
+    template<string_literal Name> constexpr auto var = var_t<Name>{};
+    template<class Ty> concept is_var = is_named<Ty> && has_definitions<Ty> && has_dependencies<Ty>;
+
+    template<class A, class B> concept name_equals = is_named<A> && is_named<B> && A::name == B::name;
+
+    // std::tuple of named_values, contains a get method
+    // to retrieve a value given a var
+    template<class ...Args>
+    struct named_tuple : std::tuple<Args...> {
+        using std::tuple<Args...>::tuple;
+
+        template<is_var Var> constexpr decltype(auto) get() const {
+            // Filter the arguments by name and get the first one, then get the
+            // index of that type in the pack, so we can use the std::get function
+            constexpr auto filter = []<name_equals<Var>>{};
+            using named_value_type = pack<Args...>::template filter<filter>::head;
+            constexpr std::size_t index = pack<Args...>::template index<named_value_type>;
+            return std::get<index>(*this).value;
+        }
+    };
+    template<class ...Args> named_tuple(Args...)->named_tuple<Args...>;
+
+    // Lazily evaluated expression
+    template<class Lambda, class Dependencies>
+    struct expression : Lambda, Dependencies {
+        using dependencies = Dependencies::unique;
+
+        template<class ...Args>
+        constexpr decltype(auto) operator()(Args&&... vals) const {
+            // The named tuple should contain all the dependencies of this expression.
+            return Lambda::operator()(named_tuple{ std::forward<Args>(vals)... });
+        }
+    };
+
+    template<class Ty> concept is_expression = specialization<Ty, expression>;
+
+    // Constructing the container:
+
+    // In order to make our lives easier, we always use a wrapped container
+    template<is_container C>
+    struct wrapped_container {
+        // Retrieve iterator and value types using begin
+        using iterator = decltype(std::declval<C>().begin());
+        using value_type = decltype(*std::declval<C>().begin());
+
+        using dependencies = dependencies<C>;
+        using definitions = definitions<C>;
+
+        std::reference_wrapper<C> value;
+
+        constexpr iterator begin() const { return value.get().begin(); }
+        constexpr iterator end() const { return value.get().end(); }
+    };
+
+    template<is_container C>
+    constexpr wrapped_container<C> operator-(C& v) { return { v }; }
+
+    // A container that is linked to a name (var)
+    template<string_literal Name, is_container C>
+    struct named_container : wrapped_container<C> {
+        using definitions = definitions<C>::template append<var_t<Name>>::unique;
+
+        constexpr static auto name = Name;
+    };
+
+    template<is_var Var, is_container C>
+    constexpr auto operator<(Var, wrapped_container<C>&& c) {
+        return named_container<Var::name, C>{ std::move(c) };
+    }
+
+    template<class Ty>
+    concept is_named_container = is_named<Ty> && is_container<Ty>;
+
+    // Concatenation of list comprehension parts
+
+    template<class Expr, class ...Parts>
+    struct lc_construct {
+        using definitions = concat<definitions<std::decay_t<Parts>>...>;
+        using dependencies = remove<definitions, concat<dependencies<Expr>, dependencies<std::decay_t<Parts>>...>>;
+
+        Expr expression;
+        std::tuple<Parts...> parts;
+    };
+
+    template<class Ty>
+    concept is_lc_construct = specialization<Ty, lc_construct>;
+
+    template<class Ty>
+    concept valid_construct_part = has_definitions<Ty> || has_dependencies<Ty>;
+
+    // Start construction with an expression and a part.
+    template<is_expression A, valid_construct_part B>
+    constexpr auto operator|(A&& expr, B&& part) {
+        return lc_construct{ std::move(expr), std::forward_as_tuple(std::move(part)) };
+    }
+
+    // Add a part to a construct object.
+    template<is_lc_construct A, valid_construct_part B>
+    constexpr auto operator,(A&& a, B&& b) {
+        return lc_construct{ std::move(a.expression),
+            std::tuple_cat(std::move(a.parts), std::forward_as_tuple(std::move(b))) };
+    }
+
+    // Construct final list comprehension object:
+
+    constexpr static auto container_filter = []<kaixo::is_named_container>{};
+    constexpr static auto constraint_filter = []<kaixo::is_expression>{};
+
+    template<class Expr, class ...Parts>
+    struct list_comprehension {
+
+        constexpr list_comprehension(lc_construct<Expr, Parts&&...>&& parts)
+            : expression(std::move(parts.expression)),
+            containers(iterate<pack<Parts...>::template
+                indices_filter<container_filter>>([&]<std::size_t ...Is>() {
+            return std::tuple{ std::get<Is>(parts.parts)... };
+        })),
+            constraints(iterate<pack<Parts...>::template
+                indices_filter<constraint_filter>>([&]<std::size_t ...Is>() {
+            return std::tuple{ std::get<Is>(parts.parts)... };
+        })) {}
+
+        Expr expression;
+
+        pack<Parts...>::template filter<container_filter>::template as<std::tuple> containers;
+        pack<Parts...>::template filter<constraint_filter>::template as<std::tuple> constraints;
+    };
+
+
+    struct lc_t {
+        template<class Expr, class ...Parts>
+        constexpr auto operator[](lc_construct<Expr, Parts...>&& lc) const {
+            return list_comprehension<Expr, std::decay_t<Parts>...>{ std::move(lc) };
+        }
+    };
+
+    constexpr lc_t lc;
+
+    // Operator overloads:
+
+    // function to make writing a general operator overload a little easier
+    // extracts the 3 different cases: expression, var, value.
+    template<class Ty, class ...Args>
+    constexpr decltype(auto) use(Ty& v, const named_tuple<Args...>& vals) {
+        if constexpr (is_expression<Ty>) return v(vals); // Run expression
+        else if constexpr (is_var<Ty>) return vals.get<Ty>(); // Get value of var
+        else return v; // Forward the value
+    }
+
+    // to prevent operator overloads for any 2 types, either of the
+    // arguments must be a variable or an expression.
+    template<class A, class B>
+    concept valid_op = (is_var<A> || is_expression<A> || is_var<B> || is_expression<B>)
+        && !is_named_container<A> && !is_named_container<B>;
+
+    // Operator macro to define all operators more efficiently
+#define def_op(op)                                                  \
+    template<class Av, class Bv>                                    \
+        requires valid_op<std::decay_t<Av>, std::decay_t<Bv>>       \
+    constexpr auto operator op(Av&& a, Bv&& b) {                    \
+        using A = std::decay_t<Av>;                                 \
+        using B = std::decay_t<Bv>;                                 \
+        /* Lots of ifs to prevent capturing of vars, as we only */  \
+        /* need their type, not their value. Saves some memory. */  \
+        if constexpr (is_var<A> && is_var<B>) {                     \
+            return expression{ [                                    \
+            ] <class...Args>(const named_tuple<Args...>&vals) {     \
+                return vals.get<A>() op vals.get<B>();              \
+            }, concat<dependencies<A>, dependencies<B>>{} };        \
+        } else if constexpr (is_var<A> && !is_var<B>) {             \
+            return expression{ [                                    \
+                b = std::forward<Bv>(b)                             \
+            ] <class...Args>(const named_tuple<Args...>&vals) {     \
+                return vals.get<A>() op use(b, vals);               \
+            }, concat<dependencies<A>, dependencies<B>>{} };        \
+        } else if constexpr (!is_var<A> && is_var<B>) {             \
+            return expression{ [                                    \
+                a = std::forward<Av>(a)                             \
+            ] <class...Args>(const named_tuple<Args...>&vals) {     \
+                return use(a, vals) op vals.get<B>();               \
+            }, concat<dependencies<A>, dependencies<B>>{} };        \
+        } else {                                                    \
+            return expression{ [                                    \
+                a = std::forward<Av>(a), b = std::forward<Bv>(b)    \
+            ] <class...Args>(const named_tuple<Args...>&vals) {     \
+                return use(a, vals) op use(b, vals);                \
+            }, concat<dependencies<A>, dependencies<B>>{} };        \
+        }                                                           \
+    }
+
+    def_op(+) def_op(-) def_op(*) def_op(/ ) def_op(%) def_op(&&) def_op(|| );
+    def_op(| ) def_op(&) def_op(^) def_op(== ) def_op(!= ) def_op(<< ) def_op(>> );
+    def_op(<= ) def_op(>= ) def_op(> ) def_op(< ) def_op(+= );
+#undef def_op
+}
+
