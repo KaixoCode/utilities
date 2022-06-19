@@ -1,7 +1,7 @@
 cmake_minimum_required (VERSION 3.0)
 project (utilities)
 
-set (CMAKE_CXX_STANDARD 20)
+set (CMAKE_CXX_STANDARD 23)
 
 include_directories(
   "${utilities_SOURCE_DIR}/libs"
@@ -31,6 +31,7 @@ add_library(utilities STATIC
   "${utilities_SOURCE_DIR}/string_literal.hpp"
   "${utilities_SOURCE_DIR}/callable.hpp"
   "${utilities_SOURCE_DIR}/delegate.hpp"
+  "${utilities_SOURCE_DIR}/match.hpp"
 )
 
 set_target_properties(utilities PROPERTIES LINKER_LANGUAGE CXX)
