@@ -1,193 +1,9 @@
 #pragma once
+#include <type_traits>
 #include <utility>
 #include <tuple>
 
 namespace kaixo {
-    template<class Ty> concept has_fun_op = requires(decltype(&Ty::operator()) a) { a; };
-    namespace detail {
-        template<class Ty> struct signature { static_assert(has_fun_op<Ty>, "Type has no function signature."); };
-        template<has_fun_op Ty>
-        struct signature<Ty> { using type = typename signature<decltype(&Ty::operator())>::type; };
-        template<class R, class T, class ...Args>
-        struct signature<R(T::*)(Args...)> { using type = R(Args...); };
-        template<class R, class T, class ...Args>
-        struct signature<R(T::*)(Args...) const> { using type = R(Args...) const; };
-        template<class R, class T, class ...Args>
-        struct signature<R(T::*)(Args...) &&> { using type = R(Args...) &&; };
-        template<class R, class T, class ...Args>
-        struct signature<R(T::*)(Args...) &> { using type = R(Args...) &; };
-        template<class R, class T, class ...Args>
-        struct signature<R(T::*)(Args...) const&&> { using type = R(Args...) const&&; };
-        template<class R, class T, class ...Args>
-        struct signature<R(T::*)(Args...) const&> { using type = R(Args...) const&; };
-        template<class R, class T, class ...Args>
-        struct signature<R(T::*)(Args...) volatile> { using type = R(Args...) volatile; };
-        template<class R, class T, class ...Args>
-        struct signature<R(T::*)(Args...) volatile const> { using type = R(Args...) volatile const; };
-        template<class R, class T, class ...Args>
-        struct signature<R(T::*)(Args...) volatile &&> { using type = R(Args...) volatile &&; };
-        template<class R, class T, class ...Args>
-        struct signature<R(T::*)(Args...) volatile &> { using type = R(Args...) volatile &; };
-        template<class R, class T, class ...Args>
-        struct signature<R(T::*)(Args...) volatile const&&> { using type = R(Args...) volatile const&&; };
-        template<class R, class T, class ...Args>
-        struct signature<R(T::*)(Args...) volatile const&> { using type = R(Args...) volatile const&; };
-        template<class R, class T, class ...Args>
-        struct signature<R(T::* const)(Args...)> { using type = R(Args...); };
-        template<class R, class T, class ...Args>
-        struct signature<R(T::* const)(Args...) const> { using type = R(Args...) const; };
-        template<class R, class T, class ...Args>
-        struct signature<R(T::* const)(Args...)&&> { using type = R(Args...)&&; };
-        template<class R, class T, class ...Args>
-        struct signature<R(T::* const)(Args...)&> { using type = R(Args...)&; };
-        template<class R, class T, class ...Args>
-        struct signature<R(T::* const)(Args...) const&&> { using type = R(Args...) const&&; };
-        template<class R, class T, class ...Args>
-        struct signature<R(T::* const)(Args...) const&> { using type = R(Args...) const&; };
-        template<class R, class T, class ...Args>
-        struct signature<R(T::* const)(Args...) volatile> { using type = R(Args...) volatile; };
-        template<class R, class T, class ...Args>
-        struct signature<R(T::* const)(Args...) volatile const> { using type = R(Args...) volatile const; };
-        template<class R, class T, class ...Args>
-        struct signature<R(T::* const)(Args...) volatile&&> { using type = R(Args...) volatile&&; };
-        template<class R, class T, class ...Args>
-        struct signature<R(T::* const)(Args...) volatile&> { using type = R(Args...) volatile&; };
-        template<class R, class T, class ...Args>
-        struct signature<R(T::* const)(Args...) volatile const&&> { using type = R(Args...) volatile const&&; };
-        template<class R, class T, class ...Args>
-        struct signature<R(T::* const)(Args...) volatile const&> { using type = R(Args...) volatile const&; };
-        template<class R, class ...Args>
-        struct signature<R(*)(Args...)> { using type = R(Args...); };        
-        
-        template<class Ty> struct minimal_signature { static_assert(has_fun_op<Ty>, "Type has no function signature."); };
-        template<has_fun_op Ty>
-        struct minimal_signature <Ty> { using type = typename minimal_signature<decltype(&Ty::operator())>::type; };
-        template<class R, class T, class ...Args>
-        struct minimal_signature <R(T::*)(Args...)> { using type = R(Args...); };
-        template<class R, class T, class ...Args>
-        struct minimal_signature <R(T::*)(Args...) const> { using type = R(Args...); };
-        template<class R, class T, class ...Args>
-        struct minimal_signature <R(T::*)(Args...) &&> { using type = R(Args...); };
-        template<class R, class T, class ...Args>
-        struct minimal_signature <R(T::*)(Args...) &> { using type = R(Args...); };
-        template<class R, class T, class ...Args>
-        struct minimal_signature <R(T::*)(Args...) const&&> { using type = R(Args...); };
-        template<class R, class T, class ...Args>
-        struct minimal_signature <R(T::*)(Args...) const&> { using type = R(Args...); };
-        template<class R, class T, class ...Args>
-        struct minimal_signature <R(T::*)(Args...) volatile> { using type = R(Args...); };
-        template<class R, class T, class ...Args>
-        struct minimal_signature <R(T::*)(Args...) volatile const> { using type = R(Args...); };
-        template<class R, class T, class ...Args>
-        struct minimal_signature <R(T::*)(Args...) volatile &&> { using type = R(Args...); };
-        template<class R, class T, class ...Args>
-        struct minimal_signature <R(T::*)(Args...) volatile &> { using type = R(Args...); };
-        template<class R, class T, class ...Args>
-        struct minimal_signature <R(T::*)(Args...) volatile const&&> { using type = R(Args...); };
-        template<class R, class T, class ...Args>
-        struct minimal_signature <R(T::*)(Args...) volatile const&> { using type = R(Args...); };
-        template<class R, class T, class ...Args>
-        struct minimal_signature <R(T::* const)(Args...)> { using type = R(Args...); };
-        template<class R, class T, class ...Args>
-        struct minimal_signature <R(T::* const)(Args...) const> { using type = R(Args...); };
-        template<class R, class T, class ...Args>
-        struct minimal_signature <R(T::* const)(Args...)&&> { using type = R(Args...); };
-        template<class R, class T, class ...Args>
-        struct minimal_signature <R(T::* const)(Args...)&> { using type = R(Args...); };
-        template<class R, class T, class ...Args>
-        struct minimal_signature <R(T::* const)(Args...) const&&> { using type = R(Args...); };
-        template<class R, class T, class ...Args>
-        struct minimal_signature <R(T::* const)(Args...) const&> { using type = R(Args...); };
-        template<class R, class T, class ...Args>
-        struct minimal_signature <R(T::* const)(Args...) volatile> { using type = R(Args...); };
-        template<class R, class T, class ...Args>
-        struct minimal_signature <R(T::* const)(Args...) volatile const> { using type = R(Args...); };
-        template<class R, class T, class ...Args>
-        struct minimal_signature <R(T::* const)(Args...) volatile&&> { using type = R(Args...); };
-        template<class R, class T, class ...Args>
-        struct minimal_signature <R(T::* const)(Args...) volatile&> { using type = R(Args...); };
-        template<class R, class T, class ...Args>
-        struct minimal_signature <R(T::* const)(Args...) volatile const&&> { using type = R(Args...); };
-        template<class R, class T, class ...Args>
-        struct minimal_signature <R(T::* const)(Args...) volatile const&> { using type = R(Args...); };
-        template<class R, class ...Args>
-        struct minimal_signature <R(*)(Args...)> { using type = R(Args...); };
-
-        template<class> struct member_function_type;
-        template<class R, class T, class ...Args>
-        struct member_function_type<R(T::*)(Args...)> { using type = T; };
-        template<class R, class T, class ...Args>
-        struct member_function_type<R(T::*)(Args...) const> { using type = T const; };
-        template<class R, class T, class ...Args>
-        struct member_function_type<R(T::*)(Args...)&&> { using type = T&&; };
-        template<class R, class T, class ...Args>
-        struct member_function_type<R(T::*)(Args...)&> { using type = T&; };
-        template<class R, class T, class ...Args>
-        struct member_function_type<R(T::*)(Args...) const&&> { using type = T const&&; };
-        template<class R, class T, class ...Args>
-        struct member_function_type<R(T::*)(Args...) const&> { using type = T const&; };
-        template<class R, class T, class ...Args>
-        struct member_function_type<R(T::*)(Args...) volatile> { using type = T volatile; };
-        template<class R, class T, class ...Args>
-        struct member_function_type<R(T::*)(Args...) volatile const> { using type = T volatile const; };
-        template<class R, class T, class ...Args>
-        struct member_function_type<R(T::*)(Args...) volatile&&> { using type = T volatile&&; };
-        template<class R, class T, class ...Args>
-        struct member_function_type<R(T::*)(Args...) volatile&> { using type = T volatile&; };
-        template<class R, class T, class ...Args>
-        struct member_function_type<R(T::*)(Args...) volatile const&&> { using type = T volatile const&&; };
-        template<class R, class T, class ...Args>
-        struct member_function_type<R(T::*)(Args...) volatile const&> { using type = T volatile const&; };
-
-        template<class> struct function_args;
-        template<class R, class ...Args>
-        struct function_args<R(Args...)> { using type = std::tuple<Args...>; };
-        template<class R, class ...Args>
-        struct function_args<R(Args...) const> { using type = std::tuple<Args...>; };
-        template<class R, class ...Args>
-        struct function_args<R(Args...) volatile> { using type = std::tuple<Args...>; };
-        template<class R, class ...Args>
-        struct function_args<R(Args...) volatile const> { using type = std::tuple<Args...>; };
-        template<class> struct function_return;
-        template<class R, class ...Args>
-        struct function_return<R(Args...)> { using type = R; };
-        template<class R, class ...Args>
-        struct function_return<R(Args...) const> { using type = R; };
-        template<class R, class ...Args>
-        struct function_return<R(Args...) volatile> { using type = R; };
-        template<class R, class ...Args>
-        struct function_return<R(Args...) volatile const> { using type = R; };
-
-        template<class Ty, class Tuple> struct invocable_tuple;
-        template<class Ty, class ...Args> 
-        struct invocable_tuple<Ty, std::tuple<Args...>> 
-            : std::bool_constant<std::invocable<Ty, Args...>> {};
-
-        template<class> struct member_type;
-        template<class Ty, class C> struct member_type<Ty C::*> { using type = Ty; };
-        template<class> struct member_class;
-        template<class Ty, class C> struct member_class<Ty C::*> { using type = C; };
-        template<class Ty, class C> struct member_class<Ty C::* const> { using type = C; };
-        template<class Ty, class C> struct member_class<Ty C::* volatile> { using type = C; };
-        template<class Ty, class C> struct member_class<Ty C::* volatile const> { using type = C; };
-        template<class Ty, class C> struct member_class<Ty C::* &> { using type = C; };
-        template<class Ty, class C> struct member_class<Ty C::* const& > { using type = C; };
-        template<class Ty, class C> struct member_class<Ty C::* volatile& > { using type = C; };
-        template<class Ty, class C> struct member_class<Ty C::* volatile const&> { using type = C; };
-        template<class Ty, class C> struct member_class<Ty C::*&&> { using type = C; };
-        template<class Ty, class C> struct member_class<Ty C::* const&& > { using type = C; };
-        template<class Ty, class C> struct member_class<Ty C::* volatile&& > { using type = C; };
-        template<class Ty, class C> struct member_class<Ty C::* volatile const&&> { using type = C; };
-    }
-    // get the function signature of a (member) function or a lambda/functor
-    template<class Ty> using signature_t = typename detail::signature<Ty>::type;
-    template<class Ty> using minimal_signature_t = typename detail::minimal_signature<Ty>::type;
-    template<class Ty> using member_function_type_t = typename detail::member_function_type<Ty>::type;
-    template<class Ty> using function_args_t = typename detail::function_args<Ty>::type;
-    template<class Ty> using function_return_t = typename detail::function_return<Ty>::type;
-    template<class Ty, class Tuple> concept invocable_tuple_t = detail::invocable_tuple<Ty, Tuple>::value;
-    template<class Ty> using member_type_t = typename detail::member_type<Ty>::type;
-    template<class Ty> using member_class_t = typename detail::member_class<Ty>::type;
 
     namespace detail {
         template<class, template<class...> class>
@@ -219,11 +35,11 @@ namespace kaixo {
             return std::tuple_cat(element_as_tuple<Is>(tuple, std::make_index_sequence<Is>())...);
         }
     }
-    // remove duplicate types from tuple
+
     template<is_tuple Tuple> constexpr auto unique_tuple(Tuple tuple) {
         return detail::make_tuple_unique(tuple, std::make_index_sequence<std::tuple_size_v<tuple>>{});
     }
-    // remove duplicate types from tuples
+
     template<is_tuple Ty> using unique_tuple_t = decltype(unique_tuple(std::declval<Ty>()));
 
     namespace detail {
@@ -289,13 +105,19 @@ namespace kaixo {
     }
 
     // templated for, calls lambda with template argument std::size_t
-    template<std::size_t N> constexpr auto tfor(auto lambda) {
+    template<std::size_t N> constexpr void sequence(auto lambda) {
+        return [&] <std::size_t ...Is>(std::index_sequence<Is...>) {
+            return lambda.operator() < Is... > (); }(std::make_index_sequence<N>{});
+    }
+
+    // templated for, calls lambda with template argument std::size_t
+    template<std::size_t N> constexpr void tfor(auto lambda) {
         [&] <std::size_t ...Is>(std::index_sequence<Is...>) { 
             (lambda.operator() < Is > (), ...); }(std::make_index_sequence<N>{});
     }
 
     // templated for, for tuple, supports concept constraints
-    template<class Tuple> constexpr auto tfor(Tuple&& tuple, auto lambda) {
+    template<class Tuple> constexpr void tfor(Tuple&& tuple, auto lambda) {
         kaixo::tfor<std::tuple_size_v<std::decay_t<Tuple>>>([&]<std::size_t I> {
             if constexpr (std::is_invocable_v<decltype(lambda),
                 decltype(std::get<I>(tuple))>) lambda(std::get<I>(tuple));
@@ -303,7 +125,7 @@ namespace kaixo {
     }
 
     // templated for, for tuple, supports concept constraints
-    template<class Tuple> constexpr auto tfor(Tuple&& tuple, auto... lambdas) {
+    template<class Tuple> constexpr void tfor(Tuple&& tuple, auto... lambdas) {
         kaixo::tfor<std::tuple_size_v<std::decay_t<Tuple>>>([&]<std::size_t I> {
             ([&](auto& lambda) {
                 if constexpr (std::is_invocable_v<decltype(lambda),

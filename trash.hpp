@@ -6613,3 +6613,243 @@ namespace kaixo {
 #undef def_op
 }
 
+
+
+template<class Ty>
+struct get_t {
+    template<class Access>
+    constexpr get_t(Access access)
+        : data(std::bit_cast<void*>(access)),
+        access(&access_impl<Access>) {}
+
+    constexpr get_t(Ty& val)
+        : data(&val), access(&access_impl2) {}
+
+    constexpr get_t()
+        : data(nullptr), access(access_impl2) {}
+
+    void* data;
+    Ty(*access)(void*);
+
+    template<class Access>
+    constexpr static Ty access_impl(void* data) {
+        return std::bit_cast<Access>(data)();
+    }
+
+    constexpr static Ty access_impl2(void* data) {
+        return *static_cast<Ty*>(data);
+    }
+};
+
+template<class Ty>
+struct set_t {
+    template<class Access>
+    constexpr set_t(Access access)
+        : data(std::bit_cast<void*>(access)),
+        access(&access_impl<Access>) {}
+
+    constexpr set_t(Ty& val)
+        : data(&val), access(&access_impl2) {}
+
+    constexpr set_t()
+        : data(nullptr), access(access_impl2) {}
+
+    void* data;
+    void(*access)(void*, Ty);
+
+    template<class Access>
+    constexpr static void access_impl(void* data, Ty val) {
+        (*reinterpret_cast<Access*>(data))(val);
+    }
+
+    constexpr static void access_impl2(void* data, Ty val) {
+        *static_cast<Ty*>(data) = val;
+    }
+};
+
+template<class Ty, class Me = void>
+struct alias {
+    constexpr alias& operator=(Ty val) { set.access(set.data, val); return *this; }
+    constexpr operator Ty() const { return get.access(get.data); }
+
+    get_t<Ty> get;
+    set_t<Ty> set;
+
+    friend Me;
+};
+
+template<class Ty, class Me = void>
+struct readonly {
+    constexpr operator Ty() const { return get.access(get.data); }
+
+    get_t<Ty> get;
+    set_t<Ty> set;
+
+private:
+    constexpr readonly& operator=(Ty val) { set.access(set.data, val); return *this; }
+    friend Me;
+};
+
+template<class Ty, class Me = void>
+struct writeonly {
+    constexpr writeonly& operator=(Ty val) { set.access(set.data, val); return *this; }
+
+    get_t<Ty> get;
+    set_t<Ty> set;
+
+private:
+    constexpr operator Ty() const { return get.access(get.data); }
+    friend Me;
+};
+
+
+// INTERFACE THING
+
+template<class T> struct add_any_arg { using type = T(std::any&); };
+template<class R, class ...As>
+struct add_any_arg<R(As...)> { using type = R(std::any&, As...); };
+template<class Ty> using add_any_arg_t = typename add_any_arg<Ty>::type;
+template<class T> struct get_ret_type { using type = T; };
+template<class R, class ...As>
+struct get_ret_type<R(As...)> { using type = R; };
+template<class Ty> using get_ret_type_t = typename get_ret_type<Ty>::type;
+
+template<class Ty>
+concept has_signature = requires() {
+    typename Ty::signature;
+};
+
+template<class Ty>
+struct type_impl {
+    using type = typename Ty::type&;
+};
+
+template<class Ty> requires has_signature<Ty>
+struct type_impl<Ty> {
+    using type = typename Ty::signature;
+};
+
+template<class Fun>
+using type_impl_t = typename type_impl<Fun>::type;
+
+template<class Ty>
+struct member {
+    member(const member&) = delete;
+    member(member&&) = default;
+    member& operator=(const member&) = delete;
+    member& operator=(member&&) = default;
+
+    member(Ty& val) : _value(&val) {}
+
+    operator Ty& () { return *_value; }
+    operator Ty const& () const { return *_value; }
+    template<std::convertible_to<Ty> Arg>
+    member& operator=(Arg&& v) { return (*_value = std::forward<Arg>(v), *this); }
+
+private:
+    Ty* _value;
+};
+
+template<class ...Funs>
+class interface {
+    using vtable = std::tuple<add_any_arg_t<type_impl_t<Funs>>*...>;
+public:
+    interface(const interface&) = delete;
+    interface(interface&&) = default;
+    interface& operator=(const interface&) = delete;
+    interface& operator=(interface&&) = default;
+
+    template<class Ty>
+    interface(Ty& value) : _storage(std::ref(value)), _vtable{
+        [](std::any& val, auto ...args) -> get_ret_type_t<type_impl_t<Funs>> {
+            if constexpr (has_signature<Funs>) {
+                constexpr auto v = &Funs::template call<Ty>;
+                return v(std::any_cast<std::reference_wrapper<Ty>&>(val).get(), args...);
+            }
+ else {
+  constexpr auto v = &Funs::template get<Ty>;
+  return v(std::any_cast<std::reference_wrapper<Ty>&>(val).get(), args...);
+}
+}... } {}
+
+template<class Ty>
+interface(Ty&& value) : _storage(std::forward<Ty>(value)), _vtable{
+    [](std::any& val, auto ...args) -> get_ret_type_t<type_impl_t<Funs>> {
+        if constexpr (has_signature<Funs>) {
+            constexpr auto v = &Funs::template call<Ty>;
+            return v(std::any_cast<Ty&>(val), args...);
+        }
+else {
+ constexpr auto v = &Funs::template get<Ty>;
+ return v(std::any_cast<Ty&>(val), args...);
+}
+}... } {}
+
+template<class Fun, class ...Args> decltype(auto) call(Args&& ...args) const {
+    using type = add_any_arg_t<type_impl_t<Fun>>*;
+    return std::get<type>(const_cast<vtable&>(_vtable))(
+        const_cast<std::any&>(_storage), std::forward<Args>(args)...);
+}
+
+template<class Fun> auto get() -> decltype(call<Fun>()) {
+    return call<Fun>();
+}
+
+private:
+    std::any _storage;
+    vtable _vtable;
+};
+
+struct DrawContext { /* ... */ };
+struct Point {
+    double x;
+    double y;
+};
+
+struct draw_fun {
+    using signature = void(DrawContext&);
+    void call(this auto& self, DrawContext& c) { self.draw(c); }
+};
+
+struct update_fun {
+    using signature = void();
+    void call(this auto& self) { self.update(); }
+};
+
+struct hitbox_fun {
+    using signature = bool(const Point&);
+    bool call(this const auto& self, const Point& p) { return self.hitbox(p); }
+};
+
+struct value_mem {
+    using type = int;
+    int& get(this auto& self) { return self.value; }
+};
+
+struct GuiObject : interface<
+    draw_fun,
+    update_fun,
+    hitbox_fun,
+    value_mem
+> {
+    using interface::interface;
+
+    void draw(DrawContext& v) { call<draw_fun>(v); }
+    void update() { call<update_fun>(); }
+    bool hitbox(const Point& p) { return call<hitbox_fun>(p); }
+    member<int> value = get<value_mem>();
+};
+
+struct CustomGuiObject {
+    int value = 1;
+    void draw(DrawContext& v) { std::cout << value << ": drawing...\n"; }
+    void update() { std::cout << value << ": updating...\n"; }
+    bool hitbox(const Point& p) const {
+        std::cout << value << ": hitbox test: [" << p.x << ", " << p.y << "]\n";
+        return false;
+    }
+};
+
+void setValue(GuiObject obj, int v) {
+    obj.value = v;
+}

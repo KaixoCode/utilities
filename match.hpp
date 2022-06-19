@@ -158,7 +158,7 @@ namespace kaixo {
         enum class body_type { Value, NoArgs, Args };
         constexpr static body_type TYPE =
             std::invocable<body_t> ? body_type::NoArgs // If invocable with no arguments: NoArgs
-            : kaixo::has_fun_op<body_t> ? body_type::Args // If it does have a function operator: Args
+            : kaixo::is_functor<body_t> ? body_type::Args // If it does have a function operator: Args
             : body_type::Value; // Otherwise it's just a value
 
         match_types::l<As...> args;
@@ -198,7 +198,7 @@ namespace kaixo {
 
         template<class ...Tys>
         constexpr auto check_arg(match_types::l<Tys...>& c) {
-            using fargs = kaixo::function_args_t<kaixo::minimal_signature_t<body_t>>;
+            using fargs = kaixo::function_info<body_t>::argument_types::template as<std::tuple>;
             using res_type = decltype(std::apply(body, std::declval<fargs>()));
             using result = match_result<res_type>;
 

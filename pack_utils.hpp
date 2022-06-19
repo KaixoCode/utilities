@@ -7,7 +7,6 @@
 
 namespace kaixo {
 
-    // Not found
     constexpr std::size_t npos = static_cast<std::size_t>(-1);
 
     template<class ...Args> struct pack;
@@ -599,11 +598,9 @@ namespace kaixo {
         template<auto Lambda> // Sort using templated lambda
         using sort = detail::sort_impl<Lambda, pack>;
 
-        //template<auto Lambda> // Iterate over each type in a templated Lambda
         constexpr static auto for_each = [](auto Lambda) {
             return Lambda.operator() < Args... > ();
         };
-        //using for_each = typename detail::for_each_impl<Lambda, Args...>::type;
     };
 
     // Pack utils for a pack of values
@@ -693,11 +690,10 @@ namespace kaixo {
         template<auto Lambda> // Sort using a Lambda
         using sort = detail::sort_impl<Lambda, pack>;
 
-        //template<auto Lambda> // Iterate over all values using a Lambda
+        // Iterate over all values using a Lambda
         constexpr static auto for_each = [](auto Lambda) {
-            return Lambda.operator() < Args... > ();
+            return Lambda.operator()<Args...>();
         };
-        //detail::for_each_impl<Lambda, value<Args>...>::type::get();
     };
 
     template<>
@@ -773,6 +769,9 @@ namespace kaixo {
 
         template<auto Lambda> // Sort using templated lambda
         using sort = kaixo::pack<>;
+
+        // Iterate over all values using a Lambda
+        constexpr static auto for_each = [](auto Lambda) { return Lambda(); };
     };
 
     namespace detail {
