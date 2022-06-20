@@ -43,6 +43,16 @@ namespace kaixo {
     template<class ...Args> struct pack;
     template<class ...Tys> struct pack_info;
 
+    namespace detail {
+        template<class, template<class...> class>
+        struct is_specialization : std::false_type {};
+        template<template<class...> class Ref, class... Args>
+        struct is_specialization<Ref<Args...>, Ref> : std::true_type {};
+    }
+    // is specialization of templated class
+    template<class Test, template<class...> class Ref>
+    concept specialization = detail::is_specialization<std::decay_t<Test>, Ref>::value;
+
     /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
      *                                                           *
      *                      String Literal                       *
@@ -240,6 +250,20 @@ namespace kaixo {
     using move_types = typename detail::move_types_impl<T, Ty>::type;
 
     namespace detail {
+
+        template<class ...Tys>
+        struct pack_or_as_pack_impl {
+            using type = pack<Tys...>;
+        };
+
+        template<class ...Tys>
+        struct pack_or_as_pack_impl<pack<Tys...>> {
+            using type = pack<Tys...>;
+        };
+
+        template<class ...Tys> // Either is a pack, or put in a pack
+        using pack_or_as_pack = typename pack_or_as_pack_impl<Tys...>::type;
+
         // Change type to Ty, used in fold expressions
         template<class, class Ty> using change = Ty;
 
@@ -335,6 +359,7 @@ namespace kaixo {
             ((count<Args, Tys...> > 0 ? _result[_match++] = _index++ : ++_index), ...);
             return _result;
         }
+
         template<class Ty, class ...Args>
         constexpr auto indices_all =
             indices_all_impl<Args...>(std::type_identity<Ty>{});
@@ -720,6 +745,16 @@ namespace kaixo {
         };
     }
 
+    namespace detail {
+        template<class...>struct concat_impl;
+        template<template<class...> class A, class ...As>
+        struct concat_impl<A<As...>> { using type = A<As...>; };
+        template<template<class...> class A, template<class...> class B, class ...As, class ...Bs, class ...Rest>
+        struct concat_impl<A<As...>, B<Bs...>, Rest...> { using type = typename concat_impl<B<As..., Bs...>, Rest...>::type; };
+    }
+
+    template<class Ty> concept is_pack = specialization<Ty, pack>;
+
     // Pack utils for a pack of types
     template<class ...Args>
     struct pack {
@@ -739,20 +774,20 @@ namespace kaixo {
         template<class Ty> // Check if Ty occurs in Args
         constexpr static bool occurs = detail::occurs<Ty, Args...>;
 
-        template<class ...Tys> // All indices of all Tys in Args
-        constexpr static auto indices = detail::indices_all<pack<Tys...>, Args...>;
+        template<class ...Pack> // All indices of all in Pack in Args
+        constexpr static auto indices = detail::indices_all<detail::pack_or_as_pack<Pack...>, Args...>;
 
-        template<class ...Tys> // All indices of all types in Args except those in Tys
-        constexpr static auto indices_except = detail::indices_except_all<pack<Tys...>, Args...>;
+        template<class ...Pack> // All indices of all types in Args except those in in Pack
+        constexpr static auto indices_except = detail::indices_except_all<detail::pack_or_as_pack<Pack...>, Args...>;
 
         template<auto Lambda> // All indices of all types that match the filter
         constexpr static auto indices_filter = detail::filter_indices<Lambda, Args...>;
 
-        template<class ...Tys> // Remove all Tys from Args
-        using remove = detail::remove_all<pack<Tys...>, pack>;
+        template<class ...Pack> // Remove all in Pack from Args
+        using remove = detail::remove_all<detail::pack_or_as_pack<Pack...>, pack>;
 
-        template<class ...Tys> // Only keep all Tys in Args
-        using keep = detail::keep_all<pack<Tys...>, pack>;
+        template<class ...Pack> // Only keep all in Pack in Args
+        using keep = detail::keep_all<detail::pack_or_as_pack<Pack...>, pack>;
 
         template<std::size_t I> // Get element at index I
         using element = detail::element<I, Args...>;
@@ -784,14 +819,14 @@ namespace kaixo {
         template<template<class...> class Ty>
         using as = kaixo::move_types<pack, Ty>;
 
-        template<class ...Tys> // Append the types Tys to Args
-        using append = pack<Args..., Tys...>;
+        template<class ...Pack> // Append the types in Pack to Args
+        using append = typename detail::concat_impl<pack, detail::pack_or_as_pack<Pack...>>::type;
 
-        template<class ...Tys> // Prepend the types Tys to Args
-        using prepend = pack<Tys..., Args...>;
+        template<class ...Pack> // Prepend the types in Pack to Args
+        using prepend = typename detail::concat_impl<detail::pack_or_as_pack<Pack...>, pack>::type;
 
-        template<std::size_t I, class ...Tys> // Insert the types Tys in Args at index I
-        using insert = detail::insert_all<I, pack<Tys...>, pack>;
+        template<std::size_t I, class ...Pack> // Insert the types Tys in Args at index I
+        using insert = detail::insert_all<I, detail::pack_or_as_pack<Pack...>, pack>;
 
         template<std::size_t ...Is> // Erase indices Is from Args
         using erase = detail::erase_all<pack, Is...>;
@@ -838,20 +873,20 @@ namespace kaixo {
         template<auto Ty> // Check if Ty occurs in Args
         constexpr static bool occurs = detail::occurs<value<Ty>, value<Args>...>;
 
-        template<auto ...Tys> // All indices of all Tys in Args
-        constexpr static auto indices = detail::indices_all<pack<value<Tys>...>, value<Args>...>;
+        template<class ...Pack> // All indices of all Tys in Args
+        constexpr static auto indices = detail::indices_all<detail::pack_or_as_pack<Pack...>, value<Args>...>;
 
-        template<auto ...Tys> // All indices of all values in Args except those in Tys
-        constexpr static auto indices_except = detail::indices_except_all<pack<value<Tys>...>, value<Args>...>;
+        template<class ...Pack> // All indices of all values in Args except those in Tys
+        constexpr static auto indices_except = detail::indices_except_all<detail::pack_or_as_pack<Pack...>, value<Args>...>;
 
         template<auto Lambda> // All indices of all types that match the filter
         constexpr static auto indices_filter = detail::filter_indices<Lambda, value<Args>...>;
 
-        template<auto ...Tys> // Remove all Tys from Args
-        using remove = detail::remove_all<pack<value<Tys>...>, pack>;
+        template<class ...Pack> // Remove all Tys from Args
+        using remove = detail::remove_all<detail::pack_or_as_pack<Pack...>, pack>;
 
-        template<auto ...Tys> // Only keep all Tys in Args
-        using keep = detail::keep_all<pack<value<Tys>...>, pack>;
+        template<class ...Pack> // Only keep all Tys in Args
+        using keep = detail::keep_all<detail::pack_or_as_pack<Pack...>, pack>;
 
         template<std::size_t I> // Get element at index I
         constexpr static auto element = detail::element<I, value<Args>...>::get();
@@ -883,14 +918,14 @@ namespace kaixo {
         template<template<class...> class Ty>
         using as = kaixo::move_types<pack, Ty>;
 
-        template<auto ...Tys> // Append the values Tys to Args
-        using append = pack<value<Args>..., value<Tys>...>;
+        template<class ...Pack> // Append the types Tys to Args
+        using append = typename detail::concat_impl<pack, detail::pack_or_as_pack<Pack...>>::type;
 
-        template<auto ...Tys> // Prepend the values Tys to Args
-        using prepend = pack<value<Tys>..., value<Args>...>;
+        template<class ...Pack> // Prepend the types Tys to Args
+        using prepend = typename detail::concat_impl<detail::pack_or_as_pack<Pack...>, pack>::type;
 
-        template<std::size_t I, auto ...Tys> // Insert the values Tys in Args at index I
-        using insert = detail::insert_all<I, pack<value<Tys>...>, pack>;
+        template<std::size_t I, class ...Pack> // Insert the types Tys in Args at index I
+        using insert = detail::insert_all<I, detail::pack_or_as_pack<Pack...>, pack>;
 
         template<std::size_t ...Is> // Erase indices Is from Args
         using erase = detail::erase_all<pack, Is...>;
@@ -936,19 +971,19 @@ namespace kaixo {
         template<class Ty> // Check if Ty occurs in Args
         constexpr static bool occurs = false;
 
-        template<class ...Tys> // All indices of all Tys in Args
+        template<class ...Pack> // All indices of all Tys in Args
         constexpr static auto indices = std::array<std::size_t, 0>{};
 
-        template<class ...Tys> // All indices of all types in Args except those in Tys
+        template<class ...Pack> // All indices of all types in Args except those in Tys
         constexpr static auto indices_except = std::array<std::size_t, 0>{};
 
         template<auto Lambda> // All indices of all types that match the filter
         constexpr static auto indices_filter = std::array<std::size_t, 0>{};
 
-        template<class ...Tys> // Remove all Tys from Args
+        template<class ...Pack> // Remove all Tys from Args
         using remove = kaixo::pack<>;
 
-        template<class ...Tys> // Only keep all Tys in Args
+        template<class ...Pack> // Only keep all Tys in Args
         using keep = kaixo::pack<>;
 
         template<std::size_t I> // Get element at index I
@@ -969,14 +1004,14 @@ namespace kaixo {
         template<template<class...> class Ty>
         using as = kaixo::move_types<pack, Ty>;
 
-        template<class ...Tys> // Append the types Tys to Args
-        using append = pack<Tys...>;
+        template<class ...Pack> // Append the types Tys to Args
+        using append = detail::pack_or_as_pack<Pack...>;
 
-        template<class ...Tys> // Prepend the types Tys to Args
-        using prepend = pack<Tys...>;
+        template<class ...Pack> // Prepend the types Tys to Args
+        using prepend = detail::pack_or_as_pack<Pack...>;
 
-        template<std::size_t I, class ...Tys> // Insert the types Tys in Args at index I
-        using insert = pack<Tys...>;
+        template<std::size_t I, class ...Pack> // Insert the types Tys in Args at index I
+        using insert = detail::pack_or_as_pack<Pack...>;
 
         template<std::size_t ...Is> // Erase indices Is from Args
         using erase = detail::erase_all<pack, Is...>;
@@ -1001,6 +1036,11 @@ namespace kaixo {
         constexpr static auto for_each = [](auto Lambda) { return Lambda(); };
     };
 
+    // Concat template arguments of templated types Args...
+    // requires all templated types to be the same
+    template<class ...Args>
+    using concat = typename detail::concat_impl<Args...>::type;
+
     namespace detail {
         template<class> struct as_pack_impl;
         template<template<class ...> class Ty, class ...Args>
@@ -1024,18 +1064,8 @@ namespace kaixo {
         }(std::make_index_sequence<Array.size()>{});
     };
 
-    namespace detail {
-        template<class...>struct concat_impl;
-        template<template<class...> class A, class ...As>
-        struct concat_impl<A<As...>> { using type = A<As...>; };
-        template<template<class...> class A, class ...As, class ...Bs, class ...Rest>
-        struct concat_impl<A<As...>, A<Bs...>, Rest...> { using type = typename concat_impl<A<As..., Bs...>, Rest...>::type; };
-    }
-
-    // Concat template arguments of templated types Args...
-    // requires all templated types to be the same
-    template<class ...Args> 
-    using concat = typename detail::concat_impl<Args...>::type;
+    template<auto Array>
+    using array_to_pack = decltype(iterate<Array>([]<auto ...Is>{ return to_pack<Is...>{}; }));
 
     /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
      *                                                           *
@@ -1073,14 +1103,11 @@ KAIXO_MEMBER_CALL_NOEXCEPT(MAC, noexcept)
 #define KAIXO_MEMBER_FUNCTION_INFO_MOD(CONST, VOLATILE, REF, NOEXCEPT)                  \
 template<class Ty, class R, class ...Args>                                              \
 struct function_info_impl<R(Ty::*)(Args...) CONST VOLATILE REF NOEXCEPT> {              \
-    using pointer = R(*)(Args...) NOEXCEPT;                                             \
-    using minimal_pointer = R(*)(Args...);                                              \
-    using signature = R(Args...) CONST VOLATILE REF NOEXCEPT;                           \
-    using minimal_signature = R(Args...);                                               \
-    using object = CONST VOLATILE Ty REF;                                               \
-    using minimal_object = Ty;                                                          \
-    using return_type = R;                                                              \
-    using argument_types = pack_info<Args...>;                                          \
+    using pointer = info<R(*)(Args...) NOEXCEPT>;                                       \
+    using signature = info<R(Args...) CONST VOLATILE REF NOEXCEPT>;                     \
+    using object = info<CONST VOLATILE Ty REF>;                                         \
+    using result = info<R>;                                                             \
+    using arguments = pack_info<Args...>;                                               \
     constexpr static bool is_const = std::same_as<const int, CONST int>;                \
     constexpr static bool is_mutable = !is_const;                                       \
     constexpr static bool is_volatile = std::same_as<volatile int, VOLATILE int>;       \
@@ -1096,14 +1123,11 @@ KAIXO_MEMBER_CALL(KAIXO_MEMBER_FUNCTION_INFO_MOD)
 #define KAIXO_FUNCTION_INFO_MOD(PTR, CONST, VOLATILE, REF, NOEXCEPT)                    \
 template<class R, class ...Args>                                                        \
 struct function_info_impl<R PTR (Args...) CONST VOLATILE REF NOEXCEPT> {                \
-    using pointer = R(*)(Args...) NOEXCEPT;                                             \
-    using minimal_pointer = R(*)(Args...);                                              \
-    using signature = R(Args...) CONST VOLATILE REF NOEXCEPT;                           \
-    using minimal_signature = R(Args...);                                               \
-    using object = CONST VOLATILE dud REF;                                              \
-    using minimal_object = dud;                                                         \
-    using return_type = R;                                                              \
-    using argument_types = pack_info<Args...>;                                          \
+    using pointer = info<R(*)(Args...) NOEXCEPT>;                                       \
+    using signature = info<R(Args...) CONST VOLATILE REF NOEXCEPT>;                     \
+    using object = info<CONST VOLATILE dud REF>;                                        \
+    using result = info<R>;                                                             \
+    using arguments = pack_info<Args...>;                                               \
     constexpr static bool is_const = std::same_as<const int, CONST int>;                \
     constexpr static bool is_mutable = !is_const;                                       \
     constexpr static bool is_volatile = std::same_as<volatile int, VOLATILE int>;       \
@@ -1123,7 +1147,7 @@ KAIXO_FUNCTION_INFO_MOD((*), , , , noexcept)
 
     template<class Ty> using function_info = function_info_impl<std::remove_cv_t<std::remove_reference_t<Ty>>>;
     template<auto Ty> using function_info_v = function_info_impl<std::remove_cv_t<std::remove_reference_t<decltype(Ty)>>>;
-    template<class Ty> concept callable_type = requires() { typename kaixo::function_info<Ty>::return_type; };
+    template<class Ty> concept callable_type = requires() { typename kaixo::function_info<Ty>::result; };
 
     /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
      *                                                           *
@@ -1205,15 +1229,90 @@ KAIXO_FUNCTION_INFO_MOD((*), , , , noexcept)
         template<class Ty> concept nothrow_swappable = std::is_nothrow_swappable_v<Ty>;
     }
 
+    namespace detail {
+        template<class From, class To>
+        struct add_c_impl {
+            using _unref = info<From>::remove_reference;
+            using _to = info<To>;
+            using _const = std::conditional_t<_unref::is_const, typename _to::add_const, _to>;
+            using type = _const::type;
+        };
+
+        template<class From, class To>
+        struct add_v_impl {
+            using _unref = info<From>::remove_reference;
+            using _to = info<To>;
+            using _volatile = std::conditional_t<_unref::is_volatile, typename _to::add_volatile, _to>;
+            using type = _volatile::type;
+        };
+
+        template<class From, class To>
+        struct add_cv_impl {
+            using type = add_v_impl<From, typename add_c_impl<From, To>::type>::type;
+        };
+
+        template<class From, class To>
+        using copy_c_impl = add_c_impl<From, std::decay_t<To>>;
+        template<class From, class To>
+        using copy_v_impl = add_v_impl<From, std::decay_t<To>>;
+        template<class From, class To>
+        using copy_cv_impl = add_cv_impl<From, std::decay_t<To>>;
+
+        template<class From, class To>
+        struct add_ref_impl {
+            using _info = info<From>;
+            using _to = info<To>;
+            using _lvalue = std::conditional_t<_info::is_lvalue_reference, typename _to::add_lvalue_reference, _to>;
+            using _rvalue = std::conditional_t<_info::is_rvalue_reference, typename _lvalue::add_rvalue_reference, _lvalue>;
+            using type = _rvalue::type;
+        };
+
+        template<class From, class To>
+        using copy_ref_impl = add_ref_impl<From, std::decay_t<To>>;
+
+        template<class From, class To>
+        struct add_cvref_impl {
+            using _cv = info<typename add_cv_impl<From, To>::type>;
+            using _info = info<From>;
+            using _lvalue = std::conditional_t<_info::is_lvalue_reference, typename _cv::add_lvalue_reference, _cv>;
+            using _rvalue = std::conditional_t<_info::is_rvalue_reference, typename _lvalue::add_rvalue_reference, _lvalue>;
+            using type = _rvalue::type;
+        };
+
+        template<class From, class To>
+        using copy_cvref_impl = add_cvref_impl<From, std::decay_t<To>>;
+    }
+
+    template<class From, class To>
+    using copy_c = typename detail::copy_c_impl<From, To>::type;
+    template<class From, class To>
+    using copy_v = typename detail::copy_v_impl<From, To>::type;
+    template<class From, class To>
+    using copy_cv = typename detail::copy_cv_impl<From, To>::type;
+    template<class From, class To>
+    using copy_ref = typename detail::copy_ref_impl<From, To>::type;
+    template<class From, class To>
+    using copy_cvref = typename detail::copy_cvref_impl<From, To>::type;
+    template<class From, class To>
+    using add_c = typename detail::add_c_impl<From, To>::type;
+    template<class From, class To>
+    using add_v = typename detail::add_v_impl<From, To>::type;
+    template<class From, class To>
+    using add_cv = typename detail::add_cv_impl<From, To>::type;
+    template<class From, class To>
+    using add_ref = typename detail::add_ref_impl<From, To>::type;
+    template<class From, class To>
+    using add_cvref = typename detail::add_cvref_impl<From, To>::type;
+
     template<class Ty> struct info_base {
-        constexpr static bool is_void_type = type_concepts::void_type<Ty>;
+        constexpr static bool is_void = type_concepts::void_type<Ty>;
         constexpr static bool is_null_pointer = type_concepts::null_pointer<Ty>;
         constexpr static bool is_integral = type_concepts::integral<Ty>;
         constexpr static bool is_floating_point = type_concepts::floating_point<Ty>;
         constexpr static bool is_array = type_concepts::array<Ty>;
-        constexpr static bool is_enum_type = type_concepts::enum_type<Ty>;
-        constexpr static bool is_union_type = type_concepts::union_type<Ty>;
-        constexpr static bool is_class_type = type_concepts::class_type<Ty>;
+        constexpr static bool is_enum = type_concepts::enum_type<Ty>;
+        constexpr static bool is_union = type_concepts::union_type<Ty>;
+        constexpr static bool is_class = type_concepts::class_type<Ty>;
         constexpr static bool is_function = type_concepts::function<Ty>;
         constexpr static bool is_pointer = type_concepts::pointer<Ty>;
         constexpr static bool is_lvalue_reference = type_concepts::lvalue_reference<Ty>;
@@ -1227,8 +1326,8 @@ KAIXO_FUNCTION_INFO_MOD((*), , , , noexcept)
         constexpr static bool is_compound = type_concepts::compound<Ty>;
         constexpr static bool is_reference = type_concepts::reference<Ty>;
         constexpr static bool is_member_pointer = type_concepts::member_pointer<Ty>;
-        constexpr static bool is_const_type = type_concepts::const_type<Ty>;
-        constexpr static bool is_volatile_type = type_concepts::volatile_type<Ty>;
+        constexpr static bool is_const = type_concepts::const_type<Ty>;
+        constexpr static bool is_volatile = type_concepts::volatile_type<Ty>;
         constexpr static bool is_trivial = type_concepts::trivial<Ty>;
         constexpr static bool is_trivially_copyable = type_concepts::trivially_copyable<Ty>;
         constexpr static bool is_standard_layout = type_concepts::standard_layout<Ty>;
@@ -1282,6 +1381,48 @@ KAIXO_FUNCTION_INFO_MOD((*), , , , noexcept)
 
         constexpr static std::size_t bytes = sizeof(Ty);
         constexpr static std::size_t alignment = std::alignment_of_v<Ty>;
+
+        template<class To>
+        using copy_c_to = info<kaixo::copy_c<Ty, To>>;
+        template<class To>
+        using copy_v_to = info<kaixo::copy_v<Ty, To>>;
+        template<class To>
+        using copy_cv_to = info<kaixo::copy_cv<Ty, To>>;
+        template<class To>
+        using copy_ref_to = info<kaixo::copy_ref<Ty, To>>;
+        template<class To>
+        using copy_cvref_to = info<kaixo::copy_cvref<Ty, To>>;
+        template<class To>
+        using add_c_to = info<kaixo::add_c<Ty, To>>;
+        template<class To>
+        using add_v_to = info<kaixo::add_v<Ty, To>>;
+        template<class To>
+        using add_cv_to = info<kaixo::add_cv<Ty, To>>;
+        template<class To>
+        using add_ref_to = info<kaixo::add_ref<Ty, To>>;
+        template<class To>
+        using add_cvref_to = info<kaixo::add_cvref<Ty, To>>;
+
+        template<class From>
+        using copy_c_from = info<kaixo::copy_c<From, Ty>>;
+        template<class From>
+        using copy_v_from = info<kaixo::copy_v<From, Ty>>;
+        template<class From>
+        using copy_cv_from = info<kaixo::copy_cv<From, Ty>>;
+        template<class From>
+        using copy_ref_from = info<kaixo::copy_ref<From, Ty>>;
+        template<class From>
+        using copy_cvref_from = info<kaixo::copy_cvref<From, Ty>>;
+        template<class From>
+        using add_c_from = info<kaixo::add_c<From, Ty>>;
+        template<class From>
+        using add_v_from = info<kaixo::add_v<From, Ty>>;
+        template<class From>
+        using add_cv_from = info<kaixo::add_cv<From, Ty>>;
+        template<class From>
+        using add_ref_from = info<kaixo::add_ref<From, Ty>>;
+        template<class From>
+        using add_cvref_from = info<kaixo::add_cvref<From, Ty>>;
 
         using decay = info<std::decay_t<Ty>>;
         using remove_cv = info<std::remove_cv_t<Ty>>;
@@ -1376,24 +1517,53 @@ KAIXO_FUNCTION_INFO_MOD((*), , , , noexcept)
         constexpr static std::size_t bytes = (sizeof(Tys) + ...);
         constexpr static std::size_t alignment = std::max({ alignof(Tys)... });
 
-        using decay = info<pack<std::decay_t<Tys>...>>;
-        using remove_cv = info<pack<std::remove_cv_t<Tys>...>>;
-        using remove_const = info<pack<std::remove_const_t<Tys>...>>;
-        using remove_volatile = info<pack<std::remove_volatile_t<Tys>...>>;
-        using add_cv = info<pack<std::add_cv_t<Tys>...>>;
-        using add_const = info<pack<std::add_const_t<Tys>...>>;
-        using add_volatile = info<pack<std::add_volatile_t<Tys>...>>;
-        using remove_reference = info<pack<std::remove_reference_t<Tys>...>>;
-        using remove_cvref = info<pack<std::remove_cvref_t<Tys>...>>;
-        using add_lvalue_reference = info<pack<std::add_lvalue_reference_t<Tys>...>>;
-        using add_rvalue_reference = info<pack<std::add_rvalue_reference_t<Tys>...>>;
-        using remove_pointer = info<pack<std::remove_pointer_t<Tys>...>>;
-        using add_pointer = info<pack<std::add_pointer_t<Tys>...>>;
-        using type = pack<Tys...>;
+        template<class From>
+        using copy_c_from = info<kaixo::pack<kaixo::copy_c<From, Tys>...>>;
+        template<class From>
+        using copy_v_from = info<kaixo::pack<kaixo::copy_v<From, Tys>...>>;
+        template<class From>
+        using copy_cv_from = info<kaixo::pack<kaixo::copy_cv<From, Tys>...>>;
+        template<class From>
+        using copy_ref_from = info<kaixo::pack<kaixo::copy_ref<From, Tys>...>>;
+        template<class From>
+        using copy_cvref_from = info<kaixo::pack<kaixo::copy_cvref<From, Tys>...>>;
+        template<class From>
+        using add_c_from = info<kaixo::pack<kaixo::add_c<From, Tys>...>>;
+        template<class From>
+        using add_v_from = info<kaixo::pack<kaixo::add_v<From, Tys>...>>;
+        template<class From>
+        using add_cv_from = info<kaixo::pack<kaixo::add_cv<From, Tys>...>>;
+        template<class From>
+        using add_ref_from = info<kaixo::pack<kaixo::add_ref<From, Tys>...>>;
+        template<class From>
+        using add_cvref_from = info<kaixo::pack<kaixo::add_cvref<From, Tys>...>>;
+
+        using decay = info<kaixo::pack<std::decay_t<Tys>...>>;
+        using remove_cv = info<kaixo::pack<std::remove_cv_t<Tys>...>>;
+        using remove_const = info<kaixo::pack<std::remove_const_t<Tys>...>>;
+        using remove_volatile = info<kaixo::pack<std::remove_volatile_t<Tys>...>>;
+        using add_cv = info<kaixo::pack<std::add_cv_t<Tys>...>>;
+        using add_const = info<kaixo::pack<std::add_const_t<Tys>...>>;
+        using add_volatile = info<kaixo::pack<std::add_volatile_t<Tys>...>>;
+        using remove_reference = info<kaixo::pack<std::remove_reference_t<Tys>...>>;
+        using remove_cvref = info<kaixo::pack<std::remove_cvref_t<Tys>...>>;
+        using add_lvalue_reference = info<kaixo::pack<std::add_lvalue_reference_t<Tys>...>>;
+        using add_rvalue_reference = info<kaixo::pack<std::add_rvalue_reference_t<Tys>...>>;
+        using remove_pointer = info<kaixo::pack<std::remove_pointer_t<Tys>...>>;
+        using add_pointer = info<kaixo::pack<std::add_pointer_t<Tys>...>>;
+        using type = kaixo::pack<Tys...>;
     };
 
     template<callable_type Ty>
     struct info<Ty> : info_base<Ty>, function_info<Ty> {
+        using function_info<Ty>::is_const;
+        using function_info<Ty>::is_mutable;
+        using function_info<Ty>::is_volatile;
+        using function_info<Ty>::is_lvalue;
+        using function_info<Ty>::is_rvalue;
+        using function_info<Ty>::is_reference;
+        using function_info<Ty>::is_noexcept;
+
         using type = Ty;
     };
 
@@ -1412,6 +1582,13 @@ KAIXO_FUNCTION_INFO_MOD((*), , , , noexcept)
         using type = Ty;
 
         using underlying = std::underlying_type_t<Ty>;
+    };
+    
+    template<class Ty, class Obj>
+        requires type_concepts::member_object_pointer<Ty Obj::*>
+    struct info<Ty Obj::*> : info_base<Ty> {
+        using type = Ty;
+
     };
 
     template<class Ty>
