@@ -4,11 +4,17 @@
 #include <cstddef>
 #include <array>
 #include <utility>
+#include <string_view>
+#include <algorithm>
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
  *                                                           *
  *                       Kaixo Utils                         *
  *                                                           *
+ * String Literal                                            *
+ *   template compatible wrapper for a string literal.       *
+ *   acts like a proper string, with iterator, index         *
+ *   operator, even types like value_type etc.               *
  * Pack Utils:                                               *
  *   defines a pack<Args...> to help deal with template      *
  *   packs adds stuff like element<I>, specialization for    *
@@ -35,6 +41,173 @@ namespace kaixo {
     template<class Ty> struct info_base;
     template<class Ty> struct info : info_base<Ty> {};
     template<class ...Args> struct pack;
+    template<class ...Tys> struct pack_info;
+
+    /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+     *                                                           *
+     *                      String Literal                       *
+     *                                                           *
+     *           Basically a string_view for constexpr           *
+     *         strings, can be used as template argument         *
+     *                                                           *
+     * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+    template<std::size_t N, class CharType = char>
+    struct string_literal {
+        constexpr static std::size_t npos = std::basic_string_view<CharType>::npos;
+
+        using view_type = std::basic_string_view<CharType>;
+        using size_type = std::size_t;
+        using difference_type = std::ptrdiff_t;
+        using value_type = CharType;
+        using reference = CharType&;
+        using const_reference = const CharType&;
+        using pointer = CharType*;
+        using const_pointer = const CharType*;
+
+        class const_iterator {
+        public:
+            using iterator_category = std::random_access_iterator_tag;
+            using size_type = std::size_t;
+            using difference_type = std::ptrdiff_t;
+            using value_type = const CharType;
+            using reference = const CharType&;
+
+            constexpr const_iterator(const const_iterator&) = default;
+            constexpr const_iterator(const_iterator&&) = default;
+            constexpr const_iterator& operator=(const const_iterator&) = default;
+            constexpr const_iterator& operator=(const_iterator&&) = default;
+            constexpr const_iterator() : m_Ptr(nullptr) {}
+            constexpr const_iterator(const CharType* ptr) : m_Ptr(ptr) {}
+
+            constexpr reference operator*() const { return *m_Ptr; }
+            constexpr const_iterator& operator+=(difference_type d) { m_Ptr += d; return *this; }
+            constexpr const_iterator& operator-=(difference_type d) { m_Ptr -= d; return *this; }
+            constexpr const_iterator& operator++() { ++m_Ptr; return *this; }
+            constexpr const_iterator& operator--() { --m_Ptr; return *this; }
+            constexpr const_iterator operator++(int) { auto _c = *this; ++m_Ptr; return _c; }
+            constexpr const_iterator operator--(int) { auto _c = *this; --m_Ptr; return _c; }
+
+            constexpr reference operator[](difference_type d) const { return m_Ptr[d]; }
+
+            constexpr auto operator<=>(const const_iterator& other) const = default;
+
+            friend constexpr const_iterator operator+(difference_type a, const const_iterator& b) { return { a + b.m_Ptr }; }
+            friend constexpr const_iterator operator+(const const_iterator& a, difference_type b) { return { a.m_Ptr + b }; }
+            friend constexpr const_iterator operator-(difference_type a, const const_iterator& b) { return { a - b.m_Ptr }; }
+            friend constexpr const_iterator operator-(const const_iterator& a, difference_type b) { return { a.m_Ptr - b }; }
+            friend constexpr difference_type operator-(const const_iterator& a, const const_iterator& b) { return a.m_Ptr - b.m_Ptr; }
+        protected:
+            const CharType* m_Ptr;
+        };
+
+        class iterator : public const_iterator {
+        public:
+            using iterator_category = std::random_access_iterator_tag;
+            using size_type = std::size_t;
+            using difference_type = std::ptrdiff_t;
+            using value_type = CharType;
+            using reference = CharType&;
+
+            constexpr iterator(const iterator&) = default;
+            constexpr iterator(iterator&&) = default;
+            constexpr iterator& operator=(const iterator&) = default;
+            constexpr iterator& operator=(iterator&&) = default;
+            constexpr iterator() : const_iterator(nullptr) {}
+            constexpr iterator(CharType* ptr) : const_iterator(ptr) {}
+
+            constexpr reference operator*() const { return *const_cast<CharType*>(this->m_Ptr); }
+            constexpr iterator& operator+=(difference_type d) { this->m_Ptr += d; return *this; }
+            constexpr iterator& operator-=(difference_type d) { this->m_Ptr -= d; return *this; }
+            constexpr iterator& operator++() { ++this->m_Ptr; return *this; }
+            constexpr iterator& operator--() { --this->m_Ptr; return *this; }
+            constexpr iterator operator++(int) { auto _c = *this; ++this->m_Ptr; return _c; }
+            constexpr iterator operator--(int) { auto _c = *this; --this->m_Ptr; return _c; }
+
+            constexpr reference operator[](difference_type d) const { return const_cast<CharType*>(this->m_Ptr)[d]; }
+
+            constexpr auto operator<=>(const iterator& other) const = default;
+
+            friend constexpr iterator operator+(difference_type a, const iterator& b) { return { a + b.m_Ptr }; }
+            friend constexpr iterator operator+(const iterator& a, difference_type b) { return { a.m_Ptr + b }; }
+            friend constexpr iterator operator-(difference_type a, const iterator& b) { return { a - b.m_Ptr }; }
+            friend constexpr iterator operator-(const iterator& a, difference_type b) { return { a.m_Ptr - b }; }
+            friend constexpr difference_type operator-(const iterator& a, const iterator& b) { return a.m_Ptr - b.m_Ptr; }
+        };
+
+        using reverse_iterator = std::reverse_iterator<iterator>;
+        using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+
+        constexpr ~string_literal() = default;
+        constexpr string_literal() = default;
+        constexpr string_literal(const CharType(&data)[N]) {
+            std::copy_n(data, N, m_Data);
+        }
+
+        constexpr string_literal(string_literal&&) = default;
+        constexpr string_literal(const string_literal&) = default;
+        constexpr string_literal& operator=(string_literal&&) = default;
+        constexpr string_literal& operator=(const string_literal&) = default;
+
+        template<std::size_t I> requires (I < N)
+            constexpr string_literal& operator=(const CharType(&data)[I]) {
+            std::copy_n(data, I, m_Data);
+        }
+
+        constexpr iterator begin() { return { m_Data }; }
+        constexpr iterator end() { return { m_Data + size() }; }
+        constexpr const_iterator begin() const { return { m_Data }; }
+        constexpr const_iterator end() const { return { m_Data + size() }; }
+        constexpr const_iterator cbegin() const { return begin(); }
+        constexpr const_iterator cend() const { return end(); }
+        constexpr reverse_iterator rbegin() { return end(); }
+        constexpr reverse_iterator rend() { return begin(); }
+        constexpr const_reverse_iterator rbegin() const { return end(); }
+        constexpr const_reverse_iterator rend() const { return begin(); }
+        constexpr const_reverse_iterator crbegin() const { return end(); }
+        constexpr const_reverse_iterator crend() const { return begin(); }
+
+        constexpr reference at(size_type d) { return m_Data[d]; }
+        constexpr const_reference at(size_type d) const { return m_Data[d]; }
+        constexpr reference operator[](size_type d) { return m_Data[d]; }
+        constexpr const_reference operator[](size_type d) const { return m_Data[d]; }
+        constexpr reference front() { return m_Data[0]; }
+        constexpr const_reference front() const { return m_Data[0]; }
+        constexpr reference back() { return m_Data[size() - 1]; }
+        constexpr const_reference back() const { return m_Data[size() - 1]; }
+
+        constexpr pointer data() { return m_Data; }
+        constexpr const_pointer data() const { return m_Data; }
+        constexpr const_pointer c_str() const { return m_Data; }
+        constexpr size_type size() const { return N - 1; }
+        constexpr size_type length() const { return size(); }
+        constexpr size_type max_size() const { return size(); }
+        constexpr bool empty() const { return false; }
+        constexpr void swap(string_literal& other) { std::swap(data(), other.data()); }
+
+        constexpr view_type view() const { return { data(), size() }; }
+        constexpr operator view_type() const { return { data(), size() }; }
+
+        template<std::size_t I>
+        constexpr auto operator==(const string_literal<I, CharType>& other) const {
+            if constexpr (I != N) return false;
+            else return view() == other.view();
+        };
+        template<std::size_t I>
+        constexpr auto operator<=>(const string_literal<I, CharType>& other) const { return view() <=> other.view(); }
+
+        constexpr auto starts_with(view_type t) const { return view().starts_with(t); }
+        constexpr auto ends_with(view_type t) const { return view().ends_with(t); }
+        constexpr auto substr(size_type pos = 0, size_type count = npos) const { return view().substr(pos, count); }
+        constexpr auto find(std::string_view t, size_type pos = 0) const { return view().find(t, pos); }
+        constexpr auto rfind(view_type t, size_type pos = 0) const { return view().rfind(t, pos); }
+        constexpr auto find_first_of(view_type t, size_type pos = 0) const { return view().find_first_of(t, pos); }
+        constexpr auto find_first_not_of(view_type t, size_type pos = 0) const { return view().find_first_not_of(t, pos); }
+        constexpr auto find_last_of(view_type t, size_type pos = 0) const { return view().find_last_of(t, pos); }
+        constexpr auto find_last_not_of(view_type t, size_type pos = 0) const { return view().find_last_not_of(t, pos); }
+
+        CharType m_Data[N]{};
+    };
 
     /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
      *                                                           *
@@ -585,7 +758,9 @@ namespace kaixo {
         using element = detail::element<I, Args...>;
         
         template<std::size_t I> // Get info of type at index I
-        using info = info<detail::element<I, Args...>>;
+        using info = kaixo::info<detail::element<I, Args...>>;
+
+        using pack_info = kaixo::info<pack>;
 
         template<std::size_t N> // Get first N elements in Args
         using take = detail::take<N, pack>;
@@ -682,7 +857,9 @@ namespace kaixo {
         constexpr static auto element = detail::element<I, value<Args>...>::get();
 
         template<std::size_t I> // Info of type of value at index I
-        using info = info<decltype(element<I>)>;
+        using info = kaixo::info<decltype(element<I>)>;
+
+        using pack_info = kaixo::info<pack<decltype(Args)...>>;
 
         template<std::size_t N> // Get first N elements in Args
         using take = detail::take<N, pack>;
@@ -778,7 +955,9 @@ namespace kaixo {
         using element = detail::element<I>;
         
         template<std::size_t I> // Get element at index I
-        using info = info<detail::element<I>>;
+        using info = kaixo::info<detail::element<I>>;
+
+        using pack_info = kaixo::info<pack<>>;
 
         template<std::size_t N> // Get first N elements in Args
         using take = detail::take<N, pack>;
@@ -901,7 +1080,7 @@ struct function_info_impl<R(Ty::*)(Args...) CONST VOLATILE REF NOEXCEPT> {      
     using object = CONST VOLATILE Ty REF;                                               \
     using minimal_object = Ty;                                                          \
     using return_type = R;                                                              \
-    using argument_types = kaixo::pack<Args...>;                                        \
+    using argument_types = pack_info<Args...>;                                          \
     constexpr static bool is_const = std::same_as<const int, CONST int>;                \
     constexpr static bool is_mutable = !is_const;                                       \
     constexpr static bool is_volatile = std::same_as<volatile int, VOLATILE int>;       \
@@ -924,7 +1103,7 @@ struct function_info_impl<R PTR (Args...) CONST VOLATILE REF NOEXCEPT> {        
     using object = CONST VOLATILE dud REF;                                              \
     using minimal_object = dud;                                                         \
     using return_type = R;                                                              \
-    using argument_types = kaixo::pack<Args...>;                                        \
+    using argument_types = pack_info<Args...>;                                          \
     constexpr static bool is_const = std::same_as<const int, CONST int>;                \
     constexpr static bool is_mutable = !is_const;                                       \
     constexpr static bool is_volatile = std::same_as<volatile int, VOLATILE int>;       \
@@ -1101,7 +1280,7 @@ KAIXO_FUNCTION_INFO_MOD((*), , , , noexcept)
         template<class ...Args> constexpr static bool invocable = std::invocable<Ty, Args...>;
         template<class ...Args> constexpr static bool nothrow_invocable = std::is_nothrow_invocable_v<Ty, Args...>;
 
-        constexpr static std::size_t size = sizeof(Ty);
+        constexpr static std::size_t bytes = sizeof(Ty);
         constexpr static std::size_t alignment = std::alignment_of_v<Ty>;
 
         using decay = info<std::decay_t<Ty>>;
@@ -1118,6 +1297,99 @@ KAIXO_FUNCTION_INFO_MOD((*), , , , noexcept)
         using remove_pointer = info<std::remove_pointer_t<Ty>>;
         using add_pointer = info<std::add_pointer_t<Ty>>;
         using type = Ty;
+    };
+
+    template<class ...Tys> struct info_base<pack<Tys...>> : pack<Tys...> {
+        constexpr static bool is_null_pointer = (type_concepts::null_pointer<Tys> && ...);
+        constexpr static bool is_integral = (type_concepts::integral<Tys> && ...);
+        constexpr static bool is_floating_point = (type_concepts::floating_point<Tys> && ...);
+        constexpr static bool is_array = (type_concepts::array<Tys> && ...);
+        constexpr static bool is_enum_type = (type_concepts::enum_type<Tys> && ...);
+        constexpr static bool is_union_type = (type_concepts::union_type<Tys> && ...);
+        constexpr static bool is_class_type = (type_concepts::class_type<Tys> && ...);
+        constexpr static bool is_function = (type_concepts::function<Tys> && ...);
+        constexpr static bool is_pointer = (type_concepts::pointer<Tys> && ...);
+        constexpr static bool is_lvalue_reference = (type_concepts::lvalue_reference<Tys> && ...);
+        constexpr static bool is_rvalue_reference = (type_concepts::rvalue_reference<Tys> && ...);
+        constexpr static bool is_member_object_pointer = (type_concepts::member_object_pointer<Tys> && ...);
+        constexpr static bool is_member_function_pointer = (type_concepts::member_function_pointer<Tys> && ...);
+        constexpr static bool is_fundamental = (type_concepts::fundamental<Tys> && ...);
+        constexpr static bool is_arithmetic = (type_concepts::arithmetic<Tys> && ...);
+        constexpr static bool is_scalar = (type_concepts::scalar<Tys> && ...);
+        constexpr static bool is_object = (type_concepts::object<Tys> && ...);
+        constexpr static bool is_compound = (type_concepts::compound<Tys> && ...);
+        constexpr static bool is_reference = (type_concepts::reference<Tys> && ...);
+        constexpr static bool is_member_pointer = (type_concepts::member_pointer<Tys> && ...);
+        constexpr static bool is_const_type = (type_concepts::const_type<Tys> && ...);
+        constexpr static bool is_volatile_type = (type_concepts::volatile_type<Tys> && ...);
+        constexpr static bool is_trivial = (type_concepts::trivial<Tys> && ...);
+        constexpr static bool is_trivially_copyable = (type_concepts::trivially_copyable<Tys> && ...);
+        constexpr static bool is_standard_layout = (type_concepts::standard_layout<Tys> && ...);
+        constexpr static bool is_pod = (type_concepts::pod<Tys> && ...);
+        constexpr static bool has_unique_object_representations = (type_concepts::unique_object_representations<Tys> && ...);
+        constexpr static bool is_empty = (type_concepts::empty<Tys> && ...);
+        constexpr static bool is_polymorphic = (type_concepts::polymorphic<Tys> && ...);
+        constexpr static bool is_abstract = (type_concepts::abstract<Tys> && ...);
+        constexpr static bool is_final = (type_concepts::final<Tys> && ...);
+        constexpr static bool is_aggregate = (type_concepts::aggregate<Tys> && ...);
+        constexpr static bool is_signed_integral = (type_concepts::signed_integral<Tys> && ...);
+        constexpr static bool is_unsigned_integral = (type_concepts::unsigned_integral<Tys> && ...);
+        constexpr static bool is_bounded_array = (type_concepts::bounded_array<Tys> && ...);
+        constexpr static bool is_unbounded_array = (type_concepts::unbounded_array<Tys> && ...);
+        template<class ...Args> constexpr static bool is_constructible = (type_concepts::constructible<Tys, Args...> && ...);
+        template<class ...Args> constexpr static bool is_trivially_constructible = (type_concepts::trivially_constructible<Tys, Args...> && ...);
+        template<class ...Args> constexpr static bool is_nothrow_constructible = (type_concepts::nothrow_constructible<Tys, Args...> && ...);
+        constexpr static bool is_default_constructible = (type_concepts::default_constructible<Tys> && ...);
+        constexpr static bool is_trivially_default_constructible = (type_concepts::trivially_default_constructible<Tys> && ...);
+        constexpr static bool is_nothrow_default_constructible = (type_concepts::nothrow_default_constructible<Tys> && ...);
+        constexpr static bool is_copy_constructible = (type_concepts::copy_constructible<Tys> && ...);
+        constexpr static bool is_trivially_copy_constructible = (type_concepts::trivially_copy_constructible<Tys> && ...);
+        constexpr static bool is_nothrow_copy_constructible = (type_concepts::nothrow_copy_constructible<Tys> && ...);
+        constexpr static bool is_move_constructible = (type_concepts::move_constructible<Tys> && ...);
+        constexpr static bool is_trivially_move_constructible = (type_concepts::trivially_move_constructible<Tys> && ...);
+        constexpr static bool is_nothrow_move_constructible = (type_concepts::nothrow_move_constructible<Tys> && ...);
+        template<class From> constexpr static bool is_assignable = (type_concepts::assignable<Tys, From> && ...);
+        template<class From> constexpr static bool is_trivially_assignable = (type_concepts::trivially_assignable<Tys, From> && ...);
+        template<class From> constexpr static bool is_nothrow_assignable = (type_concepts::nothrow_assignable<Tys, From> && ...);
+        constexpr static bool is_copy_assignable = (type_concepts::copy_assignable<Tys> && ...);
+        constexpr static bool is_trivially_copy_assignable = (type_concepts::trivially_copy_assignable<Tys> && ...);
+        constexpr static bool is_nothrow_copy_assignable = (type_concepts::nothrow_copy_assignable<Tys> && ...);
+        constexpr static bool is_move_assignable = (type_concepts::move_assignable<Tys> && ...);
+        constexpr static bool is_trivially_move_assignable = (type_concepts::trivially_move_assignable<Tys> && ...);
+        constexpr static bool is_nothrow_move_assignable = (type_concepts::nothrow_move_assignable<Tys> && ...);
+        constexpr static bool is_destructible = (type_concepts::destructible<Tys> && ...);
+        constexpr static bool is_trivially_destructible = (type_concepts::trivially_destructible<Tys> && ...);
+        constexpr static bool is_nothrow_destructible = (type_concepts::nothrow_destructible<Tys> && ...);
+        constexpr static bool has_virtual_destructor = (type_concepts::virtual_destructor<Tys> && ...);
+        template<class Other> constexpr static bool is_swappable_with = (type_concepts::swappable_with<Tys, Other> && ...);
+        constexpr static bool is_swappable = (type_concepts::swappable<Tys> && ...);
+        template<class Other> constexpr static bool is_nothrow_swappable_with = (type_concepts::nothrow_swappable_with<Tys, Other> && ...);
+        constexpr static bool is_nothrow_swappable = (type_concepts::nothrow_swappable<Tys> && ...);
+
+        template<class Other> constexpr static bool same_as = (std::same_as<Tys, Other> && ...);
+        template<class Other> constexpr static bool base_of = (std::is_base_of_v<Tys, Other> && ...);
+        template<class Other> constexpr static bool convertible_to = (std::is_convertible_v<Tys, Other> && ...);
+        template<class Other> constexpr static bool nothrow_convertible_to = (std::is_nothrow_convertible_v<Tys, Other> && ...);
+        template<class ...Args> constexpr static bool invocable = (std::invocable<Tys, Args...> && ...);
+        template<class ...Args> constexpr static bool nothrow_invocable = (std::is_nothrow_invocable_v<Tys, Args...> && ...);
+
+        constexpr static std::size_t bytes = (sizeof(Tys) + ...);
+        constexpr static std::size_t alignment = std::max({ alignof(Tys)... });
+
+        using decay = info<pack<std::decay_t<Tys>...>>;
+        using remove_cv = info<pack<std::remove_cv_t<Tys>...>>;
+        using remove_const = info<pack<std::remove_const_t<Tys>...>>;
+        using remove_volatile = info<pack<std::remove_volatile_t<Tys>...>>;
+        using add_cv = info<pack<std::add_cv_t<Tys>...>>;
+        using add_const = info<pack<std::add_const_t<Tys>...>>;
+        using add_volatile = info<pack<std::add_volatile_t<Tys>...>>;
+        using remove_reference = info<pack<std::remove_reference_t<Tys>...>>;
+        using remove_cvref = info<pack<std::remove_cvref_t<Tys>...>>;
+        using add_lvalue_reference = info<pack<std::add_lvalue_reference_t<Tys>...>>;
+        using add_rvalue_reference = info<pack<std::add_rvalue_reference_t<Tys>...>>;
+        using remove_pointer = info<pack<std::remove_pointer_t<Tys>...>>;
+        using add_pointer = info<pack<std::add_pointer_t<Tys>...>>;
+        using type = pack<Tys...>;
     };
 
     template<callable_type Ty>
@@ -1153,4 +1425,7 @@ KAIXO_FUNCTION_INFO_MOD((*), , , , noexcept)
         using remove_extent = info<std::remove_extent_t<Ty>>;
         using remove_all_extents = info<std::remove_all_extents_t<Ty>>;
     };
+
+    template<class ...Tys>
+    struct pack_info : info_base<pack<Tys...>> {};
 }
