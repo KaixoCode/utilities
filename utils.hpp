@@ -112,7 +112,7 @@ namespace kaixo {
         });
     }
 
-    consteval static std::string_view _enum_pretty_name(std::string_view name) noexcept {
+    consteval std::string_view _enum_pretty_name(std::string_view name) noexcept {
         for (std::size_t i = name.size(); i > 0; --i) if (auto& c = name[i - 1];
             !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c == '_'))) {
             name.remove_prefix(i); break;
@@ -126,7 +126,7 @@ namespace kaixo {
     }
 
     template<class Ty, Ty Value>
-    consteval static auto enum_name_impl() noexcept {
+    consteval auto enum_name_impl() noexcept {
 #if defined(__clang__) || defined(__GNUC__)
         constexpr auto name = _enum_pretty_name({ __PRETTY_FUNCTION__, sizeof(__PRETTY_FUNCTION__) - 2 });
 #elif defined(_MSC_VER)
@@ -138,7 +138,7 @@ namespace kaixo {
     }
 
     template<class Ty, std::underlying_type_t<Ty> V>
-    constexpr static auto enum_name = enum_name_impl<Ty, static_cast<Ty>(V)>();
+    constexpr auto enum_name = enum_name_impl<Ty, static_cast<Ty>(V)>();
 
     /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
      *                                                           *
