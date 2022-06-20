@@ -104,39 +104,4 @@ namespace kaixo {
         return a;
     }
 
-    // templated for, calls lambda with template argument std::size_t
-    template<std::size_t N> constexpr void sequence(auto lambda) {
-        return[&] <std::size_t ...Is>(std::index_sequence<Is...>) {
-            return lambda.operator() < Is... > ();
-        }(std::make_index_sequence<N>{});
-    }
-
-    // templated for, calls lambda with template argument std::size_t
-    template<std::size_t N> constexpr void tfor(auto lambda) {
-        [&] <std::size_t ...Is>(std::index_sequence<Is...>) {
-            (lambda.operator() < Is > (), ...);
-        }(std::make_index_sequence<N>{});
-    }
-
-    // templated for, for tuple, supports concept constraints
-    template<class Tuple> constexpr void tfor(Tuple&& tuple, auto lambda) {
-        kaixo::tfor<std::tuple_size_v<std::decay_t<Tuple>>>([&]<std::size_t I> {
-            if constexpr (std::is_invocable_v<decltype(lambda),
-                decltype(std::get<I>(tuple))>) lambda(std::get<I>(tuple));
-        });
-    }
-
-    // templated for, for tuple, supports concept constraints
-    template<class Tuple> constexpr void tfor(Tuple&& tuple, auto... lambdas) {
-        kaixo::tfor<std::tuple_size_v<std::decay_t<Tuple>>>([&]<std::size_t I> {
-            ([&](auto& lambda) {
-                if constexpr (std::is_invocable_v<decltype(lambda),
-                    decltype(std::get<I>(tuple))>) {
-                    lambda(std::get<I>(tuple));
-                    return true;
-                }
-                return false;
-                }(lambdas) || ...);
-        });
-    }
 }

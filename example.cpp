@@ -4,61 +4,50 @@
 
 #include "utils.hpp"
 
+#include <iostream>
 
-struct MyClass {
-    const double a;
-    double b;
-    int test(double&, float) const noexcept {}
+
+struct O {
+    int V(double const) {}
+    int Q(this O&, double const) {}
 };
 
+enum class Fruit { 
+    Apple, 
+    Pear,
+    Banana,
+    Mango,
+    Grape,
+    Orange,
+    Count
+};
 
-void fun1(double, float&&, const int&, volatile char) {}
+template<kaixo::string_literal Str>
+struct my_str {
+
+};
 
 int main() {
-    using namespace kaixo::type_concepts;
+
+    my_str<"helloworld"> a;
+
     using namespace kaixo;
 
-    constexpr auto indices = function_info_v<&fun1>::arguments::decay::indices_filter<[]<integral>{}>;
-    iterate<indices>([]<std::size_t ...Is>{
-        
-    });
 
+    info<int&&>::add_lvalue_reference;
 
+    using oina = info<int(*)(int)>::add_const::type;
 
-    info<decltype(&MyClass::a)>;
+    static_assert(std::same_as<oina, int(* const)(int)>);
 
-    using my_info = info<decltype([](auto){})>;
+    using my_tuple = std::tuple<int, double, char>;
+    using new_tuple = as_pack<my_tuple>::pack_info::copy_cvref_from<const int&&>::as<std::tuple>;
 
-    //static_assert(std::same_as<my_info::pointer, int(*)(double&, float) noexcept>);
-    //static_assert(std::same_as<my_info::minimal_pointer, int(*)(double&, float)>);
-    //static_assert(std::same_as<my_info::signature, int(double&, float) const noexcept>);
-    //static_assert(std::same_as<my_info::minimal_signature, int(double&, float)>);
-    //static_assert(std::same_as<my_info::object, const MyClass>);
-    //static_assert(std::same_as<my_info::minimal_object, MyClass>);
-    //static_assert(std::same_as<my_info::return_type, int>);
-    //static_assert(std::same_as<my_info::argument_types::element<0>, double&>);
-    //static_assert(std::same_as<my_info::argument_types::element<1>, float>);
-    //static_assert(my_info::is_const);
-    //static_assert(my_info::is_noexcept);
+    new_tuple;
 
-    
+    info<int(O::* const volatile&&)(int)>::remove_reference::is_member_function_pointer;
 
-    //using lambda = decltype([](const int, volatile double&, float&&) {});
-    //using args = info<lambda>::argument_types;
-    //using decayed_args = args::decay;
-    //using filtered = decayed_args::filter<[]<floating_point>{}>;
-
-    //static_assert(std::same_as<filtered::element<0>, double>);
-    //static_assert(std::same_as<filtered::element<1>, float>);
-
-
-    //function_info<funt>::is_const;
-    //function_info<funt>::is_volatile;
-    //function_info<funt>::is_lvalue;
-    //function_info<funt>::is_rvalue;
-    //function_info<funt>::is_reference;
-    //function_info<funt>::is_noexcept;
-    //function_info<funt>::pointer;
+    pack_info<int(), void(), double()>::bytes;
 
     return 0;
 }

@@ -6,6 +6,7 @@
 #include <utility>
 #include <string_view>
 #include <algorithm>
+#include <source_location>
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
  *                                                           *
@@ -37,11 +38,25 @@
 
 namespace kaixo {
 
+    constexpr std::size_t npos = static_cast<std::size_t>(-1);
+
     struct dud {};
     template<class Ty> struct info_base;
     template<class Ty> struct info : info_base<Ty> {};
     template<class ...Args> struct pack;
     template<class ...Tys> struct pack_info;
+
+    template<class Ty> 
+    constexpr static std::size_t sizeof_v = [] { 
+        if constexpr (std::is_function_v<Ty>) return 0; 
+        else return sizeof(Ty); 
+    }();
+
+    template<class Ty> 
+    constexpr static std::size_t alignof_v = [] { 
+        if constexpr (std::is_function_v<Ty>) return 0; 
+        else return std::alignment_of_v<Ty>; 
+    }();
 
     namespace detail {
         template<class, template<class...> class>
@@ -52,6 +67,78 @@ namespace kaixo {
     // is specialization of templated class
     template<class Test, template<class...> class Ref>
     concept specialization = detail::is_specialization<std::decay_t<Test>, Ref>::value;
+
+    // templated for, calls lambda with template argument std::size_t
+    template<std::integral auto S, std::integral auto E = npos> constexpr auto sequence(auto lambda) {
+        if constexpr (E == npos) 
+        return[&] <std::size_t ...Is>(std::integer_sequence<decltype(S), Is...>) {
+            return lambda.operator() < (Is)... > ();
+        }(std::make_integer_sequence<decltype(S), S>{});
+        else return[&] <auto ...Is>(std::integer_sequence<decltype(E - S), Is...>) {
+            return lambda.operator() < (Is + S)... > ();
+        }(std::make_integer_sequence<decltype(E - S), E - S>{});
+    }
+
+    // templated for, calls lambda with template argument std::size_t
+    template<std::integral auto S, std::integral auto E = npos> constexpr void tfor(auto lambda) {
+        if constexpr (E == npos) 
+        [&] <std::size_t ...Is>(std::integer_sequence<decltype(S), Is...>) {
+            (lambda.operator() < Is > (), ...);
+        }(std::make_integer_sequence<decltype(S), S>{});
+        else [&] <auto ...Is>(std::integer_sequence<decltype(E - S), Is...>) {
+            (lambda.operator() < Is + S > (), ...);
+        }(std::make_integer_sequence<decltype(E - S), E - S>{});
+    }
+
+    // templated for, for tuple, supports concept constraints
+    template<class Tuple> constexpr void tfor(Tuple&& tuple, auto lambda) {
+        tfor<std::tuple_size_v<std::decay_t<Tuple>>>([&]<std::size_t I> {
+            if constexpr (std::is_invocable_v<decltype(lambda),
+                decltype(std::get<I>(tuple))>) lambda(std::get<I>(tuple));
+        });
+    }
+
+    // templated for, for tuple, supports concept constraints
+    template<class Tuple> constexpr void tfor(Tuple&& tuple, auto... lambdas) {
+        tfor<std::tuple_size_v<std::decay_t<Tuple>>>([&]<std::size_t I> {
+            ([&](auto& lambda) {
+                if constexpr (std::is_invocable_v<decltype(lambda),
+                    decltype(std::get<I>(tuple))>) {
+                    lambda(std::get<I>(tuple));
+                    return true;
+                }
+                return false;
+                }(lambdas) || ...);
+        });
+    }
+
+    consteval static std::string_view _enum_pretty_name(std::string_view name) noexcept {
+        for (std::size_t i = name.size(); i > 0; --i) if (auto& c = name[i - 1];
+            !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c == '_'))) {
+            name.remove_prefix(i); break;
+        }
+
+        if (name.size() > 0 && ((name.front() >= 'a' && name.front() <= 'z') ||
+            (name.front() >= 'A' && name.front() <= 'Z') || (name.front() == '_')))
+            return name;
+
+        return {}; // Invalid name.
+    }
+
+    template<class Ty, Ty Value>
+    consteval static auto enum_name_impl() noexcept {
+#if defined(__clang__) || defined(__GNUC__)
+        constexpr auto name = _enum_pretty_name({ __PRETTY_FUNCTION__, sizeof(__PRETTY_FUNCTION__) - 2 });
+#elif defined(_MSC_VER)
+        constexpr auto name = _enum_pretty_name({ __FUNCSIG__, sizeof(__FUNCSIG__) - 17 });
+#else
+        constexpr auto name = string_view{};
+#endif
+        return name;
+    }
+
+    template<class Ty, std::underlying_type_t<Ty> V>
+    constexpr static auto enum_name = enum_name_impl<Ty, static_cast<Ty>(V)>();
 
     /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
      *                                                           *
@@ -111,46 +198,13 @@ namespace kaixo {
             const CharType* m_Ptr;
         };
 
-        class iterator : public const_iterator {
-        public:
-            using iterator_category = std::random_access_iterator_tag;
-            using size_type = std::size_t;
-            using difference_type = std::ptrdiff_t;
-            using value_type = CharType;
-            using reference = CharType&;
-
-            constexpr iterator(const iterator&) = default;
-            constexpr iterator(iterator&&) = default;
-            constexpr iterator& operator=(const iterator&) = default;
-            constexpr iterator& operator=(iterator&&) = default;
-            constexpr iterator() : const_iterator(nullptr) {}
-            constexpr iterator(CharType* ptr) : const_iterator(ptr) {}
-
-            constexpr reference operator*() const { return *const_cast<CharType*>(this->m_Ptr); }
-            constexpr iterator& operator+=(difference_type d) { this->m_Ptr += d; return *this; }
-            constexpr iterator& operator-=(difference_type d) { this->m_Ptr -= d; return *this; }
-            constexpr iterator& operator++() { ++this->m_Ptr; return *this; }
-            constexpr iterator& operator--() { --this->m_Ptr; return *this; }
-            constexpr iterator operator++(int) { auto _c = *this; ++this->m_Ptr; return _c; }
-            constexpr iterator operator--(int) { auto _c = *this; --this->m_Ptr; return _c; }
-
-            constexpr reference operator[](difference_type d) const { return const_cast<CharType*>(this->m_Ptr)[d]; }
-
-            constexpr auto operator<=>(const iterator& other) const = default;
-
-            friend constexpr iterator operator+(difference_type a, const iterator& b) { return { a + b.m_Ptr }; }
-            friend constexpr iterator operator+(const iterator& a, difference_type b) { return { a.m_Ptr + b }; }
-            friend constexpr iterator operator-(difference_type a, const iterator& b) { return { a - b.m_Ptr }; }
-            friend constexpr iterator operator-(const iterator& a, difference_type b) { return { a.m_Ptr - b }; }
-            friend constexpr difference_type operator-(const iterator& a, const iterator& b) { return a.m_Ptr - b.m_Ptr; }
-        };
-
+        using iterator = const_iterator;
         using reverse_iterator = std::reverse_iterator<iterator>;
         using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
         constexpr ~string_literal() = default;
-        constexpr string_literal() = default;
-        constexpr string_literal(const CharType(&data)[N]) {
+        
+        consteval string_literal(const CharType(&data)[N]) {
             std::copy_n(data, N, m_Data);
         }
 
@@ -158,11 +212,6 @@ namespace kaixo {
         constexpr string_literal(const string_literal&) = default;
         constexpr string_literal& operator=(string_literal&&) = default;
         constexpr string_literal& operator=(const string_literal&) = default;
-
-        template<std::size_t I> requires (I < N)
-            constexpr string_literal& operator=(const CharType(&data)[I]) {
-            std::copy_n(data, I, m_Data);
-        }
 
         constexpr iterator begin() { return { m_Data }; }
         constexpr iterator end() { return { m_Data + size() }; }
@@ -229,7 +278,6 @@ namespace kaixo {
      *                                                           *
      * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-    constexpr std::size_t npos = static_cast<std::size_t>(-1);
 
     template<auto V> // Value wrapper
     struct value { constexpr static decltype(auto) get() { return V; }; };
@@ -760,7 +808,7 @@ namespace kaixo {
     struct pack {
         constexpr static std::size_t size = sizeof...(Args);
         constexpr static std::size_t unique_count = detail::unique_count<Args...>;
-        constexpr static std::size_t bytes = (sizeof(Args) + ... + 0);
+        constexpr static std::size_t bytes = (sizeof_v<Args> + ... + 0);
 
         template<class Ty> // First index of Ty in Args
         constexpr static std::size_t index = detail::index<Ty, Args...>;
@@ -859,7 +907,7 @@ namespace kaixo {
     struct pack<value<Args>...> {
         constexpr static std::size_t size = sizeof...(Args);
         constexpr static std::size_t unique_count = detail::unique_count<value<Args>...>;
-        constexpr static std::size_t bytes = (sizeof(Args) + ... + 0);
+        constexpr static std::size_t bytes = (sizeof_v<decltype(Args)> + ... + 0);
 
         template<auto Ty>
         constexpr static std::size_t index = detail::index<value<Ty>, value<Args>...>;
@@ -1100,50 +1148,84 @@ KAIXO_MEMBER_CALL_NOEXCEPT(MAC, noexcept)
     template<is_functor Ty> struct function_info_impl<Ty>
         : function_info_impl<decltype(&Ty::operator())> {};
 
-#define KAIXO_MEMBER_FUNCTION_INFO_MOD(CONST, VOLATILE, REF, NOEXCEPT)                  \
-template<class Ty, class R, class ...Args>                                              \
-struct function_info_impl<R(Ty::*)(Args...) CONST VOLATILE REF NOEXCEPT> {              \
-    using pointer = info<R(*)(Args...) NOEXCEPT>;                                       \
-    using signature = info<R(Args...) CONST VOLATILE REF NOEXCEPT>;                     \
-    using object = info<CONST VOLATILE Ty REF>;                                         \
-    using result = info<R>;                                                             \
-    using arguments = pack_info<Args...>;                                               \
-    constexpr static bool is_const = std::same_as<const int, CONST int>;                \
-    constexpr static bool is_mutable = !is_const;                                       \
-    constexpr static bool is_volatile = std::same_as<volatile int, VOLATILE int>;       \
-    constexpr static bool is_lvalue = std::same_as<int&, int REF>;                      \
-    constexpr static bool is_rvalue = std::same_as<int&&, int REF>;                     \
-    constexpr static bool is_reference = is_lvalue || is_rvalue;                        \
-    constexpr static bool is_noexcept = std::same_as<void() noexcept, void() NOEXCEPT>; \
+#define KAIXO_MEMBER_FUNCTION_INFO_MOD(CONST, VOLATILE, REF, NOEXCEPT)                   \
+template<class Ty, class R, class ...Args>                                               \
+struct function_info_impl<R(Ty::*)(Args...) CONST VOLATILE REF NOEXCEPT> {               \
+    using pointer = info<R(*)(Args...) NOEXCEPT>;                                        \
+    using signature = info<R(Args...) CONST VOLATILE REF NOEXCEPT>;                      \
+    using object = info<CONST VOLATILE Ty REF>;                                          \
+    using result = info<R>;                                                              \
+    using arguments = pack_info<Args...>;                                                \
+    constexpr static bool is_fun_const = std::same_as<const int, CONST int>;             \
+    constexpr static bool is_fun_mutable = !is_fun_const;                                \
+    constexpr static bool is_fun_volatile = std::same_as<volatile int, VOLATILE int>;    \
+    constexpr static bool is_fun_lvalue_reference = std::same_as<int&, int REF>;         \
+    constexpr static bool is_fun_rvalue_reference = std::same_as<int&&, int REF>;        \
+    constexpr static bool is_fun_reference = std::is_reference_v<int REF>;               \
+    constexpr static bool is_noexcept = std::same_as<void() noexcept, void() NOEXCEPT>;  \
+    using add_fun_const = info<R(Ty::*)(Args...) const VOLATILE REF NOEXCEPT>;           \
+    using remove_fun_const = info<R(Ty::*)(Args...) VOLATILE REF NOEXCEPT>;              \
+    using add_fun_volatile = info<R(Ty::*)(Args...) CONST volatile REF NOEXCEPT>;        \
+    using remove_fun_volatile = info<R(Ty::*)(Args...) CONST REF NOEXCEPT>;              \
+    using add_fun_cv = info<R(Ty::*)(Args...) const volatile REF NOEXCEPT>;              \
+    using remove_fun_cv = info<R(Ty::*)(Args...) REF NOEXCEPT>;                          \
+    using add_fun_lvalue_reference = info<R(Ty::*)(Args...) CONST VOLATILE & NOEXCEPT>;  \
+    using add_fun_rvalue_reference = info<R(Ty::*)(Args...) CONST VOLATILE && NOEXCEPT>; \
+    using remove_fun_reference = info<R(Ty::*)(Args...) CONST VOLATILE NOEXCEPT>;        \
+    using remove_fun_cvref = info<R(Ty::*)(Args...) NOEXCEPT>;                           \
+    using add_noexcept = info<R(Ty::*)(Args...) CONST VOLATILE REF noexcept>;            \
+    using remove_noexcept = info<R(Ty::*)(Args...) CONST VOLATILE REF>;                  \
 };
 
-KAIXO_MEMBER_CALL(KAIXO_MEMBER_FUNCTION_INFO_MOD)
+        KAIXO_MEMBER_CALL(KAIXO_MEMBER_FUNCTION_INFO_MOD)
 #undef KAIXO_MEMBER_FUNCTION_INFO_MOD
 
-#define KAIXO_FUNCTION_INFO_MOD(PTR, CONST, VOLATILE, REF, NOEXCEPT)                    \
+#define KAIXO_FUNCTION_INFO_MOD(CONST, VOLATILE, REF, NOEXCEPT)                         \
 template<class R, class ...Args>                                                        \
-struct function_info_impl<R PTR (Args...) CONST VOLATILE REF NOEXCEPT> {                \
+struct function_info_impl<R(Args...) CONST VOLATILE REF NOEXCEPT> {                     \
     using pointer = info<R(*)(Args...) NOEXCEPT>;                                       \
     using signature = info<R(Args...) CONST VOLATILE REF NOEXCEPT>;                     \
-    using object = info<CONST VOLATILE dud REF>;                                        \
     using result = info<R>;                                                             \
     using arguments = pack_info<Args...>;                                               \
-    constexpr static bool is_const = std::same_as<const int, CONST int>;                \
-    constexpr static bool is_mutable = !is_const;                                       \
-    constexpr static bool is_volatile = std::same_as<volatile int, VOLATILE int>;       \
-    constexpr static bool is_lvalue = std::same_as<int&, int REF>;                      \
-    constexpr static bool is_rvalue = std::same_as<int&&, int REF>;                     \
-    constexpr static bool is_reference = is_lvalue || is_rvalue;                        \
+    constexpr static bool is_fun_const = std::same_as<const int, CONST int>;            \
+    constexpr static bool is_fun_mutable = !is_fun_const;                               \
+    constexpr static bool is_fun_volatile = std::same_as<volatile int, VOLATILE int>;   \
+    constexpr static bool is_fun_lvalue_reference = std::same_as<int&, int REF>;        \
+    constexpr static bool is_fun_rvalue_reference = std::same_as<int&&, int REF>;       \
+    constexpr static bool is_fun_reference = std::is_reference_v<int REF>;              \
     constexpr static bool is_noexcept = std::same_as<void() noexcept, void() NOEXCEPT>; \
+    using add_fun_const = info<R(Args...) const VOLATILE REF NOEXCEPT>;                 \
+    using remove_fun_const = info<R(Args...) VOLATILE REF NOEXCEPT>;                    \
+    using add_fun_volatile = info<R(Args...) CONST volatile REF NOEXCEPT>;              \
+    using remove_fun_volatile = info<R(Args...) CONST REF NOEXCEPT>;                    \
+    using add_fun_cv = info<R(Args...) const volatile REF NOEXCEPT>;                    \
+    using remove_fun_cv = info<R(Args...) REF NOEXCEPT>;                                \
+    using add_fun_lvalue_reference = info<R(Args...) CONST VOLATILE & NOEXCEPT>;        \
+    using add_fun_rvalue_reference = info<R(Args...) CONST VOLATILE && NOEXCEPT>;       \
+    using remove_fun_reference = info<R(Args...) CONST VOLATILE NOEXCEPT>;              \
+    using remove_fun_cvref = info<R(Args...) NOEXCEPT>;                                 \
+    using add_noexcept = info<R(Args...) CONST VOLATILE REF noexcept>;                  \
+    using remove_noexcept = info<R(Args...) CONST VOLATILE REF>;                        \
 };
 
-#define KAIXO_FUNCTION_INFO_PTR(CONST, VOLATILE, REF, NOEXCEPT) \
-KAIXO_FUNCTION_INFO_MOD(, CONST, VOLATILE, REF, NOEXCEPT)
-
-KAIXO_MEMBER_CALL(KAIXO_FUNCTION_INFO_PTR)
-KAIXO_FUNCTION_INFO_MOD((*), , , , )
-KAIXO_FUNCTION_INFO_MOD((*), , , , noexcept)
+KAIXO_MEMBER_CALL(KAIXO_FUNCTION_INFO_MOD)
 #undef KAIXO_FUNCTION_INFO_MOD
+
+#define KAIXO_FUNCTION_PTR_INFO_MOD(NOEXCEPT)                                               \
+template<class R, class ...Args>                                                            \
+struct function_info_impl<R(*)(Args...) NOEXCEPT> {                                         \
+    using pointer = info<R(*)(Args...) NOEXCEPT>;                                           \
+    using signature = info<R(Args...) NOEXCEPT>;                                            \
+    using result = info<R>;                                                                 \
+    using arguments = pack_info<Args...>;                                                   \
+    constexpr static bool is_noexcept = std::same_as<void() noexcept, void() NOEXCEPT>;     \
+    using add_noexcept = info<R(Args...) noexcept>;                                         \
+    using remove_noexcept = info<R(Args...)>;                                               \
+};
+
+KAIXO_FUNCTION_PTR_INFO_MOD( )
+KAIXO_FUNCTION_PTR_INFO_MOD(noexcept)
+#undef KAIXO_FUNCTION_PTR_INFO_MOD
 
     template<class Ty> using function_info = function_info_impl<std::remove_cv_t<std::remove_reference_t<Ty>>>;
     template<auto Ty> using function_info_v = function_info_impl<std::remove_cv_t<std::remove_reference_t<decltype(Ty)>>>;
@@ -1231,7 +1313,7 @@ KAIXO_FUNCTION_INFO_MOD((*), , , , noexcept)
 
     namespace detail {
         template<class From, class To>
-        struct add_c_impl {
+        struct add_const_impl {
             using _unref = info<From>::remove_reference;
             using _to = info<To>;
             using _const = std::conditional_t<_unref::is_const, typename _to::add_const, _to>;
@@ -1239,7 +1321,7 @@ KAIXO_FUNCTION_INFO_MOD((*), , , , noexcept)
         };
 
         template<class From, class To>
-        struct add_v_impl {
+        struct add_volatile_impl {
             using _unref = info<From>::remove_reference;
             using _to = info<To>;
             using _volatile = std::conditional_t<_unref::is_volatile, typename _to::add_volatile, _to>;
@@ -1248,13 +1330,13 @@ KAIXO_FUNCTION_INFO_MOD((*), , , , noexcept)
 
         template<class From, class To>
         struct add_cv_impl {
-            using type = add_v_impl<From, typename add_c_impl<From, To>::type>::type;
+            using type = add_volatile_impl<From, typename add_const_impl<From, To>::type>::type;
         };
 
         template<class From, class To>
-        using copy_c_impl = add_c_impl<From, std::decay_t<To>>;
+        using copy_const_impl = add_const_impl<From, std::decay_t<To>>;
         template<class From, class To>
-        using copy_v_impl = add_v_impl<From, std::decay_t<To>>;
+        using copy_volatile_impl = add_volatile_impl<From, std::decay_t<To>>;
         template<class From, class To>
         using copy_cv_impl = add_cv_impl<From, std::decay_t<To>>;
 
@@ -1284,9 +1366,9 @@ KAIXO_FUNCTION_INFO_MOD((*), , , , noexcept)
     }
 
     template<class From, class To>
-    using copy_c = typename detail::copy_c_impl<From, To>::type;
+    using copy_const = typename detail::copy_const_impl<From, To>::type;
     template<class From, class To>
-    using copy_v = typename detail::copy_v_impl<From, To>::type;
+    using copy_volatile = typename detail::copy_volatile_impl<From, To>::type;
     template<class From, class To>
     using copy_cv = typename detail::copy_cv_impl<From, To>::type;
     template<class From, class To>
@@ -1294,9 +1376,9 @@ KAIXO_FUNCTION_INFO_MOD((*), , , , noexcept)
     template<class From, class To>
     using copy_cvref = typename detail::copy_cvref_impl<From, To>::type;
     template<class From, class To>
-    using add_c = typename detail::add_c_impl<From, To>::type;
+    using add_const = typename detail::add_const_impl<From, To>::type;
     template<class From, class To>
-    using add_v = typename detail::add_v_impl<From, To>::type;
+    using add_volatile = typename detail::add_volatile_impl<From, To>::type;
     template<class From, class To>
     using add_cv = typename detail::add_cv_impl<From, To>::type;
     template<class From, class To>
@@ -1379,13 +1461,13 @@ KAIXO_FUNCTION_INFO_MOD((*), , , , noexcept)
         template<class ...Args> constexpr static bool invocable = std::invocable<Ty, Args...>;
         template<class ...Args> constexpr static bool nothrow_invocable = std::is_nothrow_invocable_v<Ty, Args...>;
 
-        constexpr static std::size_t bytes = sizeof(Ty);
-        constexpr static std::size_t alignment = std::alignment_of_v<Ty>;
+        constexpr static std::size_t bytes = sizeof_v<Ty>;
+        constexpr static std::size_t alignment = alignof_v<Ty>;
 
         template<class To>
-        using copy_c_to = info<kaixo::copy_c<Ty, To>>;
+        using copy_const_to = info<kaixo::copy_const<Ty, To>>;
         template<class To>
-        using copy_v_to = info<kaixo::copy_v<Ty, To>>;
+        using copy_volatile_to = info<kaixo::copy_volatile<Ty, To>>;
         template<class To>
         using copy_cv_to = info<kaixo::copy_cv<Ty, To>>;
         template<class To>
@@ -1393,9 +1475,9 @@ KAIXO_FUNCTION_INFO_MOD((*), , , , noexcept)
         template<class To>
         using copy_cvref_to = info<kaixo::copy_cvref<Ty, To>>;
         template<class To>
-        using add_c_to = info<kaixo::add_c<Ty, To>>;
+        using add_const_to = info<kaixo::add_const<Ty, To>>;
         template<class To>
-        using add_v_to = info<kaixo::add_v<Ty, To>>;
+        using add_volatile_to = info<kaixo::add_volatile<Ty, To>>;
         template<class To>
         using add_cv_to = info<kaixo::add_cv<Ty, To>>;
         template<class To>
@@ -1404,9 +1486,9 @@ KAIXO_FUNCTION_INFO_MOD((*), , , , noexcept)
         using add_cvref_to = info<kaixo::add_cvref<Ty, To>>;
 
         template<class From>
-        using copy_c_from = info<kaixo::copy_c<From, Ty>>;
+        using copy_const_from = info<kaixo::copy_const<From, Ty>>;
         template<class From>
-        using copy_v_from = info<kaixo::copy_v<From, Ty>>;
+        using copy_volatile_from = info<kaixo::copy_volatile<From, Ty>>;
         template<class From>
         using copy_cv_from = info<kaixo::copy_cv<From, Ty>>;
         template<class From>
@@ -1414,9 +1496,9 @@ KAIXO_FUNCTION_INFO_MOD((*), , , , noexcept)
         template<class From>
         using copy_cvref_from = info<kaixo::copy_cvref<From, Ty>>;
         template<class From>
-        using add_c_from = info<kaixo::add_c<From, Ty>>;
+        using add_const_from = info<kaixo::add_const<From, Ty>>;
         template<class From>
-        using add_v_from = info<kaixo::add_v<From, Ty>>;
+        using add_volatile_from = info<kaixo::add_volatile<From, Ty>>;
         template<class From>
         using add_cv_from = info<kaixo::add_cv<From, Ty>>;
         template<class From>
@@ -1514,13 +1596,13 @@ KAIXO_FUNCTION_INFO_MOD((*), , , , noexcept)
         template<class ...Args> constexpr static bool invocable = (std::invocable<Tys, Args...> && ...);
         template<class ...Args> constexpr static bool nothrow_invocable = (std::is_nothrow_invocable_v<Tys, Args...> && ...);
 
-        constexpr static std::size_t bytes = (sizeof(Tys) + ...);
-        constexpr static std::size_t alignment = std::max({ alignof(Tys)... });
+        constexpr static std::size_t bytes = (sizeof_v<Tys> + ...);
+        constexpr static std::size_t alignment = std::max({ alignof_v<Tys>... });
 
         template<class From>
-        using copy_c_from = info<kaixo::pack<kaixo::copy_c<From, Tys>...>>;
+        using copy_const_from = info<kaixo::pack<kaixo::copy_const<From, Tys>...>>;
         template<class From>
-        using copy_v_from = info<kaixo::pack<kaixo::copy_v<From, Tys>...>>;
+        using copy_volatile_from = info<kaixo::pack<kaixo::copy_volatile<From, Tys>...>>;
         template<class From>
         using copy_cv_from = info<kaixo::pack<kaixo::copy_cv<From, Tys>...>>;
         template<class From>
@@ -1528,9 +1610,9 @@ KAIXO_FUNCTION_INFO_MOD((*), , , , noexcept)
         template<class From>
         using copy_cvref_from = info<kaixo::pack<kaixo::copy_cvref<From, Tys>...>>;
         template<class From>
-        using add_c_from = info<kaixo::pack<kaixo::add_c<From, Tys>...>>;
+        using add_const_from = info<kaixo::pack<kaixo::add_const<From, Tys>...>>;
         template<class From>
-        using add_v_from = info<kaixo::pack<kaixo::add_v<From, Tys>...>>;
+        using add_volatile_from = info<kaixo::pack<kaixo::add_volatile<From, Tys>...>>;
         template<class From>
         using add_cv_from = info<kaixo::pack<kaixo::add_cv<From, Tys>...>>;
         template<class From>
@@ -1556,22 +1638,11 @@ KAIXO_FUNCTION_INFO_MOD((*), , , , noexcept)
 
     template<callable_type Ty>
     struct info<Ty> : info_base<Ty>, function_info<Ty> {
-        using function_info<Ty>::is_const;
-        using function_info<Ty>::is_mutable;
-        using function_info<Ty>::is_volatile;
-        using function_info<Ty>::is_lvalue;
-        using function_info<Ty>::is_rvalue;
-        using function_info<Ty>::is_reference;
-        using function_info<Ty>::is_noexcept;
-
-        using type = Ty;
     };
 
     template<class Ty>
         requires (type_concepts::integral<Ty> && !type_concepts::boolean<Ty>)
     struct info<Ty> : info_base<Ty> {
-        using type = Ty;
-
         using make_signed = info<std::make_signed<Ty>>;
         using make_unsigned = info<std::make_unsigned<Ty>>;
     };
@@ -1579,25 +1650,28 @@ KAIXO_FUNCTION_INFO_MOD((*), , , , noexcept)
     template<class Ty>
         requires (type_concepts::enum_type<Ty>)
     struct info<Ty> : info_base<Ty> {
-        using type = Ty;
-
         using underlying = std::underlying_type_t<Ty>;
+
+        template<underlying Value>
+        constexpr static auto name = enum_name<Ty, Value>;
+
+        template<underlying Value>
+        constexpr static auto defined = name<Value>.data() != nullptr;
     };
     
     template<class Ty, class Obj>
         requires type_concepts::member_object_pointer<Ty Obj::*>
     struct info<Ty Obj::*> : info_base<Ty> {
-        using type = Ty;
-
+        using object = info<Obj>;
     };
 
     template<class Ty>
         requires (type_concepts::array<Ty>)
     struct info<Ty> : info_base<Ty> {
-        using type = Ty;
-
         constexpr static std::size_t rank = std::rank_v<Ty>;
-        constexpr static std::size_t extent = std::extent_v<Ty>;
+
+        template<std::size_t Dim = 0>
+        constexpr static std::size_t extent = std::extent_v<Ty, Dim>;
 
         using remove_extent = info<std::remove_extent_t<Ty>>;
         using remove_all_extents = info<std::remove_all_extents_t<Ty>>;
