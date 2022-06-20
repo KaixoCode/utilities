@@ -28,9 +28,9 @@ KAIXO_MEMBER_CALL_NOEXCEPT(MAC, noexcept)
 
     template<class Ty> concept is_functor = requires(decltype(&Ty::operator()) a) { a; };
 
-    template<class> struct function_info_impl {};
+    template<class> struct function_info_impl;
     template<is_functor Ty> struct function_info_impl<Ty>
-        : function_info_impl<decltype(Ty::operator())> {};
+        : function_info_impl<decltype(&Ty::operator())> {};
 
 #define KAIXO_MEMBER_FUNCTION_INFO_MOD(CONST, VOLATILE, REF, NOEXCEPT)                  \
 template<class Ty, class R, class ...Args>                                              \
@@ -44,6 +44,7 @@ struct function_info_impl<R(Ty::*)(Args...) CONST VOLATILE REF NOEXCEPT> {      
     using return_type = R;                                                              \
     using argument_types = kaixo::pack<Args...>;                                        \
     constexpr static bool is_const = std::same_as<const int, CONST int>;                \
+    constexpr static bool is_mutable = !is_const;                                       \
     constexpr static bool is_volatile = std::same_as<volatile int, VOLATILE int>;       \
     constexpr static bool is_lvalue = std::same_as<int&, int REF>;                      \
     constexpr static bool is_rvalue = std::same_as<int&&, int REF>;                     \
@@ -66,6 +67,7 @@ struct function_info_impl<R PTR (Args...) CONST VOLATILE REF NOEXCEPT> {        
     using return_type = R;                                                              \
     using argument_types = kaixo::pack<Args...>;                                        \
     constexpr static bool is_const = std::same_as<const int, CONST int>;                \
+    constexpr static bool is_mutable = !is_const;                                       \
     constexpr static bool is_volatile = std::same_as<volatile int, VOLATILE int>;       \
     constexpr static bool is_lvalue = std::same_as<int&, int REF>;                      \
     constexpr static bool is_rvalue = std::same_as<int&&, int REF>;                     \
@@ -81,6 +83,6 @@ KAIXO_FUNCTION_INFO_MOD((*), , , , )
 KAIXO_FUNCTION_INFO_MOD((*), , , , noexcept)
 #undef KAIXO_FUNCTION_INFO_MOD
 
-        template<class Ty> using function_info = function_info_impl<std::remove_cv_t<std::remove_reference_t<Ty>>>;
+    template<class Ty> using function_info = function_info_impl<std::remove_cv_t<std::remove_reference_t<Ty>>>;
     template<auto Ty> using function_info_v = function_info_impl<std::remove_cv_t<std::remove_reference_t<decltype(Ty)>>>;
 }

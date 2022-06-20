@@ -2,29 +2,35 @@
 
 
 
-#include "function_utils.hpp"
+#include "utils.hpp"
+
+
 
 
 struct MyClass {
-    int test(double&, float) volatile noexcept {}
-}; 
+    int test(double&, float) const noexcept {}
+};
+
 
 int main() {
     using namespace kaixo;
 
-    using info = function_info<decltype(&MyClass::test)>;
-    
-    static_assert(std::same_as<info::pointer, int(*)(double&, float) noexcept>);
-    static_assert(std::same_as<info::minimal_pointer, int(*)(double&, float)>);
-    static_assert(std::same_as<info::signature, int(double&, float) volatile noexcept>);
-    static_assert(std::same_as<info::minimal_signature, int(double&, float)>);
-    static_assert(std::same_as<info::object, volatile MyClass>);
-    static_assert(std::same_as<info::minimal_object, MyClass>);
-    static_assert(std::same_as<info::return_type, int>);
-    static_assert(std::same_as<info::argument_types::element<0>, double&>);
-    static_assert(std::same_as<info::argument_types::element<1>, float>);
-    static_assert(info::is_volatile);
-    static_assert(info::is_noexcept);
+    using my_info = info<decltype(MyClass::test)>;
+
+    my_info::argument_types::sort<[]<class A, class B>{ return sizeof(A) < sizeof(B); }>;
+
+
+    static_assert(std::same_as<my_info::pointer, int(*)(double&, float) noexcept>);
+    static_assert(std::same_as<my_info::minimal_pointer, int(*)(double&, float)>);
+    static_assert(std::same_as<my_info::signature, int(double&, float) const noexcept>);
+    static_assert(std::same_as<my_info::minimal_signature, int(double&, float)>);
+    static_assert(std::same_as<my_info::object, const MyClass>);
+    static_assert(std::same_as<my_info::minimal_object, MyClass>);
+    static_assert(std::same_as<my_info::return_type, int>);
+    static_assert(std::same_as<my_info::argument_types::element<0>, double&>);
+    static_assert(std::same_as<my_info::argument_types::element<1>, float>);
+    static_assert(my_info::is_const);
+    static_assert(my_info::is_noexcept);
 
 
     //function_info<funt>::is_const;
