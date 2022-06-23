@@ -140,6 +140,195 @@ namespace kaixo {
     template<class Ty, std::underlying_type_t<Ty> V>
     constexpr auto enum_name = enum_name_impl<Ty, static_cast<Ty>(V)>();
 
+    template<auto Value>
+    consteval auto object_name_impl() noexcept {
+#if defined(__clang__) || defined(__GNUC__)
+        constexpr auto name = std::string_view{ __PRETTY_FUNCTION__, sizeof(__PRETTY_FUNCTION__) - 2 };
+#elif defined(_MSC_VER)
+        constexpr auto name = std::string_view{ __FUNCSIG__, sizeof(__FUNCSIG__) - 17 };
+#else
+        constexpr auto name = string_view{};
+#endif
+        return name.substr(name.find_first_of('<') + 1);
+    }
+
+    template<auto V>
+    constexpr auto object_name = object_name_impl<V>();
+
+    constexpr std::string_view _function_pretty_name(std::string_view name) noexcept {
+        if (name.size() == 0) return {};
+
+        // remove call '( ... )' part
+        std::size_t count = 0;
+        std::size_t suffix = 0;
+        for (std::size_t i = name.size(); i > 0; --i) {
+            auto& c = name[i - 1];
+            if (c == ')') count++;
+            if (c == '(') count--;
+            suffix++;
+            if (count == 0) {
+                name.remove_suffix(suffix);
+                break;
+            }
+        }
+
+        if (name.size() == 0) return {};
+
+        // Remove template part if it exists '< ... >'
+        if (name[name.size() - 1] == '>') {
+            count = 0;
+            suffix = 0;
+            for (std::size_t i = name.size(); i > 0; --i) {
+                auto& c = name[i - 1];
+                if (c == '>') count++;
+                if (c == '<') count--;
+
+                suffix++;
+                if (count == 0) {
+                    name.remove_suffix(suffix);
+                    break;
+                }
+            }
+        }
+
+        if (name.size() == 0) return {};
+
+        // Collect valid identifier characters
+        for (std::size_t i = name.size(); i > 0; --i) {
+            if (auto& c = name[i - 1]; !((c >= '0' && c <= '9') ||
+                (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c == '_'))) {
+                name.remove_prefix(i); break;
+            }
+        }
+
+        // Make sure it starts with a valid character
+        if (name.size() > 0 && ((name.front() >= 'a' && name.front() <= 'z') ||
+            (name.front() >= 'A' && name.front() <= 'Z') || (name.front() == '_')))
+            return name;
+
+        return {}; // Invalid name.
+    }
+    template<auto Value>
+    consteval auto function_name_impl() noexcept {
+#if defined(__clang__) || defined(__GNUC__)
+        constexpr auto name = std::string_view{ __PRETTY_FUNCTION__, sizeof(__PRETTY_FUNCTION__) - 2 };
+#elif defined(_MSC_VER)
+        constexpr auto name = std::string_view{ __FUNCSIG__, sizeof(__FUNCSIG__) - 17 };
+#else
+        constexpr auto name = string_view{};
+#endif
+        return _function_pretty_name(name.substr(name.find_first_of('<') + 1));
+    }
+
+    template<auto V>
+    constexpr auto function_name = function_name_impl<V>();
+
+    template<class Value>
+    consteval auto type_name_impl() noexcept {
+#if defined(__clang__) || defined(__GNUC__)
+        constexpr auto name = std::string_view{ __PRETTY_FUNCTION__, sizeof(__PRETTY_FUNCTION__) - 2 };
+        return name.substr(name.find_first_of('<') + 1);
+#elif defined(_MSC_VER)
+        constexpr auto name = std::string_view{ __FUNCSIG__, sizeof(__FUNCSIG__) - 17 };
+        return name.substr(name.find_first_of('<') + 1);
+#else
+        return string_view{};
+#endif
+    }
+
+    template<class V>
+    constexpr auto type_name = type_name_impl<V>();
+
+    // RTTI function table for basic operations 
+    //  like delete, move, and copy.
+    template<class Ty>
+    struct RTTI_Ftable {
+        constexpr static void deleter_in_place(void* ptr) {
+            if constexpr(std::is_destructible_v<Ty>)
+                static_cast<Ty*>(ptr)->~Ty();
+        }
+        
+        constexpr static void deleter(void* ptr) {
+            if constexpr (std::is_destructible_v<Ty>)
+                delete static_cast<Ty*>(ptr);
+        }
+
+        constexpr static void default_construct_in_place(void* to) {
+            if constexpr (std::is_default_constructible_v<Ty>)
+            new (to) Ty{};
+        }
+        
+        constexpr static void* default_construct(void* to) {
+            if constexpr (std::is_default_constructible_v<Ty>)
+                return new Ty{};
+            return nullptr;
+        }
+
+        constexpr static void move_construct_in_place(void* from, void* to) {
+            if constexpr (std::is_move_constructible_v<Ty>)
+                new (to) Ty{ std::move(*static_cast<Ty*>(from)) };
+        }
+
+        constexpr static void* move_construct(void* from) {
+            if constexpr (std::is_move_constructible_v<Ty>)
+                return new Ty{ std::move(*static_cast<Ty*>(from)) };
+            return nullptr;
+        }
+
+        constexpr static void copy_construct_in_place(const void* from, void* to) {
+            if constexpr (std::is_copy_constructible_v<Ty>)
+                new (to) Ty{ *static_cast<const Ty*>(from) };
+        }
+
+        constexpr static void* copy_construct(const void* from) {
+            if constexpr (std::is_copy_constructible_v<Ty>)
+                return new Ty{ *static_cast<const Ty*>(from) };
+            return nullptr;
+        }
+
+        constexpr static void move_assign(void* from, void* to) {
+            if constexpr (std::is_move_assignable_v<Ty>)
+                *static_cast<Ty*>(to) = std::move(*static_cast<Ty*>(from));
+        }
+
+        constexpr static void copy_assign(const void* from, void* to) {
+            if constexpr (std::is_copy_assignable_v<Ty>)
+                *static_cast<Ty*>(to) = *static_cast<const Ty*>(from);
+        }
+
+        constexpr operator RTTI_Ftable<void>();
+    };
+
+    template<>
+    struct RTTI_Ftable<void> {
+        void(*deleter_in_place)(void*);
+        void(*deleter)(void*);
+        void(*default_construct_in_place)(void*);
+        void*(*default_construct)(void*);
+        void(*move_construct_in_place)(void*, void*);
+        void*(*move_construct)(void*);
+        void(*copy_construct_in_place)(const void*, void*);
+        void*(*copy_construct)(const void*);
+        void(*move_assign)(void*, void*);
+        void(*copy_assign)(const void*, void*);
+    };
+
+    template<class Ty>
+    constexpr RTTI_Ftable<Ty>::operator RTTI_Ftable<void>() {
+        return RTTI_Ftable<void>{
+            &deleter_in_place,
+            &deleter,
+            &default_construct_in_place,
+            &default_construct,
+            &move_construct_in_place,
+            &move_construct,
+            &copy_construct_in_place,
+            &copy_construct,
+            &move_assign,
+            &copy_assign,
+        };
+    }
+
     /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
      *                                                           *
      *                      String Literal                       *
@@ -1264,8 +1453,8 @@ KAIXO_FUNCTION_PTR_INFO_MOD(noexcept)
         template<class Ty> concept compound = std::is_compound_v<Ty>;
         template<class Ty> concept reference = std::is_reference_v<Ty>;
         template<class Ty> concept member_pointer = std::is_member_pointer_v<Ty>;
-        template<class Ty> concept const_type = std::is_const_v<Ty>;
-        template<class Ty> concept volatile_type = std::is_volatile_v<Ty>;
+        template<class Ty> concept const_type = std::is_const_v<std::remove_reference_t<Ty>>;
+        template<class Ty> concept volatile_type = std::is_volatile_v<std::remove_reference_t<Ty>>;
         template<class Ty> concept trivial = std::is_trivial_v<Ty>;
         template<class Ty> concept trivially_copyable = std::is_trivially_copyable_v<Ty>;
         template<class Ty> concept standard_layout = std::is_standard_layout_v<Ty>;
@@ -1313,80 +1502,84 @@ KAIXO_FUNCTION_PTR_INFO_MOD(noexcept)
 
     namespace detail {
         template<class From, class To>
-        struct add_const_impl {
-            using _unref = info<From>::remove_reference;
-            using _to = info<To>;
-            using _const = std::conditional_t<_unref::is_const, typename _to::add_const, _to>;
-            using type = _const::type;
-        };
-
-        template<class From, class To>
-        struct add_volatile_impl {
-            using _unref = info<From>::remove_reference;
-            using _to = info<To>;
-            using _volatile = std::conditional_t<_unref::is_volatile, typename _to::add_volatile, _to>;
-            using type = _volatile::type;
-        };
-
-        template<class From, class To>
-        struct add_cv_impl {
-            using type = add_volatile_impl<From, typename add_const_impl<From, To>::type>::type;
-        };
-
-        template<class From, class To>
-        using copy_const_impl = add_const_impl<From, std::decay_t<To>>;
-        template<class From, class To>
-        using copy_volatile_impl = add_volatile_impl<From, std::decay_t<To>>;
-        template<class From, class To>
-        using copy_cv_impl = add_cv_impl<From, std::decay_t<To>>;
-
-        template<class From, class To>
         struct add_ref_impl {
-            using _info = info<From>;
-            using _to = info<To>;
-            using _lvalue = std::conditional_t<_info::is_lvalue_reference, typename _to::add_lvalue_reference, _to>;
-            using _rvalue = std::conditional_t<_info::is_rvalue_reference, typename _lvalue::add_rvalue_reference, _lvalue>;
-            using type = _rvalue::type;
+            using _lvalue = std::conditional_t<std::is_lvalue_reference_v<From>, std::add_lvalue_reference_t<To>, To>;
+            using _rvalue = std::conditional_t<std::is_rvalue_reference_v<From>, std::add_rvalue_reference_t<_lvalue>, _lvalue>;
+            using type = typename _rvalue;
         };
 
         template<class From, class To>
         using copy_ref_impl = add_ref_impl<From, std::decay_t<To>>;
 
         template<class From, class To>
+        struct add_const_impl {
+            using _unrefFrom = std::remove_reference_t<From>;
+            using _unrefTo = std::remove_reference_t<To>;
+            using _const = std::conditional_t<std::is_const_v<_unrefFrom>, typename add_ref_impl<To, std::add_const_t<_unrefTo>>::type, To>;
+            using type = _const;
+        };
+
+        template<class From, class To>
+        struct add_volatile_impl {
+            using _unrefFrom = std::remove_reference_t<From>;
+            using _unrefTo = std::remove_reference_t<To>;
+            using _volatile = std::conditional_t<std::is_volatile_v<_unrefFrom>, typename add_ref_impl<To, std::add_volatile_t<To>>::type, To>;
+            using type = _volatile;
+        };
+
+        template<class From, class To>
+        struct add_cv_impl {
+            using type = typename add_volatile_impl<From, typename add_const_impl<From, To>::type>::type;
+        };
+
+        template<class From, class To>
+        using copy_const_impl = add_ref_impl<To, typename add_const_impl<From, std::remove_const_t<std::remove_reference_t<To>>>::type>;
+        template<class From, class To>
+        using copy_volatile_impl = add_ref_impl<To, typename add_volatile_impl<From, std::remove_volatile_t<std::remove_reference_t<To>>>::type>;
+        template<class From, class To>
+        using copy_cv_impl = add_ref_impl<To, typename add_cv_impl<From, std::remove_cv_t<std::remove_reference_t<To>>>::type>;
+
+        template<class From, class To>
         struct add_cvref_impl {
-            using _cv = info<typename add_cv_impl<From, To>::type>;
-            using _info = info<From>;
-            using _lvalue = std::conditional_t<_info::is_lvalue_reference, typename _cv::add_lvalue_reference, _cv>;
-            using _rvalue = std::conditional_t<_info::is_rvalue_reference, typename _lvalue::add_rvalue_reference, _lvalue>;
-            using type = _rvalue::type;
+            using _cv = typename add_cv_impl<From, To>::type;
+            using _lvalue = std::conditional_t<std::is_lvalue_reference_v<From>, std::add_lvalue_reference_t<_cv>, _cv>;
+            using _rvalue = std::conditional_t<std::is_rvalue_reference_v<From>, std::add_rvalue_reference_t<_lvalue>, _lvalue>;
+            using type = typename _rvalue;
         };
 
         template<class From, class To>
         using copy_cvref_impl = add_cvref_impl<From, std::decay_t<To>>;
     }
 
-    template<class From, class To>
+    template<class To, class From = const int>
     using copy_const = typename detail::copy_const_impl<From, To>::type;
-    template<class From, class To>
+    template<class To, class From = volatile int>
     using copy_volatile = typename detail::copy_volatile_impl<From, To>::type;
-    template<class From, class To>
+    template<class To, class From = const volatile int>
     using copy_cv = typename detail::copy_cv_impl<From, To>::type;
-    template<class From, class To>
+    template<class To, class From>
     using copy_ref = typename detail::copy_ref_impl<From, To>::type;
-    template<class From, class To>
+    template<class To, class From>
     using copy_cvref = typename detail::copy_cvref_impl<From, To>::type;
-    template<class From, class To>
+    template<class To, class From = const int>
     using add_const = typename detail::add_const_impl<From, To>::type;
-    template<class From, class To>
+    template<class To, class From = volatile int>
     using add_volatile = typename detail::add_volatile_impl<From, To>::type;
-    template<class From, class To>
+    template<class To, class From = const volatile int>
     using add_cv = typename detail::add_cv_impl<From, To>::type;
-    template<class From, class To>
+    template<class To, class From>
     using add_ref = typename detail::add_ref_impl<From, To>::type;
-    template<class From, class To>
+    template<class To, class From>
     using add_cvref = typename detail::add_cvref_impl<From, To>::type;
 
-    template<class Ty> struct info_base {
+    template<class To>
+    using remove_const = typename detail::copy_const_impl<int, To>::type;
+    template<class To>
+    using remove_volatile = typename detail::copy_volatile_impl<int, To>::type;
+    template<class To>
+    using remove_cv = typename detail::copy_cv_impl<int, To>::type;
+
+    template<class Ty> struct info_base : RTTI_Ftable<Ty> {
         constexpr static bool is_void = type_concepts::void_type<Ty>;
         constexpr static bool is_null_pointer = type_concepts::null_pointer<Ty>;
         constexpr static bool is_integral = type_concepts::integral<Ty>;
@@ -1420,8 +1613,8 @@ KAIXO_FUNCTION_PTR_INFO_MOD(noexcept)
         constexpr static bool is_abstract = type_concepts::abstract<Ty>;
         constexpr static bool is_final = type_concepts::final<Ty>;
         constexpr static bool is_aggregate = type_concepts::aggregate<Ty>;
-        constexpr static bool is_signed_integral = type_concepts::signed_integral<Ty>;
-        constexpr static bool is_unsigned_integral = type_concepts::unsigned_integral<Ty>;
+        constexpr static bool is_signed = type_concepts::signed_integral<Ty>;
+        constexpr static bool is_unsigned = type_concepts::unsigned_integral<Ty>;
         constexpr static bool is_bounded_array = type_concepts::bounded_array<Ty>;
         constexpr static bool is_unbounded_array = type_concepts::unbounded_array<Ty>;
         template<class ...Args> constexpr static bool is_constructible = type_concepts::constructible<Ty, Args...>;
@@ -1465,54 +1658,54 @@ KAIXO_FUNCTION_PTR_INFO_MOD(noexcept)
         constexpr static std::size_t alignment = alignof_v<Ty>;
 
         template<class To>
-        using copy_const_to = info<kaixo::copy_const<Ty, To>>;
+        using copy_const_to = info<kaixo::copy_const<To, Ty>>;
         template<class To>
-        using copy_volatile_to = info<kaixo::copy_volatile<Ty, To>>;
+        using copy_volatile_to = info<kaixo::copy_volatile<To, Ty>>;
         template<class To>
-        using copy_cv_to = info<kaixo::copy_cv<Ty, To>>;
+        using copy_cv_to = info<kaixo::copy_cv<To, Ty>>;
         template<class To>
-        using copy_ref_to = info<kaixo::copy_ref<Ty, To>>;
+        using copy_ref_to = info<kaixo::copy_ref<To, Ty>>;
         template<class To>
-        using copy_cvref_to = info<kaixo::copy_cvref<Ty, To>>;
+        using copy_cvref_to = info<kaixo::copy_cvref<To, Ty>>;
         template<class To>
-        using add_const_to = info<kaixo::add_const<Ty, To>>;
+        using add_const_to = info<kaixo::add_const<To, Ty>>;
         template<class To>
-        using add_volatile_to = info<kaixo::add_volatile<Ty, To>>;
+        using add_volatile_to = info<kaixo::add_volatile<To, Ty>>;
         template<class To>
-        using add_cv_to = info<kaixo::add_cv<Ty, To>>;
+        using add_cv_to = info<kaixo::add_cv<To, Ty>>;
         template<class To>
-        using add_ref_to = info<kaixo::add_ref<Ty, To>>;
+        using add_ref_to = info<kaixo::add_ref<To, Ty>>;
         template<class To>
-        using add_cvref_to = info<kaixo::add_cvref<Ty, To>>;
+        using add_cvref_to = info<kaixo::add_cvref<To, Ty>>;
 
         template<class From>
-        using copy_const_from = info<kaixo::copy_const<From, Ty>>;
+        using copy_const_from = info<kaixo::copy_const<Ty, From>>;
         template<class From>
-        using copy_volatile_from = info<kaixo::copy_volatile<From, Ty>>;
+        using copy_volatile_from = info<kaixo::copy_volatile<Ty, From>>;
         template<class From>
-        using copy_cv_from = info<kaixo::copy_cv<From, Ty>>;
+        using copy_cv_from = info<kaixo::copy_cv<Ty, From>>;
         template<class From>
-        using copy_ref_from = info<kaixo::copy_ref<From, Ty>>;
+        using copy_ref_from = info<kaixo::copy_ref<Ty, From>>;
         template<class From>
-        using copy_cvref_from = info<kaixo::copy_cvref<From, Ty>>;
+        using copy_cvref_from = info<kaixo::copy_cvref<Ty, From>>;
         template<class From>
-        using add_const_from = info<kaixo::add_const<From, Ty>>;
+        using add_const_from = info<kaixo::add_const<Ty, From>>;
         template<class From>
-        using add_volatile_from = info<kaixo::add_volatile<From, Ty>>;
+        using add_volatile_from = info<kaixo::add_volatile<Ty, From>>;
         template<class From>
-        using add_cv_from = info<kaixo::add_cv<From, Ty>>;
+        using add_cv_from = info<kaixo::add_cv<Ty, From>>;
         template<class From>
-        using add_ref_from = info<kaixo::add_ref<From, Ty>>;
+        using add_ref_from = info<kaixo::add_ref<Ty, From>>;
         template<class From>
-        using add_cvref_from = info<kaixo::add_cvref<From, Ty>>;
+        using add_cvref_from = info<kaixo::add_cvref<Ty, From>>;
 
         using decay = info<std::decay_t<Ty>>;
-        using remove_cv = info<std::remove_cv_t<Ty>>;
-        using remove_const = info<std::remove_const_t<Ty>>;
-        using remove_volatile = info<std::remove_volatile_t<Ty>>;
-        using add_cv = info<std::add_cv_t<Ty>>;
-        using add_const = info<std::add_const_t<Ty>>;
-        using add_volatile = info<std::add_volatile_t<Ty>>;
+        using remove_cv = info<kaixo::remove_cv<Ty>>;
+        using remove_const = info<kaixo::remove_const<Ty>>;
+        using remove_volatile = info<kaixo::remove_volatile<Ty>>;
+        using add_cv = info<kaixo::add_cv<Ty>>;
+        using add_const = info<kaixo::add_const<Ty>>;
+        using add_volatile = info<kaixo::add_volatile<Ty>>;
         using remove_reference = info<std::remove_reference_t<Ty>>;
         using remove_cvref = info<std::remove_cvref_t<Ty>>;
         using add_lvalue_reference = info<std::add_lvalue_reference_t<Ty>>;
@@ -1520,6 +1713,9 @@ KAIXO_FUNCTION_PTR_INFO_MOD(noexcept)
         using remove_pointer = info<std::remove_pointer_t<Ty>>;
         using add_pointer = info<std::add_pointer_t<Ty>>;
         using type = Ty;
+
+        constexpr static auto type_info = &typeid(Ty);
+        constexpr static auto type_name = kaixo::type_name<Ty>;
     };
 
     template<class ...Tys> struct info_base<pack<Tys...>> : pack<Tys...> {
@@ -1621,12 +1817,12 @@ KAIXO_FUNCTION_PTR_INFO_MOD(noexcept)
         using add_cvref_from = info<kaixo::pack<kaixo::add_cvref<From, Tys>...>>;
 
         using decay = info<kaixo::pack<std::decay_t<Tys>...>>;
-        using remove_cv = info<kaixo::pack<std::remove_cv_t<Tys>...>>;
-        using remove_const = info<kaixo::pack<std::remove_const_t<Tys>...>>;
-        using remove_volatile = info<kaixo::pack<std::remove_volatile_t<Tys>...>>;
-        using add_cv = info<kaixo::pack<std::add_cv_t<Tys>...>>;
-        using add_const = info<kaixo::pack<std::add_const_t<Tys>...>>;
-        using add_volatile = info<kaixo::pack<std::add_volatile_t<Tys>...>>;
+        using remove_cv = info<kaixo::pack<kaixo::remove_cv<Tys>...>>;
+        using remove_const = info<kaixo::pack<kaixo::remove_const<Tys>...>>;
+        using remove_volatile = info<kaixo::pack<kaixo::remove_volatile<Tys>...>>;
+        using add_cv = info<kaixo::pack<kaixo::add_cv<Tys>...>>;
+        using add_const = info<kaixo::pack<kaixo::add_const<Tys>...>>;
+        using add_volatile = info<kaixo::pack<kaixo::add_volatile<Tys>...>>;
         using remove_reference = info<kaixo::pack<std::remove_reference_t<Tys>...>>;
         using remove_cvref = info<kaixo::pack<std::remove_cvref_t<Tys>...>>;
         using add_lvalue_reference = info<kaixo::pack<std::add_lvalue_reference_t<Tys>...>>;
@@ -1634,6 +1830,9 @@ KAIXO_FUNCTION_PTR_INFO_MOD(noexcept)
         using remove_pointer = info<kaixo::pack<std::remove_pointer_t<Tys>...>>;
         using add_pointer = info<kaixo::pack<std::add_pointer_t<Tys>...>>;
         using type = kaixo::pack<Tys...>;
+
+        constexpr static auto type_info = std::array{ &typeid(Tys)... };
+        constexpr static auto type_name = std::array{ kaixo::type_name<Tys>... };
     };
 
     template<callable_type Ty>
@@ -1677,6 +1876,39 @@ KAIXO_FUNCTION_PTR_INFO_MOD(noexcept)
         using remove_all_extents = info<std::remove_all_extents_t<Ty>>;
     };
 
+    template<auto Ty>
+    struct info<value<Ty>> : info<decltype(Ty)> {
+        constexpr static auto name = kaixo::object_name<Ty>;
+    };
+
+    template<auto Ty>
+        requires callable_type<decltype(Ty)>
+    struct info<value<Ty>> : info<decltype(Ty)> {
+        constexpr static auto name = kaixo::object_name<Ty>;
+        constexpr static auto function_name = kaixo::function_name<Ty>;
+    };
+
+    template<auto V>
+    using info_v = info<value<V>>;
+
     template<class ...Tys>
     struct pack_info : info_base<pack<Tys...>> {};
+
+    template<std::size_t Size, bool Unsigned> struct integer_t;
+    template<> struct integer_t<8, false> { using type = std::int8_t; };
+    template<> struct integer_t<16, false> { using type = std::int16_t; };
+    template<> struct integer_t<32, false> { using type = std::int32_t; };
+    template<> struct integer_t<64, false> { using type = std::int64_t; };
+    template<> struct integer_t<8, true> { using type = std::uint8_t; };
+    template<> struct integer_t<16, true> { using type = std::uint16_t; };
+    template<> struct integer_t<32, true> { using type = std::uint32_t; };
+    template<> struct integer_t<64, true> { using type = std::uint64_t; };
+
+    template<std::size_t Size, bool Unsigned = false>
+        requires (Size == 8 || Size == 16 || Size == 32 || Size == 64)
+    using int_t = typename integer_t<Size, Unsigned>::type;
+
+    template<std::size_t Size>
+        requires (Size == 8 || Size == 16 || Size == 32 || Size == 64)
+    using uint_t = typename integer_t<Size, true>::type;
 }
