@@ -40,6 +40,9 @@ namespace kaixo {
 
     constexpr std::size_t npos = static_cast<std::size_t>(-1);
 
+    template<auto V> // Value wrapper
+    struct value { constexpr static decltype(auto) get() { return V; }; };
+
     struct dud {};
     template<class Ty> struct info_base;
     template<class Ty> struct info : info_base<Ty> {};
@@ -67,9 +70,11 @@ namespace kaixo {
     // is specialization of templated class
     template<class Test, template<class...> class Ref>
     concept specialization = detail::is_specialization<std::decay_t<Test>, Ref>::value;
+   
+    template<class Ty> concept is_functor = requires(decltype(&Ty::operator()) a) { a; };
 
     // templated for, calls lambda with template argument std::size_t
-    template<std::integral auto S, std::integral auto E = npos> constexpr auto sequence(auto lambda) {
+    template<std::integral auto S, std::integral auto E = npos> constexpr auto sequence = [](auto lambda) {
         if constexpr (E == npos) 
         return[&] <std::size_t ...Is>(std::integer_sequence<decltype(S), Is...>) {
             return lambda.operator() < (Is)... > ();
@@ -77,40 +82,18 @@ namespace kaixo {
         else return[&] <auto ...Is>(std::integer_sequence<decltype(E - S), Is...>) {
             return lambda.operator() < (Is + S)... > ();
         }(std::make_integer_sequence<decltype(E - S), E - S>{});
-    }
-
+    };
+    
     // templated for, calls lambda with template argument std::size_t
-    template<std::integral auto S, std::integral auto E = npos> constexpr void tfor(auto lambda) {
+    template<std::integral auto S, std::integral auto E = npos> constexpr auto indexed_for = [](auto lambda) {
         if constexpr (E == npos) 
-        [&] <std::size_t ...Is>(std::integer_sequence<decltype(S), Is...>) {
+        [&] <auto ...Is>(std::integer_sequence<decltype(S), Is...>) {
             (lambda.operator() < Is > (), ...);
         }(std::make_integer_sequence<decltype(S), S>{});
         else [&] <auto ...Is>(std::integer_sequence<decltype(E - S), Is...>) {
             (lambda.operator() < Is + S > (), ...);
         }(std::make_integer_sequence<decltype(E - S), E - S>{});
-    }
-
-    // templated for, for tuple, supports concept constraints
-    template<class Tuple> constexpr void tfor(Tuple&& tuple, auto lambda) {
-        tfor<std::tuple_size_v<std::decay_t<Tuple>>>([&]<std::size_t I> {
-            if constexpr (std::is_invocable_v<decltype(lambda),
-                decltype(std::get<I>(tuple))>) lambda(std::get<I>(tuple));
-        });
-    }
-
-    // templated for, for tuple, supports concept constraints
-    template<class Tuple> constexpr void tfor(Tuple&& tuple, auto... lambdas) {
-        tfor<std::tuple_size_v<std::decay_t<Tuple>>>([&]<std::size_t I> {
-            ([&](auto& lambda) {
-                if constexpr (std::is_invocable_v<decltype(lambda),
-                    decltype(std::get<I>(tuple))>) {
-                    lambda(std::get<I>(tuple));
-                    return true;
-                }
-                return false;
-                }(lambdas) || ...);
-        });
-    }
+    };
 
     consteval std::string_view _enum_pretty_name(std::string_view name) noexcept {
         for (std::size_t i = name.size(); i > 0; --i) if (auto& c = name[i - 1];
@@ -466,10 +449,6 @@ namespace kaixo {
      *                    a little bit easier                    *
      *                                                           *
      * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-
-
-    template<auto V> // Value wrapper
-    struct value { constexpr static decltype(auto) get() { return V; }; };
 
     namespace detail {
         // Single, non-templated type -> Ty<T>
@@ -1331,8 +1310,6 @@ KAIXO_MEMBER_CALL_V(MAC, &&, NOEXCEPT)
 KAIXO_MEMBER_CALL_NOEXCEPT(MAC,         ) \
 KAIXO_MEMBER_CALL_NOEXCEPT(MAC, noexcept) 
 
-    template<class Ty> concept is_functor = requires(decltype(&Ty::operator()) a) { a; };
-
     template<class> struct function_info_impl;
     template<is_functor Ty> struct function_info_impl<Ty>
         : function_info_impl<decltype(&Ty::operator())> {};
@@ -1841,15 +1818,21 @@ KAIXO_FUNCTION_PTR_INFO_MOD(noexcept)
 
     template<class Ty>
         requires (type_concepts::integral<Ty> && !type_concepts::boolean<Ty>)
-    struct info<Ty> : info_base<Ty> {
+    struct info<Ty> : info_base<Ty>, std::numeric_limits<Ty> {
         using make_signed = info<std::make_signed<Ty>>;
         using make_unsigned = info<std::make_unsigned<Ty>>;
     };
 
     template<class Ty>
+        requires (type_concepts::floating_point<Ty>)
+    struct info<Ty> : info_base<Ty>, std::numeric_limits<Ty> {
+        
+    };
+
+    template<class Ty>
         requires (type_concepts::enum_type<Ty>)
     struct info<Ty> : info_base<Ty> {
-        using underlying = std::underlying_type_t<Ty>;
+        using underlying = info<std::underlying_type_t<Ty>>;
 
         template<underlying Value>
         constexpr static auto name = enum_name<Ty, Value>;
@@ -1911,4 +1894,59 @@ KAIXO_FUNCTION_PTR_INFO_MOD(noexcept)
     template<std::size_t Size>
         requires (Size == 8 || Size == 16 || Size == 32 || Size == 64)
     using uint_t = typename integer_t<Size, true>::type;
+
+    // Test if a functor is invocable without implicit conversions
+    template<class Functor, class ...Args>
+    constexpr bool invocable_no_conversions = [] {
+        // If not callable type, it is a templated functor, so just check invocability
+        if constexpr (!is_functor<Functor>)
+            return std::invocable<Functor, Args...>;
+        else { // Otherwise check matching arguments
+            using tys = pack_info<Args...>;
+            using args = info<Functor>::arguments;
+            if constexpr (args::size != tys::size) return false;
+            else {
+                const auto check_one = []<std::size_t I>(value<I>) {
+                    using ty1 = tys::template info<I>;
+                    using ty2 = args::template info<I>;
+
+                    return std::same_as<typename ty1::decay::type, typename ty2::decay::type>
+                        && std::convertible_to<typename ty1::type, typename ty2::type>;
+                };
+                return sequence<args::size>([&]<std::size_t ...Is>{
+                    return (check_one(value<Is>{}) && ...);
+                });
+            }
+        }
+    }();
+
+    // templated for, for tuple, supports concept constraints
+    constexpr auto tuple_for = []<class Tuple>(Tuple && tuple, auto... lambdas) {
+        auto loop_no_conversions = [&]<std::size_t I>(auto & lambda, value<I>) {
+            using l_type = std::decay_t<decltype(lambda)>;
+            if constexpr (invocable_no_conversions<l_type,
+                decltype(std::get<I>(tuple))>) {
+                lambda(std::get<I>(tuple));
+                return true;
+            }
+            return false;
+        };
+
+        auto loop = [&]<std::size_t I>(auto & lambda, value<I>) {
+            using l_type = std::decay_t<decltype(lambda)>;
+            if constexpr (std::invocable<l_type,
+                decltype(std::get<I>(tuple))>) {
+                lambda(std::get<I>(tuple));
+                return true;
+            }
+            return false;
+        };
+
+        indexed_for<std::tuple_size_v<std::decay_t<Tuple>>>([&]<std::size_t I> {
+            // 2 different checks, first check invocable without implicit conversions
+            if (!(loop_no_conversions(lambdas, value<I>{}) || ...))
+                // If that fails, try with implicit conversions
+                (loop(lambdas, value<I>{}) || ...);
+        });
+    };
 }

@@ -6853,3 +6853,39 @@ struct CustomGuiObject {
 void setValue(GuiObject obj, int v) {
     obj.value = v;
 }
+
+template<auto V>
+struct constant_v {
+    constexpr static auto value = V;
+};
+
+template<char ...S>
+consteval std::size_t to_index() {
+    constexpr std::size_t size = sizeof...(S);
+    using values = kaixo::to_pack<static_cast<int>(S - '0')...>;
+    return[&]<std::size_t ...Is>(std::index_sequence<Is...>) {
+        std::size_t m = 1;
+        std::size_t res = 0;
+        ((res += m * (values::template element<size - Is - 1>), m *= 10), ...);
+        return res;
+    }(std::make_index_sequence<size>{});
+}
+
+template<char ...S>
+    requires ((S >= '0' && S <= '9') && ...)
+consteval constant_v<to_index<S...>()> operator""_() {
+    return {};
+}
+
+template<class ...Tys>
+struct tuple : std::tuple<Tys...> {
+    using std::tuple<Tys...>::tuple;
+    using types = kaixo::pack<Tys...>;
+
+    template<class Self, std::size_t I>
+    constexpr auto operator[](this Self&& self, constant_v<I>)
+        noexcept(noexcept(std::get<I>(std::forward<Self>(self))))
+        -> decltype(std::get<I>(std::forward<Self>(self))) {
+        return            std::get<I>(std::forward<Self>(self));
+    }
+};
