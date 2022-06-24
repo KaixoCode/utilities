@@ -1169,7 +1169,7 @@ namespace kaixo {
     };
 
     template<> // Special case for empty pack
-    struct pack<> {
+    struct pack<> : info<pack<>> {
         constexpr static std::size_t size = 0;
         constexpr static std::size_t unique_count = 0;
         constexpr static std::size_t bytes = 0;
