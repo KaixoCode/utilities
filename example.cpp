@@ -28,9 +28,43 @@ constexpr void visit(std::variant<Args...>& v, Functors&& ...functors) {
 }
 
 
+
+void myfun(int, double, float, char, long) {}
+
+namespace kaixo {
+
+}
+
+struct Struct {
+    double a;
+    double e;
+    int f;
+    int b;
+    long d;
+    char c;
+};
+
 int main() {
+    using namespace kaixo;
+    using struct_members = info<Struct>::members;
+
+    using ce = not_convertible_to<Struct, const Struct&, Struct&&>;
+    constexpr auto ginrg = std::convertible_to<ce, Struct>;
+
+    constexpr auto aoine = std::constructible_from<Struct, ce, ce, ce, ce, ce, ce>;
 
 
+    constexpr auto bs = info<Struct>::bytes;
+    constexpr auto ms = info<Struct>::struct_size;
+    constexpr auto ii = info<Struct>::indices<int>;
+    constexpr auto ci = info<Struct>::count<int>;
+    constexpr auto cc = info<Struct>::count<char>;
+    constexpr auto hs = info<Struct>::has<short>;
+
+
+    pack<void, void>::swap<1, int>::element<0>;
+
+    fill_pack<void, 10>::swap<1, int>::element<0>;
 
     enum Fruit {
         Apple, 
@@ -48,7 +82,6 @@ int main() {
     std::tuple<int, double, float, long> tuple;
     
 
-    kaixo::pack<int, double>::append<int>::unique_count;
 
     constexpr auto aion = kaixo::invocable_no_conversions<decltype([](double) {}), double&>;
 
