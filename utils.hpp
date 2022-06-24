@@ -43,11 +43,34 @@ namespace kaixo {
     template<auto V> // Value wrapper
     struct value { constexpr static decltype(auto) get() { return V; }; };
 
+    template<class ...Functors>
+    struct overloaded : Functors... {
+        using Functors::operator()...;
+    };
+
     struct dud {};
     template<class Ty> struct info_base;
     template<class Ty> struct info : info_base<Ty> {};
     template<class ...Args> struct pack;
     template<class ...Tys> struct pack_info;
+
+    template<std::size_t Size, bool Unsigned> struct integer_t;
+    template<> struct integer_t<8, false> { using type = std::int8_t; };
+    template<> struct integer_t<16, false> { using type = std::int16_t; };
+    template<> struct integer_t<32, false> { using type = std::int32_t; };
+    template<> struct integer_t<64, false> { using type = std::int64_t; };
+    template<> struct integer_t<8, true> { using type = std::uint8_t; };
+    template<> struct integer_t<16, true> { using type = std::uint16_t; };
+    template<> struct integer_t<32, true> { using type = std::uint32_t; };
+    template<> struct integer_t<64, true> { using type = std::uint64_t; };
+
+    template<std::size_t Size, bool Unsigned = false>
+        requires (Size == 8 || Size == 16 || Size == 32 || Size == 64)
+    using int_t = typename integer_t<Size, Unsigned>::type;
+
+    template<std::size_t Size>
+        requires (Size == 8 || Size == 16 || Size == 32 || Size == 64)
+    using uint_t = typename integer_t<Size, true>::type;
 
     template<class Ty> 
     constexpr static std::size_t sizeof_v = [] { 
@@ -70,30 +93,6 @@ namespace kaixo {
     // is specialization of templated class
     template<class Test, template<class...> class Ref>
     concept specialization = detail::is_specialization<std::decay_t<Test>, Ref>::value;
-   
-    template<class Ty> concept is_functor = requires(decltype(&Ty::operator()) a) { a; };
-
-    // templated for, calls lambda with template argument std::size_t
-    template<std::integral auto S, std::integral auto E = npos> constexpr auto sequence = [](auto lambda) {
-        if constexpr (E == npos) 
-        return[&] <std::size_t ...Is>(std::integer_sequence<decltype(S), Is...>) {
-            return lambda.operator() < (Is)... > ();
-        }(std::make_integer_sequence<decltype(S), S>{});
-        else return[&] <auto ...Is>(std::integer_sequence<decltype(E - S), Is...>) {
-            return lambda.operator() < (Is + S)... > ();
-        }(std::make_integer_sequence<decltype(E - S), E - S>{});
-    };
-    
-    // templated for, calls lambda with template argument std::size_t
-    template<std::integral auto S, std::integral auto E = npos> constexpr auto indexed_for = [](auto lambda) {
-        if constexpr (E == npos) 
-        [&] <auto ...Is>(std::integer_sequence<decltype(S), Is...>) {
-            (lambda.operator() < Is > (), ...);
-        }(std::make_integer_sequence<decltype(S), S>{});
-        else [&] <auto ...Is>(std::integer_sequence<decltype(E - S), Is...>) {
-            (lambda.operator() < Is + S > (), ...);
-        }(std::make_integer_sequence<decltype(E - S), E - S>{});
-    };
 
     consteval std::string_view _enum_pretty_name(std::string_view name) noexcept {
         for (std::size_t i = name.size(); i > 0; --i) if (auto& c = name[i - 1];
@@ -120,7 +119,7 @@ namespace kaixo {
         return name;
     }
 
-    template<class Ty, std::underlying_type_t<Ty> V>
+    template<class Ty, auto V>
     constexpr auto enum_name = enum_name_impl<Ty, static_cast<Ty>(V)>();
 
     template<auto Value>
@@ -973,7 +972,7 @@ namespace kaixo {
 
     // Pack utils for a pack of types
     template<class ...Args>
-    struct pack {
+    struct pack : info<pack<Args...>> {
         constexpr static std::size_t size = sizeof...(Args);
         constexpr static std::size_t unique_count = detail::unique_count<Args...>;
         constexpr static std::size_t bytes = (sizeof_v<Args> + ... + 0);
@@ -1257,14 +1256,6 @@ namespace kaixo {
     template<class ...Args>
     using concat = typename detail::concat_impl<Args...>::type;
 
-    namespace detail {
-        template<class> struct as_pack_impl;
-        template<template<class ...> class Ty, class ...Args>
-        struct as_pack_impl<Ty<Args...>> {
-            using type = kaixo::pack<Args...>;
-        };
-    }
-
     template<class Ty> // Convert templated type to pack
     using as_pack = move_types<Ty, kaixo::pack>;
 
@@ -1293,6 +1284,12 @@ namespace kaixo {
      *                                                           *
      * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+    namespace functional {
+        constexpr auto unit = []<class Ty>(Ty && i) -> Ty&& { return std::forward<Ty>(i); };
+        template<class To>
+        constexpr auto cast = []<class Ty>(Ty && i) -> To { return static_cast<To>(std::forward<Ty>(i)); };
+    }
+
 #define KAIXO_MEMBER_CALL_C(MAC, V, REF, NOEXCEPT) \
 MAC(     , V, REF, NOEXCEPT)                       \
 MAC(const, V, REF, NOEXCEPT)
@@ -1310,6 +1307,8 @@ KAIXO_MEMBER_CALL_V(MAC, &&, NOEXCEPT)
 KAIXO_MEMBER_CALL_NOEXCEPT(MAC,         ) \
 KAIXO_MEMBER_CALL_NOEXCEPT(MAC, noexcept) 
 
+    template<class Ty> concept is_functor = requires(decltype(&Ty::operator()) a) { a; };
+
     template<class> struct function_info_impl;
     template<is_functor Ty> struct function_info_impl<Ty>
         : function_info_impl<decltype(&Ty::operator())> {};
@@ -1321,7 +1320,7 @@ struct function_info_impl<R(Ty::*)(Args...) CONST VOLATILE REF NOEXCEPT> {      
     using signature = info<R(Args...) CONST VOLATILE REF NOEXCEPT>;                      \
     using object = info<CONST VOLATILE Ty REF>;                                          \
     using result = info<R>;                                                              \
-    using arguments = pack_info<Args...>;                                                \
+    using arguments = pack<Args...>;                                                     \
     constexpr static bool is_fun_const = std::same_as<const int, CONST int>;             \
     constexpr static bool is_fun_mutable = !is_fun_const;                                \
     constexpr static bool is_fun_volatile = std::same_as<volatile int, VOLATILE int>;    \
@@ -1352,7 +1351,7 @@ struct function_info_impl<R(Args...) CONST VOLATILE REF NOEXCEPT> {             
     using pointer = info<R(*)(Args...) NOEXCEPT>;                                       \
     using signature = info<R(Args...) CONST VOLATILE REF NOEXCEPT>;                     \
     using result = info<R>;                                                             \
-    using arguments = pack_info<Args...>;                                               \
+    using arguments = pack<Args...>;                                                    \
     constexpr static bool is_fun_const = std::same_as<const int, CONST int>;            \
     constexpr static bool is_fun_mutable = !is_fun_const;                               \
     constexpr static bool is_fun_volatile = std::same_as<volatile int, VOLATILE int>;   \
@@ -1383,7 +1382,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
     using pointer = info<R(*)(Args...) NOEXCEPT>;                                           \
     using signature = info<R(Args...) NOEXCEPT>;                                            \
     using result = info<R>;                                                                 \
-    using arguments = pack_info<Args...>;                                                   \
+    using arguments = pack<Args...>;                                                        \
     constexpr static bool is_noexcept = std::same_as<void() noexcept, void() NOEXCEPT>;     \
     using add_noexcept = info<R(Args...) noexcept>;                                         \
     using remove_noexcept = info<R(Args...)>;                                               \
@@ -1695,7 +1694,7 @@ KAIXO_FUNCTION_PTR_INFO_MOD(noexcept)
         constexpr static auto type_name = kaixo::type_name<Ty>;
     };
 
-    template<class ...Tys> struct info_base<pack<Tys...>> : pack<Tys...> {
+    template<class ...Tys> struct info_base<pack<Tys...>> {
         constexpr static bool is_null_pointer = (type_concepts::null_pointer<Tys> && ...);
         constexpr static bool is_integral = (type_concepts::integral<Tys> && ...);
         constexpr static bool is_floating_point = (type_concepts::floating_point<Tys> && ...);
@@ -1834,10 +1833,10 @@ KAIXO_FUNCTION_PTR_INFO_MOD(noexcept)
     struct info<Ty> : info_base<Ty> {
         using underlying = info<std::underlying_type_t<Ty>>;
 
-        template<underlying Value>
+        template<auto Value>
         constexpr static auto name = enum_name<Ty, Value>;
 
-        template<underlying Value>
+        template<auto Value>
         constexpr static auto defined = name<Value>.data() != nullptr;
     };
     
@@ -1874,26 +1873,35 @@ KAIXO_FUNCTION_PTR_INFO_MOD(noexcept)
     template<auto V>
     using info_v = info<value<V>>;
 
-    template<class ...Tys>
-    struct pack_info : info_base<pack<Tys...>> {};
+    /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+     *                                                           *
+     *                       Sequence Utils                      *
+     *                                                           *
+     *           Template helpers for integer sequences          *
+     *                                                           *
+     * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-    template<std::size_t Size, bool Unsigned> struct integer_t;
-    template<> struct integer_t<8, false> { using type = std::int8_t; };
-    template<> struct integer_t<16, false> { using type = std::int16_t; };
-    template<> struct integer_t<32, false> { using type = std::int32_t; };
-    template<> struct integer_t<64, false> { using type = std::int64_t; };
-    template<> struct integer_t<8, true> { using type = std::uint8_t; };
-    template<> struct integer_t<16, true> { using type = std::uint16_t; };
-    template<> struct integer_t<32, true> { using type = std::uint32_t; };
-    template<> struct integer_t<64, true> { using type = std::uint64_t; };
+    // templated for, calls lambda with template argument std::size_t
+    template<std::integral auto S, std::integral auto E = npos> constexpr auto sequence = [](auto lambda) {
+        if constexpr (E == npos)
+            return[&] <std::size_t ...Is>(std::integer_sequence<decltype(S), Is...>) {
+            return lambda.operator() < (Is)... > ();
+        }(std::make_integer_sequence<decltype(S), S>{});
+        else return[&] <auto ...Is>(std::integer_sequence<decltype(E - S), Is...>) {
+            return lambda.operator() < (Is + S)... > ();
+        }(std::make_integer_sequence<decltype(E - S), E - S>{});
+    };
 
-    template<std::size_t Size, bool Unsigned = false>
-        requires (Size == 8 || Size == 16 || Size == 32 || Size == 64)
-    using int_t = typename integer_t<Size, Unsigned>::type;
-
-    template<std::size_t Size>
-        requires (Size == 8 || Size == 16 || Size == 32 || Size == 64)
-    using uint_t = typename integer_t<Size, true>::type;
+    // templated for, calls lambda with template argument std::size_t
+    template<std::integral auto S, std::integral auto E = npos> constexpr auto indexed_for = [](auto lambda) {
+        if constexpr (E == npos)
+            [&] <auto ...Is>(std::integer_sequence<decltype(S), Is...>) {
+            (lambda.operator() < Is > (), ...);
+        }(std::make_integer_sequence<decltype(S), S>{});
+        else[&] <auto ...Is>(std::integer_sequence<decltype(E - S), Is...>) {
+            (lambda.operator() < Is + S > (), ...);
+        }(std::make_integer_sequence<decltype(E - S), E - S>{});
+    };
 
     // Test if a functor is invocable without implicit conversions
     template<class Functor, class ...Args>
@@ -1902,7 +1910,7 @@ KAIXO_FUNCTION_PTR_INFO_MOD(noexcept)
         if constexpr (!is_functor<Functor>)
             return std::invocable<Functor, Args...>;
         else { // Otherwise check matching arguments
-            using tys = pack_info<Args...>;
+            using tys = pack<Args...>;
             using args = info<Functor>::arguments;
             if constexpr (args::size != tys::size) return false;
             else {
@@ -1949,4 +1957,114 @@ KAIXO_FUNCTION_PTR_INFO_MOD(noexcept)
                 (loop(lambdas, value<I>{}) || ...);
         });
     };
+
+    /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+     *                                                           *
+     *                        Switch Utils                       *
+     *                                                           *
+     *            Macro to help define custom length             *
+     *         switch statements with custom case bodies         *
+     *                                                           *
+     * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#define   KAIXO_SC1(sc, a)         sc (    0ull + a) 
+#define   KAIXO_SC2(sc, a)         sc (    0ull + a)         sc (      1ull + a)
+#define   KAIXO_SC4(sc, a)   KAIXO_SC2(sc, 0ull + a)   KAIXO_SC2(sc,   2ull + a)
+#define   KAIXO_SC8(sc, a)   KAIXO_SC4(sc, 0ull + a)   KAIXO_SC4(sc,   4ull + a)
+#define  KAIXO_SC16(sc, a)   KAIXO_SC8(sc, 0ull + a)   KAIXO_SC8(sc,   8ull + a)
+#define  KAIXO_SC32(sc, a)  KAIXO_SC16(sc, 0ull + a)  KAIXO_SC16(sc,  16ull + a)
+#define  KAIXO_SC64(sc, a)  KAIXO_SC32(sc, 0ull + a)  KAIXO_SC32(sc,  32ull + a)
+#define KAIXO_SC128(sc, a)  KAIXO_SC64(sc, 0ull + a)  KAIXO_SC64(sc,  64ull + a)
+#define KAIXO_SC256(sc, a) KAIXO_SC128(sc, 0ull + a) KAIXO_SC128(sc, 128ull + a)
+#define KAIXO_SC512(sc, a) KAIXO_SC256(sc, 0ull + a) KAIXO_SC256(sc, 256ull + a)
+
+#define KAIXO_SWITCH_IMPL(TYPE, CASE) \
+TYPE(  1ull,   KAIXO_SC1(CASE, 0ull)) \
+TYPE(  2ull,   KAIXO_SC2(CASE, 0ull)) \
+TYPE(  4ull,   KAIXO_SC4(CASE, 0ull)) \
+TYPE(  8ull,   KAIXO_SC8(CASE, 0ull)) \
+TYPE( 16ull,  KAIXO_SC16(CASE, 0ull)) \
+TYPE( 32ull,  KAIXO_SC32(CASE, 0ull)) \
+TYPE( 64ull,  KAIXO_SC64(CASE, 0ull)) \
+TYPE(128ull, KAIXO_SC128(CASE, 0ull)) \
+TYPE(256ull, KAIXO_SC256(CASE, 0ull)) \
+TYPE(512ull, KAIXO_SC512(CASE, 0ull))
+
+    template <std::unsigned_integral Ty>
+    constexpr Ty closest_larger_power2(Ty v) {
+        return v > 1ull ? 1ull << (sizeof(Ty) * CHAR_BIT - std::countl_zero(v - 1ull)) : v;
+    }
+
+#define KAIXO_TUPLE_SWITCH_C(i) case transform(i):          \
+    if constexpr (i < sizeof...(Args)) {                    \
+        if constexpr (std::invocable<                       \
+            decltype(std::get<i>(cases)), decltype(index)>) \
+            return std::get<i>(cases)(index);               \
+        else return std::get<i>(cases)();                   \
+    } else break; 
+
+    template<std::size_t I>
+    struct tuple_switch_impl;
+
+#define KAIXO_TUPLE_SWITCH_S(n, cs)                                  \
+template<>                                                           \
+struct tuple_switch_impl<n> {                                        \
+    template<auto transform, class ...Args>                          \
+    constexpr static auto handle(Args&& ...cases) {                  \
+        return [cases = std::tuple(                                  \
+                        std::forward<Args>(cases)...)](auto index) { \
+            switch (index) { cs }                                    \
+        };                                                           \
+    }                                                                \
+};
+
+    KAIXO_SWITCH_IMPL(KAIXO_TUPLE_SWITCH_S, KAIXO_TUPLE_SWITCH_C)
+#undef KAIXO_TUPLE_SWITCH_S
+#undef KAIXO_TUPLE_SWITCH_C
+
+    // Generate a switch statement with custom bodies
+    template<auto transform = [](auto i) { return i; }>
+    constexpr auto generate_switch = []<class ...Functors>(Functors&& ...cases) {
+        constexpr auto p2 = closest_larger_power2(sizeof...(Functors));
+        return tuple_switch_impl<p2>::template handle<transform>(std::forward<Functors>(cases)...);
+    };
+
+#define KAIXO_TEMPLATE_SWITCH_C(i) case transform(i):  \
+    if constexpr (i < cases) {                         \
+        return functor.operator()<transform(i)>();     \
+    } else break; 
+
+    template<std::size_t I>
+    struct template_switch_impl;
+
+#define KAIXO_TEMPLATE_SWITCH_S(n, cs)                               \
+template<>                                                           \
+struct template_switch_impl<n> {                                     \
+    template<auto cases, auto transform, class Arg>                  \
+    constexpr static auto handle(Arg&& functor) {                    \
+        return [functor = std::forward<Arg>(functor)](auto index) {  \
+            switch (index) { cs }                                    \
+        };                                                           \
+    }                                                                \
+};
+
+    KAIXO_SWITCH_IMPL(KAIXO_TEMPLATE_SWITCH_S, KAIXO_TEMPLATE_SWITCH_C)
+#undef KAIXO_TEMPLATE_SWITCH_S
+#undef KAIXO_TEMPLATE_SWITCH_C
+
+    template<std::unsigned_integral auto cases, auto transform = functional::unit>
+    constexpr auto generate_template_switch = []<class Arg>(Arg&& functor) {
+        constexpr auto p2 = closest_larger_power2(cases);
+        return template_switch_impl<p2>::template handle<cases, transform>(std::forward<Arg>(functor));
+    };
+
+    // Convert enum value to string, uses a switch statement
+    template<kaixo::type_concepts::enum_type Ty, 
+        std::size_t Size = static_cast<std::size_t>(Ty::Size)>
+    constexpr auto enum_to_string(Ty val) {
+        constexpr auto _str = kaixo::generate_template_switch<
+            Size, kaixo::functional::cast<Ty>
+        >([]<Ty V> { return kaixo::info<Ty>::template name<V>; });
+        return _str(val);
+    }
 }
