@@ -1636,7 +1636,6 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             template<class Ty> concept trivial = std::is_trivial_v<Ty>;
             template<class Ty> concept trivially_copyable = std::is_trivially_copyable_v<Ty>;
             template<class Ty> concept standard_layout = std::is_standard_layout_v<Ty>;
-            template<class Ty> concept pod = std::is_pod_v<Ty>;
             template<class Ty> concept unique_object_representations = std::has_unique_object_representations_v<Ty>;
             template<class Ty> concept empty = std::is_empty_v<Ty>;
             template<class Ty> concept polymorphic = std::is_polymorphic_v<Ty>;
@@ -1647,9 +1646,6 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             template<class Ty> concept unsigned_integral = std::is_unsigned_v<Ty>;
             template<class Ty> concept bounded_array = std::is_bounded_array_v<Ty>;
             template<class Ty> concept unbounded_array = std::is_unbounded_array_v<Ty>;
-            template<class Ty, class ...Args> concept constructible = std::is_constructible_v<Ty, Args...>;
-            template<class Ty, class ...Args> concept trivially_constructible = std::is_trivially_constructible_v<Ty, Args...>;
-            template<class Ty, class ...Args> concept nothrow_constructible = std::is_nothrow_constructible_v<Ty, Args...>;
             template<class Ty> concept default_constructible = std::is_default_constructible_v<Ty>;
             template<class Ty> concept trivially_default_constructible = std::is_trivially_default_constructible_v<Ty>;
             template<class Ty> concept nothrow_default_constructible = std::is_nothrow_default_constructible_v<Ty>;
@@ -1676,6 +1672,22 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             template<class Ty> concept swappable = std::is_swappable_v<Ty>;
             template<class Ty, class Other> concept nothrow_swappable_with = std::is_nothrow_swappable_with_v<Ty, Other>;
             template<class Ty> concept nothrow_swappable = std::is_nothrow_swappable_v<Ty>;
+        
+            template<class Ty, class Other> concept same_as = std::same_as<Ty, Other>;
+            template<class Ty, class Other> concept base_of = std::is_base_of_v<Ty, Other>;
+            template<class Ty, class Other> concept convertible_to = std::is_convertible_v<Ty, Other>;
+            template<class Ty, class Other> concept nothrow_convertible_to = std::is_nothrow_convertible_v<Ty, Other>;
+
+            template<template<class Ty, class ...Args> class Trait, class Ty, class ...Args>
+            struct pack_trait_helper : Trait<Ty, Args...> {};
+            template<template<class Ty, class ...Args> class Trait, class Ty, class ...Args>
+            struct pack_trait_helper<Trait, Ty, pack<Args...>> : Trait<Ty, Args...> {};
+
+            template<class Ty, class ...Args> concept constructible = pack_trait_helper<std::is_constructible, Ty, Args...>::value;
+            template<class Ty, class ...Args> concept trivially_constructible = pack_trait_helper<std::is_trivially_constructible, Ty, Args...>::value;
+            template<class Ty, class ...Args> concept nothrow_constructible = pack_trait_helper<std::is_nothrow_constructible, Ty, Args...>::value;
+            template<class Ty, class ...Args> concept invocable = pack_trait_helper<std::is_invocable, Ty, Args...>::value;
+            template<class Ty, class ...Args> concept nothrow_invocable = pack_trait_helper<std::is_nothrow_invocable, Ty, Args...>::value;
         }
 
         template<type_concepts::aggregate Ty>
@@ -1906,79 +1918,83 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         using remove_cv = typename copy_cv_impl<int, To>::type;
 
         template<class Ty> struct info_base : RTTI_Ftable<Ty> {
-            constexpr static bool is_void = type_concepts::void_type<Ty>;
-            constexpr static bool is_null_pointer = type_concepts::null_pointer<Ty>;
-            constexpr static bool is_integral = type_concepts::integral<Ty>;
-            constexpr static bool is_floating_point = type_concepts::floating_point<Ty>;
-            constexpr static bool is_array = type_concepts::array<Ty>;
-            constexpr static bool is_enum = type_concepts::enum_type<Ty>;
-            constexpr static bool is_union = type_concepts::union_type<Ty>;
-            constexpr static bool is_class = type_concepts::class_type<Ty>;
-            constexpr static bool is_function = type_concepts::function<Ty>;
-            constexpr static bool is_pointer = type_concepts::pointer<Ty>;
-            constexpr static bool is_lvalue_reference = type_concepts::lvalue_reference<Ty>;
-            constexpr static bool is_rvalue_reference = type_concepts::rvalue_reference<Ty>;
-            constexpr static bool is_member_object_pointer = type_concepts::member_object_pointer<Ty>;
-            constexpr static bool is_member_function_pointer = type_concepts::member_function_pointer<Ty>;
-            constexpr static bool is_fundamental = type_concepts::fundamental<Ty>;
-            constexpr static bool is_arithmetic = type_concepts::arithmetic<Ty>;
-            constexpr static bool is_scalar = type_concepts::scalar<Ty>;
-            constexpr static bool is_object = type_concepts::object<Ty>;
-            constexpr static bool is_compound = type_concepts::compound<Ty>;
-            constexpr static bool is_reference = type_concepts::reference<Ty>;
-            constexpr static bool is_member_pointer = type_concepts::member_pointer<Ty>;
-            constexpr static bool is_const = type_concepts::const_type<Ty>;
-            constexpr static bool is_volatile = type_concepts::volatile_type<Ty>;
-            constexpr static bool is_trivial = type_concepts::trivial<Ty>;
-            constexpr static bool is_trivially_copyable = type_concepts::trivially_copyable<Ty>;
-            constexpr static bool is_standard_layout = type_concepts::standard_layout<Ty>;
-            constexpr static bool is_pod = type_concepts::pod<Ty>;
-            constexpr static bool has_unique_object_representations = type_concepts::unique_object_representations<Ty>;
-            constexpr static bool is_empty = type_concepts::empty<Ty>;
-            constexpr static bool is_polymorphic = type_concepts::polymorphic<Ty>;
-            constexpr static bool is_abstract = type_concepts::abstract<Ty>;
-            constexpr static bool is_final = type_concepts::final<Ty>;
-            constexpr static bool is_aggregate = type_concepts::aggregate<Ty>;
-            constexpr static bool is_signed = type_concepts::signed_integral<Ty>;
-            constexpr static bool is_unsigned = type_concepts::unsigned_integral<Ty>;
-            constexpr static bool is_bounded_array = type_concepts::bounded_array<Ty>;
-            constexpr static bool is_unbounded_array = type_concepts::unbounded_array<Ty>;
-            template<class ...Args> constexpr static bool is_constructible = type_concepts::constructible<Ty, Args...>;
-            template<class ...Args> constexpr static bool is_trivially_constructible = type_concepts::trivially_constructible<Ty, Args...>;
-            template<class ...Args> constexpr static bool is_nothrow_constructible = type_concepts::nothrow_constructible<Ty, Args...>;
-            constexpr static bool is_default_constructible = type_concepts::default_constructible<Ty>;
-            constexpr static bool is_trivially_default_constructible = type_concepts::trivially_default_constructible<Ty>;
-            constexpr static bool is_nothrow_default_constructible = type_concepts::nothrow_default_constructible<Ty>;
-            constexpr static bool is_copy_constructible = type_concepts::copy_constructible<Ty>;
-            constexpr static bool is_trivially_copy_constructible = type_concepts::trivially_copy_constructible<Ty>;
-            constexpr static bool is_nothrow_copy_constructible = type_concepts::nothrow_copy_constructible<Ty>;
-            constexpr static bool is_move_constructible = type_concepts::move_constructible<Ty>;
-            constexpr static bool is_trivially_move_constructible = type_concepts::trivially_move_constructible<Ty>;
-            constexpr static bool is_nothrow_move_constructible = type_concepts::nothrow_move_constructible<Ty>;
-            template<class From> constexpr static bool is_assignable = type_concepts::assignable<Ty, From>;
-            template<class From> constexpr static bool is_trivially_assignable = type_concepts::trivially_assignable<Ty, From>;
-            template<class From> constexpr static bool is_nothrow_assignable = type_concepts::nothrow_assignable<Ty, From>;
-            constexpr static bool is_copy_assignable = type_concepts::copy_assignable<Ty>;
-            constexpr static bool is_trivially_copy_assignable = type_concepts::trivially_copy_assignable<Ty>;
-            constexpr static bool is_nothrow_copy_assignable = type_concepts::nothrow_copy_assignable<Ty>;
-            constexpr static bool is_move_assignable = type_concepts::move_assignable<Ty>;
-            constexpr static bool is_trivially_move_assignable = type_concepts::trivially_move_assignable<Ty>;
-            constexpr static bool is_nothrow_move_assignable = type_concepts::nothrow_move_assignable<Ty>;
-            constexpr static bool is_destructible = type_concepts::destructible<Ty>;
-            constexpr static bool is_trivially_destructible = type_concepts::trivially_destructible<Ty>;
-            constexpr static bool is_nothrow_destructible = type_concepts::nothrow_destructible<Ty>;
-            constexpr static bool has_virtual_destructor = type_concepts::virtual_destructor<Ty>;
-            template<class Other> constexpr static bool is_swappable_with = type_concepts::swappable_with<Ty, Other>;
-            constexpr static bool is_swappable = type_concepts::swappable<Ty>;
-            template<class Other> constexpr static bool is_nothrow_swappable_with = type_concepts::nothrow_swappable_with<Ty, Other>;
-            constexpr static bool is_nothrow_swappable = type_concepts::nothrow_swappable<Ty>;
+            constexpr static bool is_void = std::is_void_v<Ty>;
+            constexpr static bool is_null_pointer = std::is_null_pointer_v<Ty>;
+            constexpr static bool is_integral = std::is_integral_v<Ty>;
+            constexpr static bool is_floating_point = std::is_floating_point_v<Ty>;
+            constexpr static bool is_array = std::is_array_v<Ty>;
+            constexpr static bool is_enum = std::is_enum_v<Ty>;
+            constexpr static bool is_union = std::is_union_v<Ty>;
+            constexpr static bool is_class = std::is_class_v<Ty>;
+            constexpr static bool is_function = std::is_function_v<Ty>;
+            constexpr static bool is_pointer = std::is_pointer_v<Ty>;
+            constexpr static bool is_lvalue_reference = std::is_lvalue_reference_v<Ty>;
+            constexpr static bool is_rvalue_reference = std::is_rvalue_reference_v<Ty>;
+            constexpr static bool is_member_object_pointer = std::is_member_object_pointer_v<Ty>;
+            constexpr static bool is_member_function_pointer = std::is_member_function_pointer_v<Ty>;
+            constexpr static bool is_fundamental = std::is_fundamental_v<Ty>;
+            constexpr static bool is_arithmetic = std::is_arithmetic_v<Ty>;
+            constexpr static bool is_scalar = std::is_scalar_v<Ty>;
+            constexpr static bool is_object = std::is_object_v<Ty>;
+            constexpr static bool is_compound = std::is_compound_v<Ty>;
+            constexpr static bool is_reference = std::is_reference_v<Ty>;
+            constexpr static bool is_member_pointer = std::is_member_pointer_v<Ty>;
+            constexpr static bool is_const = std::is_const_v<Ty>;
+            constexpr static bool is_volatile = std::is_volatile_v<Ty>;
+            constexpr static bool is_trivial = std::is_trivial_v<Ty>;
+            constexpr static bool is_trivially_copyable = std::is_trivially_copyable_v<Ty>;
+            constexpr static bool is_standard_layout = std::is_standard_layout_v<Ty>;
+            constexpr static bool has_unique_object_representations = std::has_unique_object_representations_v<Ty>;
+            constexpr static bool is_empty = std::is_empty_v<Ty>;
+            constexpr static bool is_polymorphic = std::is_polymorphic_v<Ty>;
+            constexpr static bool is_abstract = std::is_abstract_v<Ty>;
+            constexpr static bool is_final = std::is_final_v<Ty>;
+            constexpr static bool is_aggregate = std::is_aggregate_v<Ty>;
+            constexpr static bool is_signed = std::is_signed_v<Ty>;
+            constexpr static bool is_unsigned = std::is_unsigned_v<Ty>;
+            constexpr static bool is_bounded_array = std::is_bounded_array_v<Ty>;
+            constexpr static bool is_unbounded_array = std::is_unbounded_array_v<Ty>;
+            template<class ...Args> constexpr static bool is_constructible = std::constructible_from<Ty, Args...>;
+            template<class ...Args> constexpr static bool is_trivially_constructible = std::is_trivially_constructible_v<Ty, Args...>;
+            template<class ...Args> constexpr static bool is_nothrow_constructible = std::is_nothrow_constructible_v<Ty, Args...>;
+            constexpr static bool is_default_constructible = std::is_default_constructible_v<Ty>;
+            constexpr static bool is_trivially_default_constructible = std::is_trivially_default_constructible_v<Ty>;
+            constexpr static bool is_nothrow_default_constructible = std::is_nothrow_default_constructible_v<Ty>;
+            constexpr static bool is_copy_constructible = std::is_copy_constructible_v<Ty>;
+            constexpr static bool is_trivially_copy_constructible = std::is_trivially_copy_constructible_v<Ty>;
+            constexpr static bool is_nothrow_copy_constructible = std::is_nothrow_copy_constructible_v<Ty>;
+            constexpr static bool is_move_constructible = std::is_move_constructible_v<Ty>;
+            constexpr static bool is_trivially_move_constructible = std::is_trivially_move_constructible_v<Ty>;
+            constexpr static bool is_nothrow_move_constructible = std::is_nothrow_move_constructible_v<Ty>;
+            template<class From> constexpr static bool is_assignable = std::is_assignable_v<Ty, From>;
+            template<class From> constexpr static bool is_trivially_assignable = std::is_trivially_assignable_v<Ty, From>;
+            template<class From> constexpr static bool is_nothrow_assignable = std::is_nothrow_assignable_v<Ty, From>;
+            constexpr static bool is_copy_assignable = std::is_copy_assignable_v<Ty>;
+            constexpr static bool is_trivially_copy_assignable = std::is_trivially_copy_assignable_v<Ty>;
+            constexpr static bool is_nothrow_copy_assignable = std::is_nothrow_copy_assignable_v<Ty>;
+            constexpr static bool is_move_assignable = std::is_move_assignable_v<Ty>;
+            constexpr static bool is_trivially_move_assignable = std::is_trivially_move_assignable_v<Ty>;
+            constexpr static bool is_nothrow_move_assignable = std::is_nothrow_move_assignable_v<Ty>;
+            constexpr static bool is_destructible = std::is_destructible_v<Ty>;
+            constexpr static bool is_trivially_destructible = std::is_trivially_destructible_v<Ty>;
+            constexpr static bool is_nothrow_destructible = std::is_nothrow_destructible_v<Ty>;
+            constexpr static bool has_virtual_destructor = std::has_virtual_destructor_v<Ty>;
+            template<class Other> constexpr static bool is_swappable_with = std::is_swappable_with_v<Ty, Other>;
+            constexpr static bool is_swappable = std::is_swappable_v<Ty>;
+            template<class Other> constexpr static bool is_nothrow_swappable_with = std::is_nothrow_swappable_with_v<Ty, Other>;
+            constexpr static bool is_nothrow_swappable = std::is_nothrow_swappable_v<Ty>;
 
-            template<class Other> constexpr static bool same_as = std::same_as<Ty, Other>;
-            template<class Other> constexpr static bool base_of = std::is_base_of_v<Ty, Other>;
-            template<class Other> constexpr static bool convertible_to = std::is_convertible_v<Ty, Other>;
-            template<class Other> constexpr static bool nothrow_convertible_to = std::is_nothrow_convertible_v<Ty, Other>;
-            template<class ...Args> constexpr static bool invocable = std::invocable<Ty, Args...>;
-            template<class ...Args> constexpr static bool nothrow_invocable = std::is_nothrow_invocable_v<Ty, Args...>;
+            template<class Other> constexpr static bool is_same_as = std::same_as<Ty, Other>;
+            template<class Other> constexpr static bool is_base_of = std::is_base_of_v<Ty, Other>;
+            template<class Other> constexpr static bool is_convertible_to = std::is_convertible_v<Ty, Other>;
+            template<class Other> constexpr static bool is_nothrow_convertible_to = std::is_nothrow_convertible_v<Ty, Other>;
+            template<class ...Args> constexpr static bool is_invocable = std::invocable<Ty, Args...>;
+            template<class ...Args> constexpr static bool is_nothrow_invocable = std::is_nothrow_invocable_v<Ty, Args...>;
+            template<class Other> constexpr static bool can_construct = std::constructible_from<Ty, Other>;
+            template<class Other> constexpr static bool can_trivially_construct = std::is_trivially_constructible_v<Ty, Other>;
+            template<class Other> constexpr static bool can_nothrow_construct = std::is_nothrow_constructible_v<Ty, Other>;
+            template<class Other> constexpr static bool can_invoke = std::invocable<Ty, Other>;
+            template<class Other> constexpr static bool can_nothrow_invoke = std::is_nothrow_invocable_v<Ty, Other>;
 
             constexpr static std::size_t bytes = sizeof_v<Ty>;
             constexpr static std::size_t alignment = alignof_v<Ty>;
@@ -2044,79 +2060,84 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             constexpr static auto type_name = kaixo::type_name<Ty>;
         };
 
-        template<class ...Tys> requires (sizeof...(Tys) > 0) struct info_base<pack<Tys...>> {
-            constexpr static bool is_null_pointer = (type_concepts::null_pointer<Tys> && ...);
-            constexpr static bool is_integral = (type_concepts::integral<Tys> && ...);
-            constexpr static bool is_floating_point = (type_concepts::floating_point<Tys> && ...);
-            constexpr static bool is_array = (type_concepts::array<Tys> && ...);
-            constexpr static bool is_enum_type = (type_concepts::enum_type<Tys> && ...);
-            constexpr static bool is_union_type = (type_concepts::union_type<Tys> && ...);
-            constexpr static bool is_class_type = (type_concepts::class_type<Tys> && ...);
-            constexpr static bool is_function = (type_concepts::function<Tys> && ...);
-            constexpr static bool is_pointer = (type_concepts::pointer<Tys> && ...);
-            constexpr static bool is_lvalue_reference = (type_concepts::lvalue_reference<Tys> && ...);
-            constexpr static bool is_rvalue_reference = (type_concepts::rvalue_reference<Tys> && ...);
-            constexpr static bool is_member_object_pointer = (type_concepts::member_object_pointer<Tys> && ...);
-            constexpr static bool is_member_function_pointer = (type_concepts::member_function_pointer<Tys> && ...);
-            constexpr static bool is_fundamental = (type_concepts::fundamental<Tys> && ...);
-            constexpr static bool is_arithmetic = (type_concepts::arithmetic<Tys> && ...);
-            constexpr static bool is_scalar = (type_concepts::scalar<Tys> && ...);
-            constexpr static bool is_object = (type_concepts::object<Tys> && ...);
-            constexpr static bool is_compound = (type_concepts::compound<Tys> && ...);
-            constexpr static bool is_reference = (type_concepts::reference<Tys> && ...);
-            constexpr static bool is_member_pointer = (type_concepts::member_pointer<Tys> && ...);
-            constexpr static bool is_const_type = (type_concepts::const_type<Tys> && ...);
-            constexpr static bool is_volatile_type = (type_concepts::volatile_type<Tys> && ...);
-            constexpr static bool is_trivial = (type_concepts::trivial<Tys> && ...);
-            constexpr static bool is_trivially_copyable = (type_concepts::trivially_copyable<Tys> && ...);
-            constexpr static bool is_standard_layout = (type_concepts::standard_layout<Tys> && ...);
-            constexpr static bool is_pod = (type_concepts::pod<Tys> && ...);
-            constexpr static bool has_unique_object_representations = (type_concepts::unique_object_representations<Tys> && ...);
-            constexpr static bool is_empty = (type_concepts::empty<Tys> && ...);
-            constexpr static bool is_polymorphic = (type_concepts::polymorphic<Tys> && ...);
-            constexpr static bool is_abstract = (type_concepts::abstract<Tys> && ...);
-            constexpr static bool is_final = (type_concepts::final<Tys> && ...);
-            constexpr static bool is_aggregate = (type_concepts::aggregate<Tys> && ...);
-            constexpr static bool is_signed_integral = (type_concepts::signed_integral<Tys> && ...);
-            constexpr static bool is_unsigned_integral = (type_concepts::unsigned_integral<Tys> && ...);
-            constexpr static bool is_bounded_array = (type_concepts::bounded_array<Tys> && ...);
-            constexpr static bool is_unbounded_array = (type_concepts::unbounded_array<Tys> && ...);
-            template<class ...Args> constexpr static bool is_constructible = (type_concepts::constructible<Tys, Args...> && ...);
-            template<class ...Args> constexpr static bool is_trivially_constructible = (type_concepts::trivially_constructible<Tys, Args...> && ...);
-            template<class ...Args> constexpr static bool is_nothrow_constructible = (type_concepts::nothrow_constructible<Tys, Args...> && ...);
-            constexpr static bool is_default_constructible = (type_concepts::default_constructible<Tys> && ...);
-            constexpr static bool is_trivially_default_constructible = (type_concepts::trivially_default_constructible<Tys> && ...);
-            constexpr static bool is_nothrow_default_constructible = (type_concepts::nothrow_default_constructible<Tys> && ...);
-            constexpr static bool is_copy_constructible = (type_concepts::copy_constructible<Tys> && ...);
-            constexpr static bool is_trivially_copy_constructible = (type_concepts::trivially_copy_constructible<Tys> && ...);
-            constexpr static bool is_nothrow_copy_constructible = (type_concepts::nothrow_copy_constructible<Tys> && ...);
-            constexpr static bool is_move_constructible = (type_concepts::move_constructible<Tys> && ...);
-            constexpr static bool is_trivially_move_constructible = (type_concepts::trivially_move_constructible<Tys> && ...);
-            constexpr static bool is_nothrow_move_constructible = (type_concepts::nothrow_move_constructible<Tys> && ...);
-            template<class From> constexpr static bool is_assignable = (type_concepts::assignable<Tys, From> && ...);
-            template<class From> constexpr static bool is_trivially_assignable = (type_concepts::trivially_assignable<Tys, From> && ...);
-            template<class From> constexpr static bool is_nothrow_assignable = (type_concepts::nothrow_assignable<Tys, From> && ...);
-            constexpr static bool is_copy_assignable = (type_concepts::copy_assignable<Tys> && ...);
-            constexpr static bool is_trivially_copy_assignable = (type_concepts::trivially_copy_assignable<Tys> && ...);
-            constexpr static bool is_nothrow_copy_assignable = (type_concepts::nothrow_copy_assignable<Tys> && ...);
-            constexpr static bool is_move_assignable = (type_concepts::move_assignable<Tys> && ...);
-            constexpr static bool is_trivially_move_assignable = (type_concepts::trivially_move_assignable<Tys> && ...);
-            constexpr static bool is_nothrow_move_assignable = (type_concepts::nothrow_move_assignable<Tys> && ...);
-            constexpr static bool is_destructible = (type_concepts::destructible<Tys> && ...);
-            constexpr static bool is_trivially_destructible = (type_concepts::trivially_destructible<Tys> && ...);
-            constexpr static bool is_nothrow_destructible = (type_concepts::nothrow_destructible<Tys> && ...);
-            constexpr static bool has_virtual_destructor = (type_concepts::virtual_destructor<Tys> && ...);
-            template<class Other> constexpr static bool is_swappable_with = (type_concepts::swappable_with<Tys, Other> && ...);
-            constexpr static bool is_swappable = (type_concepts::swappable<Tys> && ...);
-            template<class Other> constexpr static bool is_nothrow_swappable_with = (type_concepts::nothrow_swappable_with<Tys, Other> && ...);
-            constexpr static bool is_nothrow_swappable = (type_concepts::nothrow_swappable<Tys> && ...);
+        template<class ...Tys> requires (sizeof...(Tys) > 0) struct info_base<pack_base<Tys...>> {
+            constexpr static bool are_void = (std::is_void_v<Tys> && ...);
+            constexpr static bool are_null_pointer = (std::is_null_pointer_v<Tys> && ...);
+            constexpr static bool are_integral = (std::is_integral_v<Tys> && ...);
+            constexpr static bool are_floating_point = (std::is_floating_point_v<Tys> && ...);
+            constexpr static bool are_array = (std::is_array_v<Tys> && ...);
+            constexpr static bool are_enum = (std::is_enum_v<Tys> && ...);
+            constexpr static bool are_union = (std::is_union_v<Tys> && ...);
+            constexpr static bool are_class = (std::is_class_v<Tys> && ...);
+            constexpr static bool are_function = (std::is_function_v<Tys> && ...);
+            constexpr static bool are_pointer = (std::is_pointer_v<Tys> && ...);
+            constexpr static bool are_lvalue_reference = (std::is_lvalue_reference_v<Tys> && ...);
+            constexpr static bool are_rvalue_reference = (std::is_rvalue_reference_v<Tys> && ...);
+            constexpr static bool are_member_object_pointer = (std::is_member_object_pointer_v<Tys> && ...);
+            constexpr static bool are_member_function_pointer = (std::is_member_function_pointer_v<Tys> && ...);
+            constexpr static bool are_fundamental = (std::is_fundamental_v<Tys> && ...);
+            constexpr static bool are_arithmetic = (std::is_arithmetic_v<Tys> && ...);
+            constexpr static bool are_scalar = (std::is_scalar_v<Tys> && ...);
+            constexpr static bool are_object = (std::is_object_v<Tys> && ...);
+            constexpr static bool are_compound = (std::is_compound_v<Tys> && ...);
+            constexpr static bool are_reference = (std::is_reference_v<Tys> && ...);
+            constexpr static bool are_member_pointer = (std::is_member_pointer_v<Tys> && ...);
+            constexpr static bool are_const = (std::is_const_v<Tys> && ...);
+            constexpr static bool are_volatile = (std::is_volatile_v<Tys> && ...);
+            constexpr static bool are_trivial = (std::is_trivial_v<Tys> && ...);
+            constexpr static bool are_trivially_copyable = (std::is_trivially_copyable_v<Tys> && ...);
+            constexpr static bool are_standard_layout = (std::is_standard_layout_v<Tys> && ...);
+            constexpr static bool have_unique_object_representations = (std::has_unique_object_representations_v<Tys> && ...);
+            constexpr static bool are_empty = (std::is_empty_v<Tys> && ...);
+            constexpr static bool are_polymorphic = (std::is_polymorphic_v<Tys> && ...);
+            constexpr static bool are_abstract = (std::is_abstract_v<Tys> && ...);
+            constexpr static bool are_final = (std::is_final_v<Tys> && ...);
+            constexpr static bool are_aggregate = (std::is_aggregate_v<Tys> && ...);
+            constexpr static bool are_signed_integral = (std::is_signed_v<Tys> && ...);
+            constexpr static bool are_unsigned_integral = (std::is_unsigned_v<Tys> && ...);
+            constexpr static bool are_bounded_array = (std::is_bounded_array_v<Tys> && ...);
+            constexpr static bool are_unbounded_array = (std::is_unbounded_array_v<Tys> && ...);
+            template<class ...Args> constexpr static bool are_constructible = (std::constructible_from<Tys, Args...> && ...);
+            template<class ...Args> constexpr static bool are_trivially_constructible = (std::is_trivially_constructible_v<Tys, Args...> && ...);
+            template<class ...Args> constexpr static bool are_nothrow_constructible = (std::is_nothrow_constructible_v<Tys, Args...> && ...);
+            constexpr static bool are_default_constructible = (std::is_default_constructible_v<Tys> && ...);
+            constexpr static bool are_trivially_default_constructible = (std::is_trivially_default_constructible_v<Tys> && ...);
+            constexpr static bool are_nothrow_default_constructible = (std::is_nothrow_default_constructible_v<Tys> && ...);
+            constexpr static bool are_copy_constructible = (std::is_copy_constructible_v<Tys> && ...);
+            constexpr static bool are_trivially_copy_constructible = (std::is_trivially_copy_constructible_v<Tys> && ...);
+            constexpr static bool are_nothrow_copy_constructible = (std::is_nothrow_copy_constructible_v<Tys> && ...);
+            constexpr static bool are_move_constructible = (std::is_move_constructible_v<Tys> && ...);
+            constexpr static bool are_trivially_move_constructible = (std::is_trivially_move_constructible_v<Tys> && ...);
+            constexpr static bool are_nothrow_move_constructible = (std::is_nothrow_move_constructible_v<Tys> && ...);
+            template<class From> constexpr static bool are_assignable = (std::is_assignable_v<Tys, From> && ...);
+            template<class From> constexpr static bool are_trivially_assignable = (std::is_trivially_assignable_v<Tys, From> && ...);
+            template<class From> constexpr static bool are_nothrow_assignable = (std::is_nothrow_assignable_v<Tys, From> && ...);
+            constexpr static bool are_copy_assignable = (std::is_copy_assignable_v<Tys> && ...);
+            constexpr static bool are_trivially_copy_assignable = (std::is_trivially_copy_assignable_v<Tys> && ...);
+            constexpr static bool are_nothrow_copy_assignable = (std::is_nothrow_copy_assignable_v<Tys> && ...);
+            constexpr static bool are_move_assignable = (std::is_move_assignable_v<Tys> && ...);
+            constexpr static bool are_trivially_move_assignable = (std::is_trivially_move_assignable_v<Tys> && ...);
+            constexpr static bool are_nothrow_move_assignable = (std::is_nothrow_move_assignable_v<Tys> && ...);
+            constexpr static bool are_destructible = (std::is_destructible_v<Tys> && ...);
+            constexpr static bool are_trivially_destructible = (std::is_trivially_destructible_v<Tys> && ...);
+            constexpr static bool are_nothrow_destructible = (std::is_nothrow_destructible_v<Tys> && ...);
+            constexpr static bool have_virtual_destructors = (std::has_virtual_destructor_v<Tys> && ...);
+            template<class Other> constexpr static bool is_swappable_with = (std::is_swappable_with_v<Tys, Other> && ...);
+            constexpr static bool are_swappable = (std::is_swappable_v<Tys> && ...);
+            template<class Other> constexpr static bool is_nothrow_swappable_with = (std::is_nothrow_swappable_with_v<Tys, Other> && ...);
+            constexpr static bool are_nothrow_swappable = (std::is_nothrow_swappable_v<Tys> && ...);
 
-            template<class Other> constexpr static bool same_as = (std::same_as<Tys, Other> && ...);
-            template<class Other> constexpr static bool base_of = (std::is_base_of_v<Tys, Other> && ...);
-            template<class Other> constexpr static bool convertible_to = (std::is_convertible_v<Tys, Other> && ...);
-            template<class Other> constexpr static bool nothrow_convertible_to = (std::is_nothrow_convertible_v<Tys, Other> && ...);
-            template<class ...Args> constexpr static bool invocable = (std::invocable<Tys, Args...> && ...);
-            template<class ...Args> constexpr static bool nothrow_invocable = (std::is_nothrow_invocable_v<Tys, Args...> && ...);
+            template<class Other> constexpr static bool are_same_as = (std::same_as<Tys, Other> && ...);
+            template<class Other> constexpr static bool are_base_of = (std::is_base_of_v<Tys, Other> && ...);
+            template<class Other> constexpr static bool are_convertible_to = (std::is_convertible_v<Tys, Other> && ...);
+            template<class Other> constexpr static bool are_nothrow_convertible_to = (std::is_nothrow_convertible_v<Tys, Other> && ...);
+            template<class ...Args> constexpr static bool are_invocable = (std::invocable<Tys, Args...> && ...);
+            template<class ...Args> constexpr static bool are_nothrow_invocable = (std::is_nothrow_invocable_v<Tys, Args...> && ...);
+            template<class Ty> constexpr static bool can_construct = std::constructible_from<Ty, Tys...>;
+            template<class Ty> constexpr static bool can_trivially_construct = std::is_trivially_constructible_v<Ty, Tys...>;
+            template<class Ty> constexpr static bool can_nothrow_construct = std::is_nothrow_constructible_v<Ty, Tys...>;
+            template<class Ty> constexpr static bool can_invoke = std::invocable<Ty, Tys...>;
+            template<class Ty> constexpr static bool can_nothrow_invoke = std::is_nothrow_invocable_v<Ty, Tys...>;
 
             constexpr static std::size_t bytes = (sizeof_v<Tys> +...);
             constexpr static std::size_t alignment = std::max({ alignof_v<Tys>... });
@@ -2201,9 +2222,14 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
                 }
             }();
 
+
             template<std::size_t I>
-            constexpr static auto member() {
-                return std::bit_cast<typename members::template element<I> Ty::*>(static_cast<std::uint32_t>(offset<I>));
+            const inline static auto member = _member_impl<I>();
+
+            template<std::size_t I>
+            constexpr static auto _member_impl() {
+                return std::bit_cast<typename members::template element<I> Ty::*>(
+                    static_cast<std::uint32_t>(offset<I>));
             }
         };
 
@@ -2397,7 +2423,7 @@ struct template_switch_impl<n> {                                     \
 
         template<class ...Tys>
             requires std::same_as<kaixo::pack<Tys...>,
-        typename kaixo::pack<Tys...>::unique> // Make sure only unique types
+            typename kaixo::pack<Tys...>::unique> // Make sure only unique types
         struct multi_initializer_list {
             using types = kaixo::pack<Tys...>;
             std::tuple<initializer_storage<Tys>...> _lists;
