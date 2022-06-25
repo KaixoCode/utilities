@@ -72,6 +72,16 @@ namespace kaixo {
 
     inline namespace general_utils_n {
 
+        template<class Ty>
+        constexpr Ty next_multuple(Ty num, Ty multiple) {
+            if (multiple == 0) return num;
+
+            auto remainder = num % multiple;
+            if (remainder == 0) return num;
+
+            return num + multiple - remainder;
+        }
+
         struct convertible_to_everything {
             template<class Ty> 
             constexpr operator Ty&();
@@ -79,14 +89,15 @@ namespace kaixo {
 
         template<class ...Tys>
         struct only_convertible_to {
-            template<class M> requires ((std::same_as<M, Tys>) || ...)
+            template<class M> requires ((std::convertible_to<std::decay_t<M>, Tys>) || ...)
             constexpr operator M();
         };
         
         template<class ...Tys>
         struct not_convertible_to {
-            template<class M> requires ((!std::same_as<M, Tys>) && ...)
-            constexpr operator M&();
+            template<class M> requires (((!std::same_as<std::decay_t<M>, Tys>) && ...)
+                && ((!std::is_base_of_v<std::decay_t<M>, Tys>) && ...))
+            constexpr operator M();
         };
 
         constexpr std::size_t npos = static_cast<std::size_t>(-1);
@@ -120,14 +131,14 @@ namespace kaixo {
         using uint_t = typename integer_t<Size, true>::type;
 
         template<class Ty>
-        constexpr static std::size_t sizeof_v = [] {
+        constexpr std::size_t sizeof_v = [] {
             if constexpr (std::is_void_v<Ty>) return 0;
             else if constexpr (std::is_function_v<Ty>) return 0;
             else return sizeof(Ty);
         }();
 
         template<class Ty>
-        constexpr static std::size_t alignof_v = [] {
+        constexpr std::size_t alignof_v = [] {
             if constexpr (std::is_void_v<Ty>) return 0;
             else if constexpr (std::is_function_v<Ty>) return 0;
             else return std::alignment_of_v<Ty>;
@@ -1671,7 +1682,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         struct struct_size_impl {
             constexpr static std::size_t value = reverse_sequence<0, sizeof_v<Ty> + 1>([]<std::size_t ...Ns>{
                 using namespace type_concepts;
-                using convertible_type = not_convertible_to<Ty, const Ty&, Ty&&>;
+                using convertible_type = not_convertible_to<Ty>;
                 std::size_t res = 0;
                 constexpr auto try_one = []<std::size_t ...Is> {
                     return constructible<Ty,
@@ -1686,44 +1697,13 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         template<type_concepts::aggregate Ty>
         constexpr std::size_t struct_size = struct_size_impl<Ty>::value;
 
-        template<type_concepts::aggregate Ty, class ...M>
-        struct member_count_impl {
-            constexpr static std::size_t count = sequence<struct_size<Ty>>([]<std::size_t ...Ns> {
-                constexpr auto try_one = []<std::size_t N, std::size_t ...Is>(value_t<N>, std::index_sequence<Is...>) {
-                    return std::constructible_from<Ty, std::conditional_t<N == Is,
-                        only_convertible_to<M...>, not_convertible_to<Ty, const Ty&, Ty&&>>...>;
-                };
-                return (((try_one(value_t<Ns>{}, std::make_index_sequence<struct_size<Ty>>{}))) + ... + 0);
-            });
-        };
-
-        template<type_concepts::aggregate Ty, class ...M>
-        constexpr std::size_t member_count = member_count_impl<Ty, M...>::count;
-        
-        template<type_concepts::aggregate Ty, class ...M>
-        struct member_indices_impl {
-            constexpr static auto indices = sequence<struct_size<Ty>>([]<std::size_t ...Ns> {
-                std::array<std::size_t, member_count<Ty, M...>> indices{};
-                std::size_t index = 0;
-                auto try_one = [&]<std::size_t N, std::size_t ...Is>(value_t<N>, std::index_sequence<Is...>) {
-                    if constexpr (std::constructible_from<Ty, std::conditional_t<N == Is,
-                        only_convertible_to<M...>, not_convertible_to<Ty, const Ty&, Ty&&>>...>) {
-                        indices[index++] = N;
-                    }
-                };
-                (((try_one(value_t<Ns>{}, std::make_index_sequence<struct_size<Ty>>{}))), ...);
-                return indices;
-            });
-        };
-
-        template<type_concepts::aggregate Ty, class M>
-        constexpr bool has_member = member_count<Ty, M> != 0;
-
-        template<type_concepts::aggregate Ty, class ...M>
-        constexpr auto member_indices = member_indices_impl<Ty, M...>::indices;
-
-        template<type_concepts::aggregate Ty, std::size_t N = struct_size<Ty>>
+        template<type_concepts::aggregate Ty, std::size_t N>
         struct struct_members_impl {
+            using types = pack<>;
+        };
+
+        template<type_concepts::aggregate Ty>
+        struct struct_members_impl<Ty, 0> {
             using types = pack<>;
         };
 
@@ -1738,55 +1718,112 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             }(std::declval<Ty&>()));                                           \
         };
 
-#define KAIXO_V1(...)  __VA_ARGS__ 
-#define KAIXO_V5(...)  KAIXO_V1 ( v1,  v2,  v3,  v4,  v5), __VA_ARGS__
-#define KAIXO_V10(...) KAIXO_V5 ( v6,  v7,  v8,  v9, v10), __VA_ARGS__
-#define KAIXO_V15(...) KAIXO_V10(v11, v12, v13, v14, v15), __VA_ARGS__
-#define KAIXO_V20(...) KAIXO_V15(v16, v17, v18, v19, v20), __VA_ARGS__
-#define KAIXO_V25(...) KAIXO_V20(v21, v22, v23, v24, v25), __VA_ARGS__
-#define KAIXO_V30(...) KAIXO_V25(v26, v27, v28, v29, v30), __VA_ARGS__
-#define KAIXO_V35(...) KAIXO_V30(v31, v32, v33, v34, v35), __VA_ARGS__
+#define KAIXO_MERGE(a, b) a##b
+#define KAIXO_LABEL(x) KAIXO_MERGE(val, x)
+#define KAIXO_UNIQUE_NAME KAIXO_LABEL(__COUNTER__)
+#define KAIXO_SIZE(...) (std::tuple_size_v<decltype(std::make_tuple(__VA_ARGS__))>)
+#define    KAIXO_UNIQUE(m, c, ...) m(c, __VA_ARGS__)
+#define  KAIXO_UNIQUE_1(m, c, ...)    KAIXO_UNIQUE(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__)
+#define  KAIXO_UNIQUE_2(m, c, ...)  KAIXO_UNIQUE_1(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c -  1), __VA_ARGS__)
+#define  KAIXO_UNIQUE_3(m, c, ...)  KAIXO_UNIQUE_2(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c -  2), __VA_ARGS__)
+#define  KAIXO_UNIQUE_4(m, c, ...)  KAIXO_UNIQUE_3(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c -  3), __VA_ARGS__)
+#define  KAIXO_UNIQUE_5(m, c, ...)  KAIXO_UNIQUE_4(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c -  4), __VA_ARGS__)
+#define  KAIXO_UNIQUE_6(m, c, ...)  KAIXO_UNIQUE_5(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c -  5), __VA_ARGS__)
+#define  KAIXO_UNIQUE_7(m, c, ...)  KAIXO_UNIQUE_6(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c -  6), __VA_ARGS__)
+#define  KAIXO_UNIQUE_8(m, c, ...)  KAIXO_UNIQUE_7(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c -  7), __VA_ARGS__)
+#define  KAIXO_UNIQUE_9(m, c, ...)  KAIXO_UNIQUE_8(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c -  8), __VA_ARGS__)
+#define KAIXO_UNIQUE_10(m, c, ...)  KAIXO_UNIQUE_9(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c -  9), __VA_ARGS__)
+#define KAIXO_UNIQUE_11(m, c, ...) KAIXO_UNIQUE_10(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 10), __VA_ARGS__)
+#define KAIXO_UNIQUE_12(m, c, ...) KAIXO_UNIQUE_11(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 11), __VA_ARGS__)
+#define KAIXO_UNIQUE_13(m, c, ...) KAIXO_UNIQUE_12(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 12), __VA_ARGS__)
+#define KAIXO_UNIQUE_14(m, c, ...) KAIXO_UNIQUE_13(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 13), __VA_ARGS__)
+#define KAIXO_UNIQUE_15(m, c, ...) KAIXO_UNIQUE_14(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 14), __VA_ARGS__)
+#define KAIXO_UNIQUE_16(m, c, ...) KAIXO_UNIQUE_15(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 15), __VA_ARGS__)
+#define KAIXO_UNIQUE_17(m, c, ...) KAIXO_UNIQUE_16(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 16), __VA_ARGS__)
+#define KAIXO_UNIQUE_18(m, c, ...) KAIXO_UNIQUE_17(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 17), __VA_ARGS__)
+#define KAIXO_UNIQUE_19(m, c, ...) KAIXO_UNIQUE_18(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 18), __VA_ARGS__)
+#define KAIXO_UNIQUE_20(m, c, ...) KAIXO_UNIQUE_19(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 19), __VA_ARGS__)
+#define KAIXO_UNIQUE_21(m, c, ...) KAIXO_UNIQUE_20(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 20), __VA_ARGS__)
+#define KAIXO_UNIQUE_22(m, c, ...) KAIXO_UNIQUE_21(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 21), __VA_ARGS__)
+#define KAIXO_UNIQUE_23(m, c, ...) KAIXO_UNIQUE_22(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 22), __VA_ARGS__)
+#define KAIXO_UNIQUE_24(m, c, ...) KAIXO_UNIQUE_23(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 23), __VA_ARGS__)
+#define KAIXO_UNIQUE_25(m, c, ...) KAIXO_UNIQUE_24(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 24), __VA_ARGS__)
+#define KAIXO_UNIQUE_26(m, c, ...) KAIXO_UNIQUE_25(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 25), __VA_ARGS__)
+#define KAIXO_UNIQUE_27(m, c, ...) KAIXO_UNIQUE_26(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 26), __VA_ARGS__)
+#define KAIXO_UNIQUE_28(m, c, ...) KAIXO_UNIQUE_27(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 27), __VA_ARGS__)
+#define KAIXO_UNIQUE_29(m, c, ...) KAIXO_UNIQUE_28(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 28), __VA_ARGS__)
+#define KAIXO_UNIQUE_30(m, c, ...) KAIXO_UNIQUE_29(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 29), __VA_ARGS__)
+#define KAIXO_UNIQUE_31(m, c, ...) KAIXO_UNIQUE_30(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 30), __VA_ARGS__)
+#define KAIXO_UNIQUE_32(m, c, ...) KAIXO_UNIQUE_31(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 31), __VA_ARGS__)
+#define KAIXO_UNIQUE_33(m, c, ...) KAIXO_UNIQUE_32(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 32), __VA_ARGS__)
+#define KAIXO_UNIQUE_34(m, c, ...) KAIXO_UNIQUE_33(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 33), __VA_ARGS__)
+#define KAIXO_UNIQUE_35(m, c, ...) KAIXO_UNIQUE_34(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 34), __VA_ARGS__)
+#define KAIXO_UNIQUE_36(m, c, ...) KAIXO_UNIQUE_35(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 35), __VA_ARGS__)
+#define KAIXO_UNIQUE_37(m, c, ...) KAIXO_UNIQUE_36(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 36), __VA_ARGS__)
+#define KAIXO_UNIQUE_38(m, c, ...) KAIXO_UNIQUE_37(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 37), __VA_ARGS__)
+#define KAIXO_UNIQUE_39(m, c, ...) KAIXO_UNIQUE_38(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 38), __VA_ARGS__)
+#define KAIXO_UNIQUE_40(m, c, ...) KAIXO_UNIQUE_39(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 39), __VA_ARGS__)
+#define KAIXO_UNIQUE_41(m, c, ...) KAIXO_UNIQUE_40(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 40), __VA_ARGS__)
+#define KAIXO_UNIQUE_42(m, c, ...) KAIXO_UNIQUE_41(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 41), __VA_ARGS__)
+#define KAIXO_UNIQUE_43(m, c, ...) KAIXO_UNIQUE_42(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 42), __VA_ARGS__)
+#define KAIXO_UNIQUE_44(m, c, ...) KAIXO_UNIQUE_43(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 43), __VA_ARGS__)
+#define KAIXO_UNIQUE_45(m, c, ...) KAIXO_UNIQUE_44(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 44), __VA_ARGS__)
+#define KAIXO_UNIQUE_46(m, c, ...) KAIXO_UNIQUE_45(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 45), __VA_ARGS__)
+#define KAIXO_UNIQUE_47(m, c, ...) KAIXO_UNIQUE_46(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 46), __VA_ARGS__)
+#define KAIXO_UNIQUE_48(m, c, ...) KAIXO_UNIQUE_47(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 47), __VA_ARGS__)
+#define KAIXO_UNIQUE_49(m, c, ...) KAIXO_UNIQUE_48(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 48), __VA_ARGS__)
+#define KAIXO_UNIQUE_50(m, c, ...) KAIXO_UNIQUE_49(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 49), __VA_ARGS__)
+#define KAIXO_UNIQUE_51(m, c, ...) KAIXO_UNIQUE_50(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 50), __VA_ARGS__)
+#define KAIXO_UNIQUE_52(m, c, ...) KAIXO_UNIQUE_51(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 51), __VA_ARGS__)
+#define KAIXO_UNIQUE_53(m, c, ...) KAIXO_UNIQUE_52(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 52), __VA_ARGS__)
+#define KAIXO_UNIQUE_54(m, c, ...) KAIXO_UNIQUE_53(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 53), __VA_ARGS__)
+#define KAIXO_UNIQUE_55(m, c, ...) KAIXO_UNIQUE_54(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 54), __VA_ARGS__)
+#define KAIXO_UNIQUE_56(m, c, ...) KAIXO_UNIQUE_55(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 55), __VA_ARGS__)
+#define KAIXO_UNIQUE_57(m, c, ...) KAIXO_UNIQUE_56(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 56), __VA_ARGS__)
+#define KAIXO_UNIQUE_58(m, c, ...) KAIXO_UNIQUE_57(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 57), __VA_ARGS__)
+#define KAIXO_UNIQUE_59(m, c, ...) KAIXO_UNIQUE_58(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 58), __VA_ARGS__)
+#define KAIXO_UNIQUE_60(m, c, ...) KAIXO_UNIQUE_59(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 59), __VA_ARGS__)
+#define KAIXO_UNIQUE_61(m, c, ...) KAIXO_UNIQUE_60(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 60), __VA_ARGS__)
+#define KAIXO_UNIQUE_62(m, c, ...) KAIXO_UNIQUE_61(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 61), __VA_ARGS__)
+#define KAIXO_UNIQUE_63(m, c, ...) KAIXO_UNIQUE_62(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 62), __VA_ARGS__)
+#define KAIXO_UNIQUE_64(m, c, ...) KAIXO_UNIQUE_63(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 63), __VA_ARGS__)
+#define KAIXO_UNIQUE_65(m, c, ...) KAIXO_UNIQUE_64(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 64), __VA_ARGS__)
+#define KAIXO_UNIQUE_66(m, c, ...) KAIXO_UNIQUE_65(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 65), __VA_ARGS__)
+#define KAIXO_UNIQUE_67(m, c, ...) KAIXO_UNIQUE_66(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 66), __VA_ARGS__)
+#define KAIXO_UNIQUE_68(m, c, ...) KAIXO_UNIQUE_67(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 67), __VA_ARGS__)
+#define KAIXO_UNIQUE_69(m, c, ...) KAIXO_UNIQUE_68(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 68), __VA_ARGS__)
+#define KAIXO_UNIQUE_70(m, c, ...) KAIXO_UNIQUE_69(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 69), __VA_ARGS__)
+#define KAIXO_UNIQUE_71(m, c, ...) KAIXO_UNIQUE_70(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 70), __VA_ARGS__)
+#define KAIXO_UNIQUE_72(m, c, ...) KAIXO_UNIQUE_71(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 71), __VA_ARGS__)
+#define KAIXO_UNIQUE_73(m, c, ...) KAIXO_UNIQUE_72(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 72), __VA_ARGS__)
+#define KAIXO_UNIQUE_74(m, c, ...) KAIXO_UNIQUE_73(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 73), __VA_ARGS__)
+#define KAIXO_UNIQUE_75(m, c, ...) KAIXO_UNIQUE_74(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 74), __VA_ARGS__)
+#define KAIXO_UNIQUE_76(m, c, ...) KAIXO_UNIQUE_75(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 75), __VA_ARGS__)
+#define KAIXO_UNIQUE_77(m, c, ...) KAIXO_UNIQUE_76(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 76), __VA_ARGS__)
+#define KAIXO_UNIQUE_78(m, c, ...) KAIXO_UNIQUE_77(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 77), __VA_ARGS__)
+#define KAIXO_UNIQUE_79(m, c, ...) KAIXO_UNIQUE_78(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 78), __VA_ARGS__)
+#define KAIXO_UNIQUE_80(m, c, ...) KAIXO_UNIQUE_79(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 79), __VA_ARGS__)
+#define KAIXO_UNIQUE_81(m, c, ...) KAIXO_UNIQUE_80(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 80), __VA_ARGS__)
+#define KAIXO_UNIQUE_82(m, c, ...) KAIXO_UNIQUE_81(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 81), __VA_ARGS__)
+#define KAIXO_UNIQUE_83(m, c, ...) KAIXO_UNIQUE_82(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 82), __VA_ARGS__)
+#define KAIXO_UNIQUE_84(m, c, ...) KAIXO_UNIQUE_83(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 83), __VA_ARGS__)
+#define KAIXO_UNIQUE_85(m, c, ...) KAIXO_UNIQUE_84(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 84), __VA_ARGS__)
+#define KAIXO_UNIQUE_86(m, c, ...) KAIXO_UNIQUE_85(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 85), __VA_ARGS__)
+#define KAIXO_UNIQUE_87(m, c, ...) KAIXO_UNIQUE_86(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 86), __VA_ARGS__)
+#define KAIXO_UNIQUE_88(m, c, ...) KAIXO_UNIQUE_87(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 87), __VA_ARGS__)
+#define KAIXO_UNIQUE_89(m, c, ...) KAIXO_UNIQUE_88(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 88), __VA_ARGS__)
+#define KAIXO_UNIQUE_90(m, c, ...) KAIXO_UNIQUE_89(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 89), __VA_ARGS__)
+#define KAIXO_UNIQUE_91(m, c, ...) KAIXO_UNIQUE_90(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 90), __VA_ARGS__)
+#define KAIXO_UNIQUE_92(m, c, ...) KAIXO_UNIQUE_91(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 91), __VA_ARGS__)
+#define KAIXO_UNIQUE_93(m, c, ...) KAIXO_UNIQUE_92(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 92), __VA_ARGS__)
+#define KAIXO_UNIQUE_94(m, c, ...) KAIXO_UNIQUE_93(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 93), __VA_ARGS__)
+#define KAIXO_UNIQUE_95(m, c, ...) KAIXO_UNIQUE_94(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 94), __VA_ARGS__)
+#define KAIXO_UNIQUE_96(m, c, ...) KAIXO_UNIQUE_95(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 95), __VA_ARGS__)
+#define KAIXO_UNIQUE_97(m, c, ...) KAIXO_UNIQUE_96(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 96), __VA_ARGS__)
+#define KAIXO_UNIQUE_98(m, c, ...) KAIXO_UNIQUE_97(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 97), __VA_ARGS__)
+#define KAIXO_UNIQUE_99(m, c, ...) KAIXO_UNIQUE_98(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 98), __VA_ARGS__)
 
-        STRUCT_MEMBERS_M( 1ull,  KAIXO_V1( v1));
-        STRUCT_MEMBERS_M( 2ull,  KAIXO_V1( v1,  v2));
-        STRUCT_MEMBERS_M( 3ull,  KAIXO_V1( v1,  v2,  v3));
-        STRUCT_MEMBERS_M( 4ull,  KAIXO_V1( v1,  v2,  v3,  v4));
-        STRUCT_MEMBERS_M( 5ull,  KAIXO_V1( v1,  v2,  v3,  v4,  v5));
-        STRUCT_MEMBERS_M( 6ull,  KAIXO_V5( v6));
-        STRUCT_MEMBERS_M( 7ull,  KAIXO_V5( v6,  v7));
-        STRUCT_MEMBERS_M( 8ull,  KAIXO_V5( v6,  v7,  v8));
-        STRUCT_MEMBERS_M( 9ull,  KAIXO_V5( v6,  v7,  v8,  v9));
-        STRUCT_MEMBERS_M(10ull,  KAIXO_V5( v6,  v7,  v8,  v9,  v10));
-        STRUCT_MEMBERS_M(11ull, KAIXO_V10(v11));
-        STRUCT_MEMBERS_M(12ull, KAIXO_V10(v11, v12));
-        STRUCT_MEMBERS_M(13ull, KAIXO_V10(v11, v12, v13));
-        STRUCT_MEMBERS_M(14ull, KAIXO_V10(v11, v12, v13, v14));
-        STRUCT_MEMBERS_M(15ull, KAIXO_V10(v11, v12, v13, v14, v15));
-        STRUCT_MEMBERS_M(16ull, KAIXO_V15(v16));
-        STRUCT_MEMBERS_M(17ull, KAIXO_V15(v16, v17));
-        STRUCT_MEMBERS_M(18ull, KAIXO_V15(v16, v17, v18));
-        STRUCT_MEMBERS_M(19ull, KAIXO_V15(v16, v17, v18, v19));
-        STRUCT_MEMBERS_M(20ull, KAIXO_V15(v16, v17, v18, v19, v20));
-        STRUCT_MEMBERS_M(21ull, KAIXO_V20(v21));
-        STRUCT_MEMBERS_M(22ull, KAIXO_V20(v21, v22));
-        STRUCT_MEMBERS_M(23ull, KAIXO_V20(v21, v22, v23));
-        STRUCT_MEMBERS_M(24ull, KAIXO_V20(v21, v22, v23, v24));
-        STRUCT_MEMBERS_M(25ull, KAIXO_V20(v21, v22, v23, v24, v25));
-        STRUCT_MEMBERS_M(26ull, KAIXO_V25(v26));
-        STRUCT_MEMBERS_M(27ull, KAIXO_V25(v26, v27));
-        STRUCT_MEMBERS_M(28ull, KAIXO_V25(v26, v27, v28));
-        STRUCT_MEMBERS_M(29ull, KAIXO_V25(v26, v27, v28, v29));
-        STRUCT_MEMBERS_M(30ull, KAIXO_V25(v26, v27, v28, v29, v30));
-        STRUCT_MEMBERS_M(31ull, KAIXO_V30(v31));
-        STRUCT_MEMBERS_M(32ull, KAIXO_V30(v31, v32));
-        STRUCT_MEMBERS_M(33ull, KAIXO_V30(v31, v32, v33));
-        STRUCT_MEMBERS_M(34ull, KAIXO_V30(v31, v32, v33, v34));
-        STRUCT_MEMBERS_M(35ull, KAIXO_V30(v31, v32, v33, v34, v35));
-        STRUCT_MEMBERS_M(36ull, KAIXO_V35(v36));
-        STRUCT_MEMBERS_M(37ull, KAIXO_V35(v36, v37));
-        STRUCT_MEMBERS_M(38ull, KAIXO_V35(v36, v37, v38));
-        STRUCT_MEMBERS_M(39ull, KAIXO_V35(v36, v37, v38, v39));
-        STRUCT_MEMBERS_M(40ull, KAIXO_V35(v36, v37, v38, v39, v40));
+        KAIXO_UNIQUE_99(STRUCT_MEMBERS_M, 99)
 
         template<type_concepts::aggregate Ty>
         using struct_members = typename struct_members_impl<Ty, struct_size<Ty>>::types;
@@ -2144,14 +2181,30 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         template<class Ty>
             requires (type_concepts::aggregate<Ty>)
         struct info<Ty> : info_base<Ty> {
-            constexpr static std::size_t struct_size = kaixo::struct_size<Ty>;
-            template<class ...M>
-            constexpr static std::size_t count = kaixo::member_count<Ty, M...>;
-            template<class ...M>
-            constexpr static auto indices = kaixo::member_indices<Ty, M...>;
             using members = kaixo::struct_members<Ty>;
-            template<class M>
-            constexpr static bool has = kaixo::has_member<Ty, M>;
+
+            template<std::size_t I>
+            constexpr static std::size_t offset = [] {
+                if constexpr (I == 0) return 0;
+                else if constexpr (I != 0) {
+                    // Wrapped in lambda because somehow it gets infinite
+                    // recursion without, even though there's an if-constexpr
+                    return []<std::size_t N>(value_t<N>) {
+                        using prev = typename members::template element<N - 1>;
+                        using curr = typename members::template element<N>;
+
+                        constexpr std::size_t off = offset<N - 1> + sizeof_v<prev>;
+                        constexpr std::size_t align = alignof_v<curr>;
+
+                        return next_multuple(off, align);
+                    }(value_t<I>{});
+                }
+            }();
+
+            template<std::size_t I>
+            constexpr static auto member() {
+                return std::bit_cast<typename members::template element<I> Ty::*>(static_cast<std::uint32_t>(offset<I>));
+            }
         };
 
         template<class Ty>

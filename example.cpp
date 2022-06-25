@@ -36,35 +36,31 @@ namespace kaixo {
 }
 
 struct Struct {
-    double a;
-    double e;
-    int f;
-    int b;
-    long d;
-    char c;
+    int f = 3;
+    double a = 1;
+    char c = 6;
+    double e = 2;
+    int b = 4;
+    long d = 5;
 };
 
 int main() {
     using namespace kaixo;
-    using struct_members = info<Struct>::members;
 
-    using ce = not_convertible_to<Struct, const Struct&, Struct&&>;
-    constexpr auto ginrg = std::convertible_to<ce, Struct>;
+    static_assert(info<Struct>::offset<0> == offsetof(Struct, f));
+    static_assert(info<Struct>::offset<1> == offsetof(Struct, a));
+    static_assert(info<Struct>::offset<2> == offsetof(Struct, c));
+    static_assert(info<Struct>::offset<3> == offsetof(Struct, e));
+    static_assert(info<Struct>::offset<4> == offsetof(Struct, b));
+    static_assert(info<Struct>::offset<5> == offsetof(Struct, d));
 
-    constexpr auto aoine = std::constructible_from<Struct, ce, ce, ce, ce, ce, ce>;
-
-
-    constexpr auto bs = info<Struct>::bytes;
-    constexpr auto ms = info<Struct>::struct_size;
-    constexpr auto ii = info<Struct>::indices<int>;
-    constexpr auto ci = info<Struct>::count<int>;
-    constexpr auto cc = info<Struct>::count<char>;
-    constexpr auto hs = info<Struct>::has<short>;
-
-
-    pack<void, void>::swap<1, int>::element<0>;
-
-    fill_pack<void, 10>::swap<1, int>::element<0>;
+    Struct val;
+    auto r1 = val.*info<Struct>::member<0>();
+    auto r2 = val.*info<Struct>::member<1>();
+    auto r3 = val.*info<Struct>::member<2>();
+    auto r4 = val.*info<Struct>::member<3>();
+    auto r5 = val.*info<Struct>::member<4>();
+    auto r6 = val.*info<Struct>::member<5>();
 
     enum Fruit {
         Apple, 
