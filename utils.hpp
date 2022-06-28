@@ -1560,14 +1560,25 @@ namespace kaixo {
          */
         namespace fold {
             struct fold_t {
-                consteval auto operator=(fold_t) { return[]<auto...Args>{ return Args = ...; }; }
+                consteval auto operator=(fold_t) { 
+                    return []<auto...Args> {
+                        if constexpr (sizeof...(Args) > 0) return (Args = ...);
+                        else return;
+                    }; 
+                }
             };
-#define FOLD_OP(op) consteval auto operator op(fold_t, fold_t) { return[]<auto...Args>{ return (Args op ...); }; }
+#define FOLD_OP(op) consteval auto operator op(fold_t, fold_t) {             \
+                return [] <auto...Args> {                                    \
+                    if constexpr (sizeof...(Args) > 0) return (Args op ...); \
+                    else return; }; }
+
             FOLD_OP(+) FOLD_OP(-) FOLD_OP(*) FOLD_OP(/ ) FOLD_OP(%) FOLD_OP(^) FOLD_OP(&) FOLD_OP(| );
             FOLD_OP(< ) FOLD_OP(> ) FOLD_OP(<< ) FOLD_OP(>> ) FOLD_OP(+= ) FOLD_OP(-= ) FOLD_OP(*= );
             FOLD_OP(/= ) FOLD_OP(%= ) FOLD_OP(^= ) FOLD_OP(&= ) FOLD_OP(|= ) FOLD_OP(<<= ) FOLD_OP(>>= );
-            FOLD_OP(== ) FOLD_OP(!= ) FOLD_OP(<= ) FOLD_OP(>= ) FOLD_OP(&&) FOLD_OP(|| ) FOLD_OP(->*);
+            FOLD_OP(== ) FOLD_OP(!= ) FOLD_OP(<= ) FOLD_OP(>= ) FOLD_OP(->*);
             consteval auto operator,(fold_t, fold_t) { return[]<auto...Args>{ return (Args, ...); }; }
+            consteval auto operator&&(fold_t, fold_t) { return[]<auto...Args>{ return (Args && ...); }; }
+            consteval auto operator||(fold_t, fold_t) { return[]<auto...Args>{ return (Args || ...); }; }
             constexpr fold_t Args{};
             constexpr fold_t ___{};
         }
@@ -2388,9 +2399,9 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             constexpr static bool are_trivially_destructible = (std::is_trivially_destructible_v<Tys> && ...);
             constexpr static bool are_nothrow_destructible = (std::is_nothrow_destructible_v<Tys> && ...);
             constexpr static bool have_virtual_destructors = (std::has_virtual_destructor_v<Tys> && ...);
-            template<class Other> constexpr static bool is_swappable_with = (std::is_swappable_with_v<Tys, Other> && ...);
+            template<class Other> constexpr static bool are_swappable_with = (std::is_swappable_with_v<Tys, Other> && ...);
             constexpr static bool are_swappable = (std::is_swappable_v<Tys> && ...);
-            template<class Other> constexpr static bool is_nothrow_swappable_with = (std::is_nothrow_swappable_with_v<Tys, Other> && ...);
+            template<class Other> constexpr static bool are_nothrow_swappable_with = (std::is_nothrow_swappable_with_v<Tys, Other> && ...);
             constexpr static bool are_nothrow_swappable = (std::is_nothrow_swappable_v<Tys> && ...);
 
             template<class Other> constexpr static bool are_same_as = (std::same_as<Tys, Other> && ...);
@@ -2409,39 +2420,39 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             constexpr static std::size_t alignment = std::max({ alignof_v<Tys>... });
 
             template<class From>
-            using copy_const_from = info<kaixo::pack<kaixo::copy_const<From, Tys>...>>;
+            using copy_const_from = kaixo::pack<kaixo::copy_const<Tys, From>...>;
             template<class From>
-            using copy_volatile_from = info<kaixo::pack<kaixo::copy_volatile<From, Tys>...>>;
+            using copy_volatile_from = kaixo::pack<kaixo::copy_volatile<Tys, From>...>;
             template<class From>
-            using copy_cv_from = info<kaixo::pack<kaixo::copy_cv<From, Tys>...>>;
+            using copy_cv_from = kaixo::pack<kaixo::copy_cv<Tys, From>...>;
             template<class From>
-            using copy_ref_from = info<kaixo::pack<kaixo::copy_ref<From, Tys>...>>;
+            using copy_ref_from = kaixo::pack<kaixo::copy_ref<Tys, From>...>;
             template<class From>
-            using copy_cvref_from = info<kaixo::pack<kaixo::copy_cvref<From, Tys>...>>;
+            using copy_cvref_from = kaixo::pack<kaixo::copy_cvref<Tys, From>...>;
             template<class From>
-            using add_const_from = info<kaixo::pack<kaixo::add_const<From, Tys>...>>;
+            using add_const_from = kaixo::pack<kaixo::add_const<Tys, From>...>;
             template<class From>
-            using add_volatile_from = info<kaixo::pack<kaixo::add_volatile<From, Tys>...>>;
+            using add_volatile_from = kaixo::pack<kaixo::add_volatile<Tys, From>...>;
             template<class From>
-            using add_cv_from = info<kaixo::pack<kaixo::add_cv<From, Tys>...>>;
+            using add_cv_from = kaixo::pack<kaixo::add_cv<Tys, From>...>;
             template<class From>
-            using add_ref_from = info<kaixo::pack<kaixo::add_ref<From, Tys>...>>;
+            using add_ref_from = kaixo::pack<kaixo::add_ref<Tys, From>...>;
             template<class From>
-            using add_cvref_from = info<kaixo::pack<kaixo::add_cvref<From, Tys>...>>;
+            using add_cvref_from = kaixo::pack<kaixo::add_cvref<Tys, From>...>;
 
-            using decay = info<kaixo::pack<std::decay_t<Tys>...>>;
-            using remove_cv = info<kaixo::pack<kaixo::remove_cv<Tys>...>>;
-            using remove_const = info<kaixo::pack<kaixo::remove_const<Tys>...>>;
-            using remove_volatile = info<kaixo::pack<kaixo::remove_volatile<Tys>...>>;
-            using add_cv = info<kaixo::pack<kaixo::add_cv<Tys>...>>;
-            using add_const = info<kaixo::pack<kaixo::add_const<Tys>...>>;
-            using add_volatile = info<kaixo::pack<kaixo::add_volatile<Tys>...>>;
-            using remove_reference = info<kaixo::pack<std::remove_reference_t<Tys>...>>;
-            using remove_cvref = info<kaixo::pack<std::remove_cvref_t<Tys>...>>;
-            using add_lvalue_reference = info<kaixo::pack<std::add_lvalue_reference_t<Tys>...>>;
-            using add_rvalue_reference = info<kaixo::pack<std::add_rvalue_reference_t<Tys>...>>;
-            using remove_pointer = info<kaixo::pack<std::remove_pointer_t<Tys>...>>;
-            using add_pointer = info<kaixo::pack<std::add_pointer_t<Tys>...>>;
+            using decay = kaixo::pack<std::decay_t<Tys>...>;
+            using remove_cv = kaixo::pack<kaixo::remove_cv<Tys>...>;
+            using remove_const = kaixo::pack<kaixo::remove_const<Tys>...>;
+            using remove_volatile = kaixo::pack<kaixo::remove_volatile<Tys>...>;
+            using add_cv = kaixo::pack<kaixo::add_cv<Tys>...>;
+            using add_const = kaixo::pack<kaixo::add_const<Tys>...>;
+            using add_volatile = kaixo::pack<kaixo::add_volatile<Tys>...>;
+            using remove_reference = kaixo::pack<std::remove_reference_t<Tys>...>;
+            using remove_cvref = kaixo::pack<std::remove_cvref_t<Tys>...>;
+            using add_lvalue_reference = kaixo::pack<std::add_lvalue_reference_t<Tys>...>;
+            using add_rvalue_reference = kaixo::pack<std::add_rvalue_reference_t<Tys>...>;
+            using remove_pointer = kaixo::pack<std::remove_pointer_t<Tys>...>;
+            using add_pointer = kaixo::pack<std::add_pointer_t<Tys>...>;
             using type = kaixo::pack<Tys...>;
 
             constexpr static auto type_info = std::array{ &typeid(Tys)... };

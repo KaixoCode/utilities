@@ -402,6 +402,8 @@ int main() {
     constexpr auto res = array_to_pack<info<Struct>::members::indices_filter<[]<integral>{}>>::fold(Args + ___);
 
 
+    pack<int, long, char>::copy_cvref_from<int&&>::size;
+
     constexpr auto aeaoine = function_name<next_multiple<int>>;
     constexpr auto aione = 10.;
     constexpr auto aoine = value_name<aione>;
@@ -410,9 +412,9 @@ int main() {
     auto n2 = info<N>::member_info<1>::name;
     auto n3 = info<N>::member_info<2>::name;
 
-    constexpr auto res = sequence<5, 10>(Args + ___);
+    constexpr auto res2 = sequence<5, 6>(Args || ___);
 
-    constexpr auto res = sequence<5, 10>([]<auto ...Args>{ return (Args + ...); });
+    //constexpr auto res3 = sequence<5, 10>([]<auto ...Args>{ return (Args + ...); });
 
     info<N>::member_info<0>::name;
 
