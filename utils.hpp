@@ -1,5 +1,6 @@
 #pragma once
 #include <type_traits>
+#include <typeinfo>
 #include <concepts>
 #include <cstddef>
 #include <array>
@@ -72,46 +73,133 @@ namespace kaixo {
 
     inline namespace general_utils_n {
 
+        /**
+         * Find the closes larger power of 2.
+         * @param v value
+         * @return closes larger power of 2 from value
+         */
+        template <std::unsigned_integral Ty>
+        constexpr Ty closest_larger_power2(Ty v) {
+            return v > 1ull ? 1ull << (sizeof(Ty) * CHAR_BIT - std::countl_zero(v - 1ull)) : v;
+        }
+        static_assert(closest_larger_power2(2ull) == 2);
+        static_assert(closest_larger_power2(3ull) == 4);
+        static_assert(closest_larger_power2(33ull) == 64);
+        static_assert(closest_larger_power2(128ull) == 128);
+
+        /**
+         * Find the next multiple of a number.
+         * @param num number
+         * @param multiple multiple
+         * @return next multiple of num
+         */
         template<class Ty>
-        constexpr Ty next_multuple(Ty num, Ty multiple) {
+        constexpr Ty next_multiple(Ty num, Ty multiple) {
             if (multiple == 0) return num;
 
-            auto remainder = num % multiple;
+            const auto remainder = num % multiple;
             if (remainder == 0) return num;
 
             return num + multiple - remainder;
         }
+        static_assert(next_multiple(2, 0) == 2);
+        static_assert(next_multiple(2, 5) == 5);
+        static_assert(next_multiple(5, 5) == 5);
+        static_assert(next_multiple(13, 12) == 24);
 
+        /**
+         * Class that's convertible to every type.
+         */
         struct convertible_to_everything {
-            template<class Ty> 
-            constexpr operator Ty&();
+            template<class Ty> constexpr operator Ty&();
+            template<class Ty> constexpr operator Ty&&();
         };
+        static_assert(std::convertible_to<convertible_to_everything, int&&>);
+        static_assert(std::convertible_to<convertible_to_everything, int&>);
+        static_assert(std::convertible_to<convertible_to_everything, int>);
+        static_assert(std::convertible_to<convertible_to_everything, const volatile int&&>);
+        static_assert(std::convertible_to<convertible_to_everything, const volatile int&>);
+        static_assert(std::convertible_to<convertible_to_everything, const volatile int>);
 
+        /**
+         * Class that's only convertible to Tys...
+         */
         template<class ...Tys>
         struct only_convertible_to {
-            template<class M> requires ((std::convertible_to<std::decay_t<M>, Tys>) || ...)
-            constexpr operator M();
+            template<class M> requires ((std::same_as<std::decay_t<M>, Tys>) || ...)
+            constexpr operator M&&();
+            template<class M> requires ((std::same_as<std::decay_t<M>, Tys>) || ...)
+            constexpr operator M&();
         };
-        
+        static_assert(std::convertible_to<only_convertible_to<int>, int&&>);
+        static_assert(std::convertible_to<only_convertible_to<int>, int&>);
+        static_assert(std::convertible_to<only_convertible_to<int>, int>);
+        static_assert(std::convertible_to<only_convertible_to<int>, const volatile int&&>);
+        static_assert(std::convertible_to<only_convertible_to<int>, const volatile int&>);
+        static_assert(std::convertible_to<only_convertible_to<int>, const volatile int>);
+        static_assert(!std::convertible_to<only_convertible_to<int>, float&&>);
+        static_assert(!std::convertible_to<only_convertible_to<int>, float&>);
+        static_assert(!std::convertible_to<only_convertible_to<int>, float>);
+        static_assert(!std::convertible_to<only_convertible_to<int>, const volatile float&&>);
+        static_assert(!std::convertible_to<only_convertible_to<int>, const volatile float&>);
+        static_assert(!std::convertible_to<only_convertible_to<int>, const volatile float>);
+
+        /**
+         * Class that's not convertible to Tys...
+         */
         template<class ...Tys>
         struct not_convertible_to {
             template<class M> requires (((!std::same_as<std::decay_t<M>, Tys>) && ...)
                 && ((!std::is_base_of_v<std::decay_t<M>, Tys>) && ...))
-            constexpr operator M();
+            constexpr operator M&();
+            template<class M> requires (((!std::same_as<std::decay_t<M>, Tys>) && ...)
+                && ((!std::is_base_of_v<std::decay_t<M>, Tys>) && ...))
+            constexpr operator M&&();
         };
+        static_assert(!std::convertible_to<not_convertible_to<int>, int&&>);
+        static_assert(!std::convertible_to<not_convertible_to<int>, int&>);
+        static_assert(!std::convertible_to<not_convertible_to<int>, int>);
+        static_assert(!std::convertible_to<not_convertible_to<int>, const volatile int&&>);
+        static_assert(!std::convertible_to<not_convertible_to<int>, const volatile int&>);
+        static_assert(!std::convertible_to<not_convertible_to<int>, const volatile int>);
+        static_assert(std::convertible_to<not_convertible_to<int>, float&&>);
+        static_assert(std::convertible_to<not_convertible_to<int>, float&>);
+        static_assert(std::convertible_to<not_convertible_to<int>, float>);
+        static_assert(std::convertible_to<not_convertible_to<int>, const volatile float&&>);
+        static_assert(std::convertible_to<not_convertible_to<int>, const volatile float&>);
+        static_assert(std::convertible_to<not_convertible_to<int>, const volatile float>);
 
         constexpr std::size_t npos = static_cast<std::size_t>(-1);
 
-        template<auto V> // Value wrapper
-        struct value_t { constexpr static auto value = V; };
+        /**
+         * Type for a template value.
+         * @tparam V template value
+         */
+        template<auto V>
+        struct value_t { 
+            constexpr static auto value = V; 
+        };
 
+        /**
+         * Overloaded Functor.
+         * @tparam Functors... functor types
+         */
         template<class ...Functors>
         struct overloaded : Functors... {
             using Functors::operator()...;
         };
 
+        /**
+         * Dud type, used in places as a placeholder, or
+         * when nothing else should match.
+         */
         struct dud {};
 
+        /**
+         * Little integer type helper with signed and size
+         * @tparam Size size of integral type in bits
+         * @tparam Unsigned is integral type unsigned
+         */
         template<std::size_t Size, bool Unsigned> struct integer_t;
         template<> struct integer_t<8, false> { using type = std::int8_t; };
         template<> struct integer_t<16, false> { using type = std::int16_t; };
@@ -121,15 +209,28 @@ namespace kaixo {
         template<> struct integer_t<16, true> { using type = std::uint16_t; };
         template<> struct integer_t<32, true> { using type = std::uint32_t; };
         template<> struct integer_t<64, true> { using type = std::uint64_t; };
-
+        
+        /**
+         * Integer type
+         * @tparam Size size of integral type in bits
+         * @tparam Unsigned is integral type unsigned
+         */
         template<std::size_t Size, bool Unsigned = false>
             requires (Size == 8 || Size == 16 || Size == 32 || Size == 64)
         using int_t = typename integer_t<Size, Unsigned>::type;
-
+        
+        /**
+         * Unsigned integer type
+         * @tparam Size size of integral type in bits
+         */
         template<std::size_t Size>
             requires (Size == 8 || Size == 16 || Size == 32 || Size == 64)
         using uint_t = typename integer_t<Size, true>::type;
 
+        /**
+         * Basically sizeof(Ty), but special case for 
+         * void and functions, as they normally give errors.
+         */
         template<class Ty>
         constexpr std::size_t sizeof_v = [] {
             if constexpr (std::is_void_v<Ty>) return 0;
@@ -137,6 +238,10 @@ namespace kaixo {
             else return sizeof(Ty);
         }();
 
+        /**
+         * Basically alignof(Ty), but special case for
+         * void and functions, as they normally give errors.
+         */
         template<class Ty>
         constexpr std::size_t alignof_v = [] {
             if constexpr (std::is_void_v<Ty>) return 0;
@@ -149,16 +254,34 @@ namespace kaixo {
         template<template<class...> class Ref, class... Args>
         struct is_specialization<Ref<Args...>, Ref> : std::true_type {};
 
-        // is specialization of templated class
+        /**
+         * Concept, Test is specialization of Ref
+         * @tparam Test type to test
+         * @tparam Ref templated type
+         */
         template<class Test, template<class...> class Ref>
         concept specialization = is_specialization<std::decay_t<Test>, Ref>::value;
 
+        /**
+         * Extract enum name from function signature, used in
+         * enum_name_impl.
+         * @param name string containing enum name
+         * @return extracted enum name
+         */
         consteval std::string_view _enum_pretty_name(std::string_view name) noexcept {
-            for (std::size_t i = name.size(); i > 0; --i) if (auto& c = name[i - 1];
-                !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c == '_'))) {
-                name.remove_prefix(i); break;
+            // Starting at end of string_view, only keep valid enum name characters
+            for (std::size_t i = name.size(); i > 0; --i) {
+                auto& c = name[i - 1];
+                // Valid characters are [0-9a-zA-Z_]
+                if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') 
+                    || (c >= 'A' && c <= 'Z') || (c == '_'))) {
+                    // Remove prefix once we've hit invalid character
+                    name.remove_prefix(i); 
+                    break;
+                }
             }
 
+            // Make sure first character is valid as well.
             if (name.size() > 0 && ((name.front() >= 'a' && name.front() <= 'z') ||
                 (name.front() >= 'A' && name.front() <= 'Z') || (name.front() == '_')))
                 return name;
@@ -166,36 +289,64 @@ namespace kaixo {
             return {}; // Invalid name.
         }
 
+        /**
+         * Get enum name using function signature macro.
+         * @tparam Ty enum type
+         * @tparam Value enum value
+         * @return extracted enum name
+         */
         template<class Ty, Ty Value>
-        consteval auto enum_name_impl() noexcept {
+        consteval std::string_view enum_name_impl() noexcept {
 #if defined(__clang__) || defined(__GNUC__)
-            constexpr auto name = _enum_pretty_name({ __PRETTY_FUNCTION__, sizeof(__PRETTY_FUNCTION__) - 2 });
+            return _enum_pretty_name({ __PRETTY_FUNCTION__, sizeof(__PRETTY_FUNCTION__) - 2 });
 #elif defined(_MSC_VER)
-            constexpr auto name = _enum_pretty_name({ __FUNCSIG__, sizeof(__FUNCSIG__) - 17 });
+            return _enum_pretty_name({ __FUNCSIG__, sizeof(__FUNCSIG__) - 17 });
 #else
-            constexpr auto name = string_view{};
+            return string_view{};
 #endif
-            return name;
         }
 
+        /**
+         * Get enum name.
+         * @tparam Ty enum type
+         * @tparam V value that's convertible to Ty
+         */
         template<class Ty, auto V>
         constexpr auto enum_name = enum_name_impl<Ty, static_cast<Ty>(V)>();
 
+        /**
+         * Extract value name from function signature.
+         * @tparam Value template value
+         * @return extracted value name
+         */
         template<auto Value>
-        consteval auto object_name_impl() noexcept {
+        consteval auto value_name_impl() noexcept {
 #if defined(__clang__) || defined(__GNUC__)
             constexpr auto name = std::string_view{ __PRETTY_FUNCTION__, sizeof(__PRETTY_FUNCTION__) - 2 };
+            // Remove prefix, template argument starts at first '<'
+            return name.substr(name.find_first_of('<') + 1);
 #elif defined(_MSC_VER)
             constexpr auto name = std::string_view{ __FUNCSIG__, sizeof(__FUNCSIG__) - 17 };
-#else
-            constexpr auto name = string_view{};
-#endif
+            // Remove prefix, template argument starts at first '<'
             return name.substr(name.find_first_of('<') + 1);
+#else
+            return string_view{};
+#endif
         }
 
+        /**
+         * Get value as string.
+         * @tparam V template value
+         */
         template<auto V>
-        constexpr auto object_name = object_name_impl<V>();
+        constexpr auto value_name = value_name_impl<V>();
 
+        /**
+         * Get pretty function name from string_view containing
+         * the function name.
+         * @param name string containing function name
+         * @return extracted function name
+         */
         constexpr std::string_view _function_pretty_name(std::string_view name) noexcept {
             if (name.size() == 0) return {};
 
@@ -249,34 +400,57 @@ namespace kaixo {
 
             return {}; // Invalid name.
         }
+
+        /**
+         * Get function name from function signature.
+         * @tparam Value function pointer
+         * @return function name
+         */
         template<auto Value>
         consteval auto function_name_impl() noexcept {
 #if defined(__clang__) || defined(__GNUC__)
             constexpr auto name = std::string_view{ __PRETTY_FUNCTION__, sizeof(__PRETTY_FUNCTION__) - 2 };
-#elif defined(_MSC_VER)
-            constexpr auto name = std::string_view{ __FUNCSIG__, sizeof(__FUNCSIG__) - 17 };
-#else
-            constexpr auto name = string_view{};
-#endif
             return _function_pretty_name(name.substr(name.find_first_of('<') + 1));
-        }
-
-        template<auto V>
-        constexpr auto function_name = function_name_impl<V>();
-
-        template<class Value>
-        consteval auto type_name_impl() noexcept {
-#if defined(__clang__) || defined(__GNUC__)
-            constexpr auto name = std::string_view{ __PRETTY_FUNCTION__, sizeof(__PRETTY_FUNCTION__) - 2 };
-            return name.substr(name.find_first_of('<') + 1);
 #elif defined(_MSC_VER)
             constexpr auto name = std::string_view{ __FUNCSIG__, sizeof(__FUNCSIG__) - 17 };
-            return name.substr(name.find_first_of('<') + 1);
+            return _function_pretty_name(name.substr(name.find_first_of('<') + 1));
 #else
             return string_view{};
 #endif
         }
 
+        /**
+         * Get function name.
+         * @tparam Value (member) function pointer
+         */
+        template<auto V>
+        constexpr auto function_name = function_name_impl<V>();
+
+        /**
+         * Get type name from function signature.
+         * @tparam Value type
+         * @return type name
+         */
+        template<class Value>
+        consteval auto type_name_impl() noexcept {
+#if defined(__clang__) || defined(__GNUC__)
+            auto name = std::string_view{ __PRETTY_FUNCTION__, sizeof(__PRETTY_FUNCTION__) - 2 };
+            name = name.substr(name.find_first_of('<') + 1);
+            if (name.starts_with("struct ")) name = name.substr(7);
+            return name;
+#elif defined(_MSC_VER)
+            auto name = std::string_view{ __FUNCSIG__, sizeof(__FUNCSIG__) - 17 };
+            name = name.substr(name.find_first_of('<') + 1);
+            if (name.starts_with("struct ")) name = name.substr(7);
+            return name;
+#else
+            return string_view{};
+#endif
+        }
+        /**
+         * Get type name.
+         * @tparam V type
+         */
         template<class V>
         constexpr auto type_name = type_name_impl<V>();
     }
@@ -293,8 +467,10 @@ namespace kaixo {
 
     inline namespace rtti_table_n {
 
-        // RTTI function table for basic operations 
-        //  like delete, move, and copy.
+        /**
+         * RTTI function table for basic operations 
+         * like delete, move, and copy.
+         */
         template<class Ty>
         struct RTTI_Ftable {
             constexpr static void deleter_in_place(void* ptr) {
@@ -395,6 +571,14 @@ namespace kaixo {
 
     inline namespace string_literal_n {
 
+        /**
+         * String literal, compatible with template parameter value. 
+         * Basically acts like a string_view, although to be compatible
+         * with template parameter values it has to copy the string into
+         * a local array.
+         * @tparam N literal length
+         * @tparam CharType character type
+         */
         template<std::size_t N, class CharType = char>
         struct string_literal {
             constexpr static std::size_t npos = std::basic_string_view<CharType>::npos;
@@ -452,6 +636,11 @@ namespace kaixo {
 
             consteval string_literal(const CharType(&data)[N]) {
                 std::copy_n(data, N, m_Data);
+            }
+
+            constexpr string_literal(std::string_view data) {
+                std::copy_n(data.data(), N, m_Data);
+                m_Data[N - 1] = '\n';
             }
 
             constexpr string_literal(string_literal&&) = default;
@@ -1027,18 +1216,6 @@ namespace kaixo {
             template<auto Lambda, class Ty>
             using sort_impl = decltype(merge_sort<Lambda>(Ty{}));
 
-            template<auto Lambda, class ...Args>
-            struct for_each_impl {
-                using type = decltype(Lambda.template operator() < Args... > ());
-            };
-
-            template<auto Lambda, auto ...Vs>
-            struct for_each_impl<Lambda, value_t<Vs>...> {
-                using type = kaixo::value_t<(Lambda(Vs...))>;
-            };
-        }
-
-        namespace detail {
             template<class...>struct concat_impl;
             template<template<class...> class A, class ...As>
             struct concat_impl<A<As...>> { using type = A<As...>; };
@@ -1185,12 +1362,12 @@ namespace kaixo {
             using keep = detail::keep_all<detail::pack_or_as_pack<Pack...>, pack<value_t<Args>...>>;
 
             template<std::size_t I> // Get element at index I
-            constexpr static auto element = detail::element<I, value_t<Args>...>::get();
+            constexpr static auto element = detail::element<I, value_t<Args>...>::value;
 
             template<std::size_t I> // Info of type of value at index I
-            using info = kaixo::info<decltype(element<I>)>;
+            using element_info = kaixo::info<value_t<element<I>>>;
 
-            using pack_info = kaixo::info<pack<decltype(Args)...>>;
+            using pack_info = kaixo::info<pack<value_t<Args>...>>;
 
             template<std::size_t N> // Get first N elements in Args
             using take = detail::take<N, pack<value_t<Args>...>>;
@@ -1248,6 +1425,10 @@ namespace kaixo {
             // Calls lambda with all values as template arguments, like
             // Lambda.operator()<Args...>();
             constexpr static auto for_each = [](auto Lambda) {
+                return Lambda.operator() < Args... > ();
+            };
+
+            constexpr static auto fold = [](auto Lambda) {
                 return Lambda.operator() < Args... > ();
             };
         };
@@ -1341,6 +1522,8 @@ namespace kaixo {
         template<class ...Args>
         struct pack : pack_base<Args...>, info<pack_base<Args...>> {};
 
+        template<> struct pack<> : pack_base<> {};
+
         template<class Ty, std::size_t N = 1> // Fill a pack with N * Ty
         using fill_pack = decltype([]<std::size_t ...Is, class Ty>
             (std::index_sequence<Is...>, std::type_identity<Ty>) {
@@ -1369,6 +1552,26 @@ namespace kaixo {
 
         template<auto Array>
         using array_to_pack = decltype(iterate<Array>([]<auto ...Is>{ return to_pack<Is...>{}; }));
+
+        /**
+         * Create fold expression lambda.
+         * for example: sequence<5, 10>(Args + ___);
+         * is short for: sequence<5, 10>([]<auto ...Args>{ return (Args + ...); });
+         */
+        namespace fold {
+            struct fold_t {
+                consteval auto operator=(fold_t) { return[]<auto...Args>{ return Args = ...; }; }
+            };
+#define FOLD_OP(op) consteval auto operator op(fold_t, fold_t) { return[]<auto...Args>{ return (Args op ...); }; }
+            FOLD_OP(+) FOLD_OP(-) FOLD_OP(*) FOLD_OP(/ ) FOLD_OP(%) FOLD_OP(^) FOLD_OP(&) FOLD_OP(| );
+            FOLD_OP(< ) FOLD_OP(> ) FOLD_OP(<< ) FOLD_OP(>> ) FOLD_OP(+= ) FOLD_OP(-= ) FOLD_OP(*= );
+            FOLD_OP(/= ) FOLD_OP(%= ) FOLD_OP(^= ) FOLD_OP(&= ) FOLD_OP(|= ) FOLD_OP(<<= ) FOLD_OP(>>= );
+            FOLD_OP(== ) FOLD_OP(!= ) FOLD_OP(<= ) FOLD_OP(>= ) FOLD_OP(&&) FOLD_OP(|| ) FOLD_OP(->*);
+            consteval auto operator,(fold_t, fold_t) { return[]<auto...Args>{ return (Args, ...); }; }
+            constexpr fold_t Args{};
+            constexpr fold_t ___{};
+        }
+#undef FOLD_OP
     }
 
     /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
@@ -1507,7 +1710,12 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
 
     inline namespace sequence_utils_n {
 
-        // templated for, calls lambda with template argument std::size_t
+        /**
+         * Templated for, calls lambda with index sequence in pack,
+         * requires S < E
+         * @tparam S start value, or size when E is left at npos
+         * @tparam E end value, or nothing when npos
+         */ 
         template<std::integral auto S, std::integral auto E = npos> constexpr auto sequence = [](auto lambda) {
             if constexpr (E == npos)
                 return[&] <std::size_t ...Is>(std::integer_sequence<decltype(S), Is...>) {
@@ -1518,7 +1726,12 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             }(std::make_integer_sequence<decltype(E - S), E - S>{});
         };
 
-        // templated for, calls lambda with template argument std::size_t
+        /**
+         * Templated for, calls lambda with index sequence in reverse in pack,
+         * requires S < E
+         * @tparam S start value, or size when E is left at npos
+         * @tparam E end value, or nothing when npos
+         */
         template<std::integral auto S, std::integral auto E = npos> constexpr auto reverse_sequence = [](auto lambda) {
             if constexpr (E == npos)
                 return[&] <std::size_t ...Is>(std::integer_sequence<decltype(S), Is...>) {
@@ -1529,7 +1742,12 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             }(std::make_integer_sequence<decltype(E - S), E - S>{});
         };
 
-        // templated for, calls lambda with template argument std::size_t
+        /**
+         * Templated for, calls lambda with all indices separately,
+         * requires S < E
+         * @tparam S start value, or size when E is left at npos
+         * @tparam E end value, or nothing when npos
+         */
         template<std::integral auto S, std::integral auto E = npos> constexpr auto indexed_for = [](auto lambda) {
             if constexpr (E == npos)
                 [&] <auto ...Is>(std::integer_sequence<decltype(S), Is...>) {
@@ -1607,7 +1825,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
 
     inline namespace type_utils_n {
 
-        // All type traits as concepts
+        // All standard type traits as concepts
         namespace type_concepts {
             template<class Ty> concept void_type = std::is_void_v<Ty>;
             template<class Ty> concept null_pointer = std::is_null_pointer_v<Ty>;
@@ -1690,15 +1908,26 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             template<class Ty, class ...Args> concept nothrow_invocable = pack_trait_helper<std::is_nothrow_invocable, Ty, Args...>::value;
         }
 
-        template<type_concepts::aggregate Ty>
+        /**
+         * Find amount of members in a struct.
+         * @tparam Ty struct
+         */
+        template<class Ty>
         struct struct_size_impl {
+            /**
+             * Finds struct size by trying to construct the struct using 
+             * a type that's convertible to anything but the struct itself
+             * (to prevent copy or move constructor from being called and
+             *  making it result in 1 when it should be 0), starting at
+             * sizeof(Ty) parameters, and trying 1 less each time until
+             * it is constructible.
+             */
             constexpr static std::size_t value = reverse_sequence<0, sizeof_v<Ty> + 1>([]<std::size_t ...Ns>{
-                using namespace type_concepts;
                 using convertible_type = not_convertible_to<Ty>;
+
                 std::size_t res = 0;
                 constexpr auto try_one = []<std::size_t ...Is> {
-                    return constructible<Ty,
-                        change<value_t<Is>, convertible_type>...>;
+                    return type_concepts::constructible<Ty, change<value_t<Is>, convertible_type>...>;
                 };
 
                 ((sequence<Ns>(try_one) ? (res = Ns, true) : false) || ...);
@@ -1706,9 +1935,17 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             });
         };
 
+        /**
+         * Find amount of members in a struct.
+         * @tparam Ty struct
+         */
         template<type_concepts::aggregate Ty>
         constexpr std::size_t struct_size = struct_size_impl<Ty>::value;
 
+        /**
+         * Find member types of a struct, uses a macro to define 
+         * overloads up to 99 members using structured bindings.
+         */
         template<type_concepts::aggregate Ty, std::size_t N>
         struct struct_members_impl {
             using types = pack<>;
@@ -1730,7 +1967,8 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             }(std::declval<Ty&>()));                                           \
         };
 
-#define KAIXO_MERGE(a, b) a##b
+#define KAIXO_MERGE(a, b) KAIXO_MERGE1(a, b)
+#define KAIXO_MERGE1(a, b) a##b
 #define KAIXO_LABEL(x) KAIXO_MERGE(val, x)
 #define KAIXO_UNIQUE_NAME KAIXO_LABEL(__COUNTER__)
 #define KAIXO_SIZE(...) (std::tuple_size_v<decltype(std::make_tuple(__VA_ARGS__))>)
@@ -1837,8 +2075,21 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
 
         KAIXO_UNIQUE_99(STRUCT_MEMBERS_M, 99)
 
+        /**
+         * Find the member types of a struct.
+         * @tparam Ty struct
+         */
         template<type_concepts::aggregate Ty>
         using struct_members = typename struct_members_impl<Ty, struct_size<Ty>>::types;
+
+        /**
+         * Some helpers to add/copy cvref qualifiers from one
+         * type to another. Leaves other qualifiers intact, so when
+         * changing just 'const', it won't change any other qualifiers.
+         * Add will simply add on top of the existing qualifiers of 'To', and
+         * copy will remove the qualifiers from 'To' first, and then add the ones
+         * that 'From' has back.
+         */
 
         template<class From, class To>
         struct add_ref_impl {
@@ -1889,11 +2140,11 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         template<class From, class To>
         using copy_cvref_impl = add_cvref_impl<From, std::decay_t<To>>;
 
-        template<class To, class From = const int>
+        template<class To, class From>
         using copy_const = typename copy_const_impl<From, To>::type;
-        template<class To, class From = volatile int>
+        template<class To, class From>
         using copy_volatile = typename copy_volatile_impl<From, To>::type;
-        template<class To, class From = const volatile int>
+        template<class To, class From>
         using copy_cv = typename copy_cv_impl<From, To>::type;
         template<class To, class From>
         using copy_ref = typename copy_ref_impl<From, To>::type;
@@ -1917,6 +2168,10 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         template<class To>
         using remove_cv = typename copy_cv_impl<int, To>::type;
 
+        /**
+         * Type traits info base. Contains all standard type traits.
+         * @tparam Ty type
+         */
         template<class Ty> struct info_base : RTTI_Ftable<Ty> {
             constexpr static bool is_void = std::is_void_v<Ty>;
             constexpr static bool is_null_pointer = std::is_null_pointer_v<Ty>;
@@ -2058,8 +2313,19 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
 
             constexpr static auto type_info = &typeid(Ty);
             constexpr static auto type_name = kaixo::type_name<Ty>;
+
+            // Convert to function, with return type Other
+            template<class Other> using to_function = info<Other(Ty)>;
+
+            // Convert to member pointer, with object type Other
+            template<class Other>
+            using to_member_pointer = info<std::remove_reference_t<Ty> Other::*>;
         };
 
+        /**
+         * Special case for pack_base, contains traits for all types.
+         * @tparam Tys... pack types
+         */
         template<class ...Tys> requires (sizeof...(Tys) > 0) struct info_base<pack_base<Tys...>> {
             constexpr static bool are_void = (std::is_void_v<Tys> && ...);
             constexpr static bool are_null_pointer = (std::is_null_pointer_v<Tys> && ...);
@@ -2180,12 +2446,27 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
 
             constexpr static auto type_info = std::array{ &typeid(Tys)... };
             constexpr static auto type_name = std::array{ kaixo::type_name<Tys>... };
+
+            // Convert pack to function, with return type Ty
+            template<class Ty> using to_function = info<Ty(Tys...)>;
+            
+            // Convert to a pack of member pointers, with object type Ty
+            template<class Ty>
+            using to_member_pointer = pack<std::remove_reference_t<Tys> Ty::* ...>;
         };
 
+        /**
+         * Specialization for callable types, to also
+         * contain function info.
+         */
         template<callable_type Ty>
-        struct info<Ty> : info_base<Ty>, function_info<Ty> {
-        };
+        struct info<Ty> : info_base<Ty>, function_info<Ty> {};
 
+        /**
+         * Specialization for integral types, to
+         * add the make_signed/make_unsigned type traits.
+         * Also inherits from std::numeric_limits<Ty>
+         */
         template<class Ty>
             requires (type_concepts::integral<Ty> && !type_concepts::boolean<Ty>)
         struct info<Ty> : info_base<Ty>, std::numeric_limits<Ty> {
@@ -2193,46 +2474,18 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             using make_unsigned = info<std::make_unsigned<Ty>>;
         };
 
+        /**
+         * Specialization for floating pointer, inherits
+         * from std::numeric_limits<Ty>
+         */
         template<class Ty>
             requires (type_concepts::floating_point<Ty>)
-        struct info<Ty> : info_base<Ty>, std::numeric_limits<Ty> {
+        struct info<Ty> : info_base<Ty>, std::numeric_limits<Ty> {};
 
-        };
-        
-        template<class Ty>
-            requires (type_concepts::aggregate<Ty>)
-        struct info<Ty> : info_base<Ty> {
-            using members = kaixo::struct_members<Ty>;
-
-            template<std::size_t I>
-            constexpr static std::size_t offset = [] {
-                if constexpr (I == 0) return 0;
-                else if constexpr (I != 0) {
-                    // Wrapped in lambda because somehow it gets infinite
-                    // recursion without, even though there's an if-constexpr
-                    return []<std::size_t N>(value_t<N>) {
-                        using prev = typename members::template element<N - 1>;
-                        using curr = typename members::template element<N>;
-
-                        constexpr std::size_t off = offset<N - 1> + sizeof_v<prev>;
-                        constexpr std::size_t align = alignof_v<curr>;
-
-                        return next_multuple(off, align);
-                    }(value_t<I>{});
-                }
-            }();
-
-
-            template<std::size_t I>
-            const inline static auto member = _member_impl<I>();
-
-            template<std::size_t I>
-            constexpr static auto _member_impl() {
-                return std::bit_cast<typename members::template element<I> Ty::*>(
-                    static_cast<std::uint32_t>(offset<I>));
-            }
-        };
-
+        /**
+         * Specialization for enum types, contains underlying
+         * type, and enum names.
+         */
         template<class Ty>
             requires (type_concepts::enum_type<Ty>)
         struct info<Ty> : info_base<Ty> {
@@ -2245,12 +2498,21 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             constexpr static auto defined = name<Value>.data() != nullptr;
         };
 
+        /**
+         * Specialization for member object pointer,
+         * contains the 'object' and 'value_type'
+         */
         template<class Ty, class Obj>
             requires type_concepts::member_object_pointer<Ty Obj::*>
-        struct info<Ty Obj::*> : info_base<Ty> {
+        struct info<Ty Obj::*> : info_base<Ty Obj::*> {
             using object = info<Obj>;
+            using value_type = info<Ty>;
         };
 
+        /**
+         * Specialization for Arrays, 
+         * contains rank/extent traits.
+         */
         template<class Ty>
             requires (type_concepts::array<Ty>)
         struct info<Ty> : info_base<Ty> {
@@ -2263,20 +2525,137 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             using remove_all_extents = info<std::remove_all_extents_t<Ty>>;
         };
 
+        /**
+         * Special case for value template arguments.
+         * actually uses decltype(Ty), but also contains
+         * the value name.
+         */
         template<auto Ty>
         struct info<value_t<Ty>> : info<decltype(Ty)> {
-            constexpr static auto name = kaixo::object_name<Ty>;
+            constexpr static auto name = kaixo::value_name<Ty>;
         };
 
+        /**
+         * Special case for (member) function pointers,
+         * also uses decltype(Ty), and contains value name
+         * and also function name.
+         */
         template<auto Ty>
             requires callable_type<decltype(Ty)>
         struct info<value_t<Ty>> : info<decltype(Ty)> {
-            constexpr static auto name = kaixo::object_name<Ty>;
+            constexpr static auto name = kaixo::value_name<Ty>;
             constexpr static auto function_name = kaixo::function_name<Ty>;
         };
 
+        /**
+         * Alias for template values.
+         * @tparam V value
+         */
         template<auto V>
         using info_v = info<value_t<V>>;
+
+        /**
+         * Member pointer info, used in the 'register' macro.
+         * Stores the name and pointer, and the info_v<V> type.
+         * @tparam V member pointer
+         * @tparam Name name
+         */
+        template<auto V, string_literal Name>
+        struct member_info_t {
+            using info = info_v<V>;
+            constexpr static std::string_view name = Name.view();
+            constexpr static auto pointer = V;
+        };
+
+        /**
+         * Member info. Specializations are made with
+         * the 'register' macro.
+         * @tparam Ty struct type
+         * @tparam Index member index in Ty
+         */
+        template<class Ty, std::size_t Index>
+        constexpr auto member_info = member_info_t<0, "">{};
+        
+        /**
+         * Member info, but specialized on the member pointer.
+         * Allows looking for name using the member pointer.
+         * @tparam MemPtr member pointer
+         */
+        template<auto MemPtr>
+        constexpr auto member_info_ptr = member_info_t<0, "">{};
+
+        template<class Ty, std::size_t S>
+        constexpr std::size_t _member_start = S;
+
+#define MEMBR_IMPL(x, y, c) /* x: Struct, y: Member name, c: __COUNTER__ value */         \
+template<> /* This keeps track of first __COUNTER__ val per struct, so we know offset */  \
+constexpr std::size_t kaixo::_member_start<x, c> = kaixo::_member_start<x, c - 1>;        \
+template<> /* Member info on index, uses _member_start to know offset. */                 \
+constexpr auto kaixo::member_info<x, c - kaixo::_member_start<x, c> - 1> =                \
+         kaixo::member_info_t<&x::y, #y>{};                                               \
+template<> /* Member info on member pointer */                                            \
+constexpr auto kaixo::member_info_ptr<&x::y> = kaixo::member_info_t<&x::y, #y>{} 
+#define register(x, y) MEMBR_IMPL(x, y, __COUNTER__)
+
+        /**
+         * Special case for member object pointer value.
+         * Contains the member_info, so if 'register' macro 
+         * was used, it contains the member name.
+         */
+        template<auto Ty>
+            requires type_concepts::member_object_pointer<decltype(Ty)>
+        struct info<value_t<Ty>> : info<decltype(Ty)>, decltype(kaixo::member_info_ptr<Ty>) {};
+        
+        /**
+         * Specialization for structs, contains information on
+         * members, like offset, types, and if 'register' macro was
+         * used, also member names and pointers. Also contains 
+         * non-constexpr member pointers, made using std::bit_cast
+         * and the calculated offset of each member.
+         */
+        template<class Ty>
+            requires (type_concepts::aggregate<Ty>)
+        struct info<Ty> : info_base<Ty> {
+            using members = struct_members<Ty>;
+
+            template<std::size_t I>
+            constexpr static std::size_t offset = [] {
+                if constexpr (I == 0) return 0;
+                else if constexpr (I != 0) {
+                    // Wrapped in lambda because somehow it gets infinite
+                    // recursion without, even though there's an if-constexpr
+                    return[]<std::size_t N>(value_t<N>) {
+                        using prev = typename members::template element<N - 1>;
+                        using curr = typename members::template element<N>;
+
+                        constexpr std::size_t off = offset<N - 1> +sizeof_v<prev>;
+                        constexpr std::size_t align = alignof_v<curr>;
+
+                        return next_multiple(off, align);
+                    }(value_t<I>{});
+                }
+            }();
+
+            template<std::size_t I> // Only works when you 'register' a member
+            using member_info = decltype(kaixo::member_info<Ty, I>);
+
+            // Only works when you 'register' members
+            using member_ptrs = decltype(sequence<struct_size<Ty>>([]<std::size_t ...Is> {
+                return to_pack<member_info<Is>::pointer...>{};
+            }));
+
+            template<std::size_t I>
+            constexpr static auto member_name = member_info<Ty, I>.name;
+
+            template<std::size_t I>
+            const inline static auto member_ptr = _member_impl<I>();
+
+            template<std::size_t I>
+            constexpr static auto _member_impl() {
+                return std::bit_cast<typename members::template element<I> Ty::*>(
+                    static_cast<std::uint32_t>(offset<I>));
+            }
+        };
     }
 
     /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
@@ -2312,12 +2691,14 @@ TYPE(128ull, KAIXO_SC128(CASE, 0ull)) \
 TYPE(256ull, KAIXO_SC256(CASE, 0ull)) \
 TYPE(512ull, KAIXO_SC512(CASE, 0ull))
 
-        template <std::unsigned_integral Ty>
-        constexpr Ty closest_larger_power2(Ty v) {
-            return v > 1ull ? 1ull << (sizeof(Ty) * CHAR_BIT - std::countl_zero(v - 1ull)) : v;
-        }
+        /**
+         * Cases switch, has a unique lambda for all
+         * the cases.
+         */
+        template<std::size_t I>
+        struct cases_switch_impl;
 
-#define KAIXO_TUPLE_SWITCH_C(i) case transform(i):          \
+#define KAIXO_CASES_SWITCH_C(i) case transform(i):          \
     if constexpr (i < sizeof...(Args)) {                    \
         if constexpr (std::invocable<                       \
             decltype(std::get<i>(cases)), decltype(index)>) \
@@ -2325,12 +2706,9 @@ TYPE(512ull, KAIXO_SC512(CASE, 0ull))
         else return std::get<i>(cases)();                   \
     } else break; 
 
-        template<std::size_t I>
-        struct tuple_switch_impl;
-
-#define KAIXO_TUPLE_SWITCH_S(n, cs)                                  \
+#define KAIXO_CASES_SWITCH_S(n, cs)                                  \
 template<>                                                           \
-struct tuple_switch_impl<n> {                                        \
+struct cases_switch_impl<n> {                                        \
     template<auto transform, class ...Args>                          \
     constexpr static auto handle(Args&& ...cases) {                  \
         return [cases = std::tuple(                                  \
@@ -2340,24 +2718,33 @@ struct tuple_switch_impl<n> {                                        \
     }                                                                \
 };
 
-        KAIXO_SWITCH_IMPL(KAIXO_TUPLE_SWITCH_S, KAIXO_TUPLE_SWITCH_C)
-#undef KAIXO_TUPLE_SWITCH_S
-#undef KAIXO_TUPLE_SWITCH_C
+        KAIXO_SWITCH_IMPL(KAIXO_CASES_SWITCH_S, KAIXO_CASES_SWITCH_C)
+#undef KAIXO_CASES_SWITCH_S
+#undef KAIXO_CASES_SWITCH_C
 
-            // Generate a switch statement with custom bodies
-            template<auto transform = [](auto i) { return i; } >
+        /**
+         * Generate a switch statement with lambdas as cases.
+         * @tparam transform transform case index to any other value
+         * @param cases... functors, either invocable with case value, or nothing
+         * @return generated switch
+         */
+        template<auto transform = functional::unit>
         constexpr auto generate_switch = []<class ...Functors>(Functors&& ...cases) {
             constexpr auto p2 = closest_larger_power2(sizeof...(Functors));
             return tuple_switch_impl<p2>::template handle<transform>(std::forward<Functors>(cases)...);
         };
 
+        /**
+         * Templated switch statement, where the
+         * argument will be converted into a template parameter value.
+         */
+        template<std::size_t I>
+        struct template_switch_impl;
+
 #define KAIXO_TEMPLATE_SWITCH_C(i) case transform(i):  \
     if constexpr (i < cases) {                         \
         return functor.operator()<transform(i)>();     \
     } else break; 
-
-        template<std::size_t I>
-        struct template_switch_impl;
 
 #define KAIXO_TEMPLATE_SWITCH_S(n, cs)                               \
 template<>                                                           \
@@ -2374,19 +2761,39 @@ struct template_switch_impl<n> {                                     \
 #undef KAIXO_TEMPLATE_SWITCH_S
 #undef KAIXO_TEMPLATE_SWITCH_C
 
-            template<std::unsigned_integral auto cases, auto transform = functional::unit>
+        /**
+         * Generate a template switch statement, takes a single
+         * functor which has a template argument value.
+         * @tparam cases how many cases to generate
+         * @tparam transform transform the case index
+         * @return generated template switch
+         */
+        template<std::unsigned_integral auto cases, auto transform = functional::unit>
         constexpr auto generate_template_switch = []<class Arg>(Arg && functor) {
             constexpr auto p2 = closest_larger_power2(cases);
             return template_switch_impl<p2>::template handle<cases, transform>(std::forward<Arg>(functor));
         };
 
-        // Convert enum value to string, uses a switch statement
-        template<kaixo::type_concepts::enum_type Ty,
+        /**
+         * Convert enum value to string, either requires
+         * that the enum contains a 'Size' member, or you
+         * manually choose a size. Generates a switch statement
+         * with cases from 0 to Size.
+         * @tparam Ty enum type
+         * @tparam Size amount of cases
+         * @param val enum value
+         * @return enum value as string view to a string literal
+         */ 
+        template<type_concepts::enum_type Ty,
             std::size_t Size = static_cast<std::size_t>(Ty::Size)>
         constexpr auto enum_to_string(Ty val) {
-            constexpr auto _str = kaixo::generate_template_switch<
-                Size, kaixo::functional::cast<Ty>
-            >([]<Ty V> { return kaixo::info<Ty>::template name<V>; });
+            // Generates a template switch to convert the runtime
+            // argument into a compiletime template value
+            // which then gets the name.
+            constexpr auto _str = generate_template_switch<
+                Size, functional::cast<Ty>>([]<Ty V> { 
+                return info<Ty>::template name<V>; 
+            });
             return _str(val);
         }
     }
@@ -2401,6 +2808,10 @@ struct template_switch_impl<n> {                                     \
      * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
     inline namespace multi_initializer_list_n {
+        /**
+         * Basically a wrapper for a dynamic raw array, can't 
+         * use unique_ptr because it aint constexpr yet...
+         */
         template<class Ty>
         struct initializer_storage {
             Ty* _storage = nullptr;
@@ -2421,6 +2832,10 @@ struct template_switch_impl<n> {                                     \
             constexpr const Ty* end() const { return _storage + _size; }
         };
 
+        /**
+         * An initializer list that supports multiple types.
+         * Get all values of a single type by calling get<Type>()
+         */
         template<class ...Tys>
             requires std::same_as<kaixo::pack<Tys...>,
             typename kaixo::pack<Tys...>::unique> // Make sure only unique types
@@ -2428,15 +2843,15 @@ struct template_switch_impl<n> {                                     \
             using types = kaixo::pack<Tys...>;
             std::tuple<initializer_storage<Tys>...> _lists;
 
+            /**
+             * Get all values of some type.
+             * @tparam Ty type in Tys...
+             */
             template<class Ty, class Self>
                 requires kaixo::pack<Tys...>::template occurs<Ty>
             constexpr const initializer_storage<Ty>& get(this Self&& self) {
                 return std::get<types::template index<Ty>>(self._lists);
             }
-
-            template<class Ty>
-                requires kaixo::pack<Tys...>::template occurs<Ty>
-            constexpr std::size_t count() const { return get<Ty>().size(); }
 
             template<class ...Args>
             constexpr multi_initializer_list(Args&&...args)
