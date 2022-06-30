@@ -250,9 +250,9 @@ namespace kaixo {
         }();
 
         template<class, template<class...> class>
-        struct is_specialization : std::false_type {};
+        struct specialization_impl : std::false_type {};
         template<template<class...> class Ref, class... Args>
-        struct is_specialization<Ref<Args...>, Ref> : std::true_type {};
+        struct specialization_impl<Ref<Args...>, Ref> : std::true_type {};
 
         /**
          * Concept, Test is specialization of Ref
@@ -260,7 +260,7 @@ namespace kaixo {
          * @tparam Ref templated type
          */
         template<class Test, template<class...> class Ref>
-        concept specialization = is_specialization<std::decay_t<Test>, Ref>::value;
+        concept specialization = specialization_impl<std::decay_t<Test>, Ref>::value;
 
         /**
          * Extract enum name from function signature, used in
@@ -1113,7 +1113,10 @@ namespace kaixo {
                 } && (!requires (L l) {
                     { l.template operator() < Ty::get() > () } -> std::same_as<bool>;
                 }))
-                    consteval bool operator()() { return false; }
+                    consteval bool operator()() { 
+                    if constexpr (requires () { L::template value<Ty>; }) return L::template value<Ty>;
+                    else return false; 
+                }
                 // Operator can be instantiated and returns a bool
                 template<class Ty> requires (requires (L l) {
                     { l.template operator() < Ty > () } -> std::same_as<bool>;
@@ -1759,7 +1762,8 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
          * @tparam S start value, or size when E is left at npos
          * @tparam E end value, or nothing when npos
          */
-        template<std::integral auto S, std::integral auto E = npos> constexpr auto indexed_for = [](auto lambda) {
+        template<std::integral auto S, std::integral auto E = npos> constexpr auto indexed_for = 
+            []<class Ty>(Ty&& lambda) {
             if constexpr (E == npos)
                 [&] <auto ...Is>(std::integer_sequence<decltype(S), Is...>) {
                 (lambda.operator() < Is > (), ...);
@@ -1794,34 +1798,46 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             }
         }();
 
-        // templated for, for tuple, supports concept constraints
-        constexpr auto tuple_for = []<class Tuple>(Tuple && tuple, auto... lambdas) {
-            auto loop_no_conversions = [&]<std::size_t I>(auto & lambda, value_t<I>) {
-                using l_type = std::decay_t<decltype(lambda)>;
-                if constexpr (invocable_no_conversions<l_type,
-                    decltype(std::get<I>(tuple))>) {
-                    lambda(std::get<I>(tuple));
-                    return true;
-                }
-                return false;
-            };
+        template<std::size_t I, class Tuple, class Lambda>
+        constexpr void _call_tuple_for(Tuple&& tuple, Lambda&& lambda) {
+            lambda(std::get<I>(tuple));
+        };
 
-            auto loop = [&]<std::size_t I>(auto & lambda, value_t<I>) {
+        // templated for, for tuple, supports concept constraints
+        constexpr auto tuple_for = []<class Tuple, class ...Lambdas>(Tuple && tuple, Lambdas&&... lambdas) {
+            
+            //auto loop_no_conversions = [&]<std::size_t I, class Ty>(Ty&& lambda, value_t<I>) {
+            //    using l_type = std::decay_t<decltype(lambda)>;
+            //    if constexpr (invocable_no_conversions<l_type,
+            //        decltype(std::get<I>(tuple))>) {
+            //        _call_tuple_for<I>(tuple, lambda);
+            //        return true;
+            //    }
+            //    return false;
+            //};
+
+            auto loop = [&]<std::size_t I, class Ty>(Ty&& lambda, value_t<I>) {
                 using l_type = std::decay_t<decltype(lambda)>;
                 if constexpr (std::invocable<l_type,
                     decltype(std::get<I>(tuple))>) {
-                    lambda(std::get<I>(tuple));
+                    _call_tuple_for<I>(tuple, lambda);
                     return true;
                 }
                 return false;
             };
 
-            indexed_for<std::tuple_size_v<std::decay_t<Tuple>>>([&]<std::size_t I> {
+            auto call_one = [&]<std::size_t I>(auto & lambda) {
+                return loop(lambda, value_t<I>{});
+            };
+
+            auto indexed_loop = [&]<std::size_t I> {
                 // 2 different checks, first check invocable without implicit conversions
-                if (!(loop_no_conversions(lambdas, value_t<I>{}) || ...))
+                //if (!(loop_no_conversions(lambdas, value_t<I>{}) || ...))
                     // If that fails, try with implicit conversions
-                    (loop(lambdas, value_t<I>{}) || ...);
-            });
+                    (call_one.operator()<I>(lambdas) || ...);
+            };
+
+            indexed_for<std::tuple_size_v<std::decay_t<Tuple>>>(indexed_loop);
         };
     }
 
@@ -1836,7 +1852,14 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
 
     inline namespace type_utils_n {
 
-        // All standard type traits as concepts
+        template<template<class Ty, class ...Args> class Trait, class Ty, class ...Args>
+        struct pack_trait_helper : Trait<Ty, Args...> {};
+        template<template<class Ty, class ...Args> class Trait, class Ty, class ...Args>
+        struct pack_trait_helper<Trait, Ty, pack<Args...>> : Trait<Ty, Args...> {};
+
+        /**
+         * All standard type traits as concepts.
+         */
         namespace type_concepts {
             template<class Ty> concept void_type = std::is_void_v<Ty>;
             template<class Ty> concept null_pointer = std::is_null_pointer_v<Ty>;
@@ -1907,16 +1930,312 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             template<class Ty, class Other> concept convertible_to = std::is_convertible_v<Ty, Other>;
             template<class Ty, class Other> concept nothrow_convertible_to = std::is_nothrow_convertible_v<Ty, Other>;
 
-            template<template<class Ty, class ...Args> class Trait, class Ty, class ...Args>
-            struct pack_trait_helper : Trait<Ty, Args...> {};
-            template<template<class Ty, class ...Args> class Trait, class Ty, class ...Args>
-            struct pack_trait_helper<Trait, Ty, pack<Args...>> : Trait<Ty, Args...> {};
-
             template<class Ty, class ...Args> concept constructible = pack_trait_helper<std::is_constructible, Ty, Args...>::value;
             template<class Ty, class ...Args> concept trivially_constructible = pack_trait_helper<std::is_trivially_constructible, Ty, Args...>::value;
             template<class Ty, class ...Args> concept nothrow_constructible = pack_trait_helper<std::is_nothrow_constructible, Ty, Args...>::value;
             template<class Ty, class ...Args> concept invocable = pack_trait_helper<std::is_invocable, Ty, Args...>::value;
             template<class Ty, class ...Args> concept nothrow_invocable = pack_trait_helper<std::is_nothrow_invocable, Ty, Args...>::value;
+        }
+        
+        /**
+         * All standard type traits wrapped in an object, allows for
+         * simple boolean operations and partial application.
+         * Even allows for complex concept constraints like:
+         * template<matches<is_integral || is_floating_point> Ty>
+         */
+        namespace type_traits {
+
+            /**
+             * Consteval 10^n.
+             * @param n power
+             * @return 10^n
+             */
+            consteval double _cpow10(std::size_t n) {
+                if (n == 0) return 1;
+                return 10 * _cpow10(n - 1);
+            }
+
+            /**
+             * Convert integer or floating point literal
+             * to value.
+             * @tparam S... characters in literal
+             * @return value
+             */
+            template<char ...S>
+            consteval auto _to_value() {
+                constexpr std::size_t size = sizeof...(S);
+                using values = to_pack<static_cast<int>(S - '0')...>;
+                constexpr std::size_t decimals = values::template index<'.' - '0'>;
+                using result_type = std::conditional_t<decimals == npos, std::size_t, double>;
+                if constexpr (decimals == npos)
+                    return[&]<std::size_t ...Is>(std::index_sequence<Is...>) {
+                    result_type m = _cpow10(size) / 10;
+                    result_type res = 0;
+                    ((res += m * (values::template element<Is>), m /= 10), ...);
+                    return res;
+                }(std::make_index_sequence<size>{});
+                else return[&]<std::size_t ...Is>(std::index_sequence<Is...>) {
+                    result_type m = _cpow10(decimals) / 10;
+                    result_type res = 0;
+                    ((res += Is == decimals ? 0 : m * (values::template element<Is>), m = Is == decimals ? m : m / 10), ...);
+                    return res;
+                }(std::make_index_sequence<size>{});
+            }
+
+            template<char ...S> requires ((S >= '0' && S <= '9' || S == '.') && ...)
+                consteval value_t<_to_value<S...>()> operator""_c() {
+                return {};
+            }
+
+            /**
+             * Concept to match a type_trait.
+             * @tparam Ty type
+             * @tparam V type_trait value
+             */
+            template<class Ty, auto V>
+            concept require = V.template value<Ty>;
+
+            /**
+             * Boolean and on 2 type_trait classes.
+             * @tparam A type trait 1
+             * @tparam B type trait 2
+             */
+            template<template<class ...> class A, template<class ...> class B>
+            struct type_trait_and {
+                template<class ...Args> struct type {
+                    constexpr static bool value = A<Args...>::value && B<Args...>::value;
+                };
+            };
+
+            /**
+             * Boolean or on 2 type_trait classes.
+             * @tparam A type trait 1
+             * @tparam B type trait 2
+             */
+            template<template<class ...> class A, template<class ...> class B>
+            struct type_trait_or {
+                template<class ...Args> struct type {
+                    constexpr static bool value = A<Args...>::value || B<Args...>::value;
+                };
+            };
+            
+            /**
+             * Boolean not on a type_trait class.
+             * @tparam A type trait
+             */
+            template<template<class ...> class A>
+            struct type_trait_not {
+                template<class ...Args> struct type {
+                    constexpr static bool value = !A<Args...>::value;
+                };
+            };
+            
+            /**
+             * Partially applied type trait, where last types
+             * are provided.
+             * @tparam A type trait
+             * @tparam Tys... provided arguments
+             */
+            template<template<class ...> class A, class ...Tys>
+            struct type_trait_partial_last {
+                template<class ...Args> struct type {
+                    constexpr static bool value = A<Args..., Tys...>::value;
+                };
+            };
+            
+            /**
+             * Partially applied type trait, where last types
+             * are provided in a pack.
+             * @tparam A type trait
+             * @tparam Tys... provided arguments
+             */
+            template<template<class ...> class A, class ...Tys>
+            struct type_trait_partial_last<A, pack<Tys...>> {
+                template<class ...Args> struct type {
+                    constexpr static bool value = A<Args..., Tys...>::value;
+                };
+            };
+            
+            /**
+             * Partially applied type trait, where first types
+             * are provided.
+             * @tparam A type trait
+             * @tparam Tys... provided arguments
+             */
+            template<template<class ...> class A, class ...Tys>
+            struct type_trait_partial_first {
+                template<class ...Args> struct type {
+                    constexpr static bool value = A<Tys..., Args...>::value;
+                };
+            };
+            
+            /**
+             * Partially applied type trait, where first types
+             * are provided in a pack.
+             * @tparam A type trait
+             * @tparam Tys... provided arguments
+             */
+            template<template<class ...> class A, class ...Tys>
+            struct type_trait_partial_first<A, pack<Tys...>> {
+                template<class ...Args> struct type {
+                    constexpr static bool value = A<Tys..., Args...>::value;
+                };
+            };
+
+            /**
+             * Unevaluated type trait wrapper.
+             * @tparam Trait type trait
+             */
+            template<template<class ...> class Trait>
+            struct type_trait {
+                template<class ...Tys>
+                constexpr static bool value = Trait<Tys...>::value;
+            };
+
+            /**
+             * Boolean and on 2 type traits
+             * @tparam A type trait 1
+             * @tparam B type trait 2
+             * @return type trait that matches if both match
+             */
+            template<template<class ...> class A, template<class ...> class B>
+            consteval auto operator and(type_trait<A>, type_trait<B>) { 
+                return type_trait<typename type_trait_and<A, B>::type>{};
+            }
+            
+            /**
+             * Boolean or on 2 type traits
+             * @tparam A type trait 1
+             * @tparam B type trait 2
+             * @return type trait that matches if either matches
+             */
+            template<template<class ...> class A, template<class ...> class B>
+            consteval auto operator or(type_trait<A>, type_trait<B>) { 
+                return type_trait<typename type_trait_or<A, B>::type>{}; 
+            }
+            
+            /**
+             * Boolean not on a type trait
+             * @tparam A type trait
+             * @return type trait that matches if A doesn't match
+             */
+            template<template<class ...> class A>
+            consteval auto operator not(type_trait<A>) { 
+                return type_trait<typename type_trait_not<A>::type>{}; 
+            }
+
+            template<auto L>
+            struct type_trait_value {
+                template<auto Op>
+                struct value_wrapper {
+                    template<class ...Tys>
+                    struct type {
+                        constexpr static bool value = Op(L.operator()<Tys...>());
+                    };
+                };
+            };
+            
+#define KAIXO_TYPE_TRAIT_OP(op)                                                       \
+            template<auto L, auto V>                                                  \
+            consteval auto operator op(type_trait_value<L>, value_t<V>) {             \
+                return type_trait<typename type_trait_value<L>                        \
+                    ::template value_wrapper<[](auto a) { return a op V; }>::type>{}; \
+            }
+            KAIXO_TYPE_TRAIT_OP(< ) KAIXO_TYPE_TRAIT_OP(<= ) KAIXO_TYPE_TRAIT_OP(== );
+            KAIXO_TYPE_TRAIT_OP(> ) KAIXO_TYPE_TRAIT_OP(>= ) KAIXO_TYPE_TRAIT_OP(!= );
+#undef KAIXO_TYPE_TRAIT_OP
+
+            constexpr auto size = type_trait_value<[]<class Ty>{ return sizeof_v<Ty>; }>{};
+            constexpr auto align = type_trait_value<[]<class Ty>{ return alignof_v<Ty>; }>{};
+
+            constexpr auto is_void = type_trait<std::is_void>{};
+            constexpr auto is_null_pointer = type_trait<std::is_null_pointer>{};
+            constexpr auto is_integral = type_trait<std::is_integral>{};
+            constexpr auto is_floating_point = type_trait<std::is_floating_point>{};
+            constexpr auto is_array = type_trait<std::is_array>{};
+            constexpr auto is_enum = type_trait<std::is_enum>{};
+            constexpr auto is_union = type_trait<std::is_union>{};
+            constexpr auto is_class = type_trait<std::is_class>{};
+            constexpr auto is_function = type_trait<std::is_function>{};
+            constexpr auto is_pointer = type_trait<std::is_pointer>{};
+            constexpr auto is_lvalue_reference = type_trait<std::is_lvalue_reference>{};
+            constexpr auto is_rvalue_reference = type_trait<std::is_rvalue_reference>{};
+            constexpr auto is_member_object_pointer = type_trait<std::is_member_object_pointer>{};
+            constexpr auto is_member_function_pointer = type_trait<std::is_member_function_pointer>{};
+            constexpr auto is_fundamental = type_trait<std::is_fundamental>{};
+            constexpr auto is_arithmetic = type_trait<std::is_arithmetic>{};
+            constexpr auto is_scalar = type_trait<std::is_scalar>{};
+            constexpr auto is_object = type_trait<std::is_object>{};
+            constexpr auto is_compound = type_trait<std::is_compound>{};
+            constexpr auto is_reference = type_trait<std::is_reference>{};
+            constexpr auto is_member_pointer = type_trait<std::is_member_pointer>{};
+            constexpr auto is_const = type_trait<std::is_const>{};
+            constexpr auto is_volatile = type_trait<std::is_volatile>{};
+            constexpr auto is_trivial = type_trait<std::is_trivial>{};
+            constexpr auto is_trivially_copyable = type_trait<std::is_trivially_copyable>{};
+            constexpr auto is_standard_layout = type_trait<std::is_standard_layout>{};
+            constexpr auto is_unique_object_representations = type_trait<std::has_unique_object_representations>{};
+            constexpr auto is_empty = type_trait<std::is_empty>{};
+            constexpr auto is_polymorphic = type_trait<std::is_polymorphic>{};
+            constexpr auto is_abstract = type_trait<std::is_abstract>{};
+            constexpr auto is_final = type_trait<std::is_final>{};
+            constexpr auto is_aggregate = type_trait<std::is_aggregate>{};
+            constexpr auto is_signed = type_trait<std::is_signed>{};
+            constexpr auto is_unsigned = type_trait<std::is_unsigned>{};
+            constexpr auto is_bounded_array = type_trait<std::is_bounded_array>{};
+            constexpr auto is_unbounded_array = type_trait<std::is_unbounded_array>{};
+            constexpr auto is_default_constructible = type_trait<std::is_default_constructible>{};
+            constexpr auto is_trivially_default_constructible = type_trait<std::is_trivially_default_constructible>{};
+            constexpr auto is_nothrow_default_constructible = type_trait<std::is_nothrow_default_constructible>{};
+            constexpr auto is_copy_constructible = type_trait<std::is_copy_constructible>{};
+            constexpr auto is_trivially_copy_constructible = type_trait<std::is_trivially_copy_constructible>{};
+            constexpr auto is_nothrow_copy_constructible = type_trait<std::is_nothrow_copy_constructible>{};
+            constexpr auto is_move_constructible = type_trait<std::is_move_constructible>{};
+            constexpr auto is_trivially_move_constructible = type_trait<std::is_trivially_move_constructible>{};
+            constexpr auto is_nothrow_move_constructible = type_trait<std::is_nothrow_move_constructible>{};
+            template<class From> constexpr auto is_assignable = type_trait<typename type_trait_partial_last<std::is_assignable, From>::type>{};
+            template<class From> constexpr auto is_trivially_assignable = type_trait<typename type_trait_partial_last<std::is_trivially_assignable, From>::type>{};
+            template<class From> constexpr auto is_nothrow_assignable = type_trait<typename type_trait_partial_last<std::is_nothrow_assignable, From>::type>{};
+            template<class To> constexpr auto is_assignable_to = type_trait<typename type_trait_partial_first<std::is_assignable, To>::type>{};
+            template<class To> constexpr auto is_trivially_assignable_to = type_trait<typename type_trait_partial_first<std::is_trivially_assignable, To>::type>{};
+            template<class To> constexpr auto is_nothrow_assignable_to = type_trait<typename type_trait_partial_first<std::is_nothrow_assignable, To>::type>{};
+            constexpr auto is_copy_assignable = type_trait<std::is_copy_assignable>{};
+            constexpr auto is_trivially_copy_assignable = type_trait<std::is_trivially_copy_assignable>{};
+            constexpr auto is_nothrow_copy_assignable = type_trait<std::is_nothrow_copy_assignable>{};
+            constexpr auto is_move_assignable = type_trait<std::is_move_assignable>{};
+            constexpr auto is_trivially_move_assignable = type_trait<std::is_trivially_move_assignable>{};
+            constexpr auto is_nothrow_move_assignable = type_trait<std::is_nothrow_move_assignable>{};
+            constexpr auto is_destructible = type_trait<std::is_destructible>{};
+            constexpr auto is_trivially_destructible = type_trait<std::is_trivially_destructible>{};
+            constexpr auto is_nothrow_destructible = type_trait<std::is_nothrow_destructible>{};
+            constexpr auto has_virtual_destructor = type_trait<std::has_virtual_destructor>{};
+            template<class Other> constexpr auto is_swappable_with = type_trait<typename type_trait_partial_last<std::is_swappable_with, Other>::type>{};
+            constexpr auto is_swappable = type_trait<std::is_swappable>{};
+            template<class Other> constexpr auto is_nothrow_swappable_with = type_trait<typename type_trait_partial_last<std::is_nothrow_swappable_with, Other>::type>{};
+            constexpr auto is_nothrow_swappable = type_trait<std::is_nothrow_swappable>{};
+        
+            template<class Other> constexpr auto is_same_as = type_trait<typename type_trait_partial_last<std::is_same, Other>::type>{};
+            template<class Other> constexpr auto is_base_of = type_trait<typename type_trait_partial_last<std::is_base_of, Other>::type>{};
+            template<class Other> constexpr auto is_derived_of = type_trait<typename type_trait_partial_first<std::is_base_of, Other>::type>{};
+            template<class Other> constexpr auto is_convertible_to = type_trait<typename type_trait_partial_last<std::is_convertible, Other>::type>{};
+            template<class Other> constexpr auto is_nothrow_convertible_to = type_trait<typename type_trait_partial_last<std::is_nothrow_convertible, Other>::type>{};
+            template<class Other> constexpr auto is_convertible_from = type_trait<typename type_trait_partial_first<std::is_convertible, Other>::type>{};
+            template<class Other> constexpr auto is_nothrow_convertible_from = type_trait<typename type_trait_partial_first<std::is_nothrow_convertible, Other>::type>{};
+
+            template<class ...Args> constexpr auto is_constructible = type_trait<typename type_trait_partial_last<std::is_constructible, Args...>::type>{};
+            template<class ...Args> constexpr auto is_trivially_constructible = type_trait<typename type_trait_partial_last<std::is_trivially_constructible, Args...>::type>{};
+            template<class ...Args> constexpr auto is_nothrow_constructible = type_trait<typename type_trait_partial_last<std::is_nothrow_constructible, Args...>::type>{};
+            template<class ...Args> constexpr auto is_invocable = type_trait<typename type_trait_partial_last<std::is_invocable, Args...>::type>{};
+            template<class ...Args> constexpr auto is_nothrow_invocable = type_trait<typename type_trait_partial_last<std::is_nothrow_invocable, Args...>::type>{};    
+            
+            template<template<class ...> class Ty>
+            struct is_specialization_impl {
+                template<class T> struct type {
+                    constexpr static bool value = specialization<T, Ty>;
+                };
+            };
+
+            template<template<class ...> class Ty> constexpr auto is_specialization = type_trait<typename is_specialization_impl<Ty>::type>{};
         }
 
         /**
@@ -1967,7 +2286,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             using types = pack<>;
         };
 
-#define STRUCT_MEMBERS_M(c, ...)                                               \
+#define KAIXO_STRUCT_MEMBERS_M(c, ...)                                         \
         template<type_concepts::aggregate Ty>                                  \
             requires (struct_size<Ty> == c)                                    \
         struct struct_members_impl<Ty, c> {                                    \
@@ -2084,7 +2403,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
 #define KAIXO_UNIQUE_98(m, c, ...) KAIXO_UNIQUE_97(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 97), __VA_ARGS__)
 #define KAIXO_UNIQUE_99(m, c, ...) KAIXO_UNIQUE_98(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 98), __VA_ARGS__)
 
-        KAIXO_UNIQUE_99(STRUCT_MEMBERS_M, 99)
+        KAIXO_UNIQUE_99(KAIXO_STRUCT_MEMBERS_M, 99)
 
         /**
          * Find the member types of a struct.
@@ -2598,7 +2917,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         template<class Ty, std::size_t S>
         constexpr std::size_t _member_start = S;
 
-#define MEMBR_IMPL(x, y, c) /* x: Struct, y: Member name, c: __COUNTER__ value */         \
+#define KAIXO_MEMBR_IMPL(x, y, c) /* x: Struct, y: Member name, c: __COUNTER__ value */   \
 template<> /* This keeps track of first __COUNTER__ val per struct, so we know offset */  \
 constexpr std::size_t kaixo::_member_start<x, c> = kaixo::_member_start<x, c - 1>;        \
 template<> /* Member info on index, uses _member_start to know offset. */                 \
@@ -2606,7 +2925,7 @@ constexpr auto kaixo::member_info<x, c - kaixo::_member_start<x, c> - 1> =      
          kaixo::member_info_t<&x::y, #y>{};                                               \
 template<> /* Member info on member pointer */                                            \
 constexpr auto kaixo::member_info_ptr<&x::y> = kaixo::member_info_t<&x::y, #y>{} 
-#define register(x, y) MEMBR_IMPL(x, y, __COUNTER__)
+#define register(x, y) KAIXO_MEMBR_IMPL(x, y, __COUNTER__)
 
         /**
          * Special case for member object pointer value.

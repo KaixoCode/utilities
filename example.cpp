@@ -394,16 +394,88 @@ struct Struct {
     long d = 5;
 };
 
+class Base {
+
+};
+
+class Derived : public Base {
+
+};
+
+template<class ...Args>
+struct forwarding_tuple : std::tuple<Args&&...> {
+    using types = kaixo::pack<Args&&...>;
+    using std::tuple<Args&&...>::tuple;
+
+    template<std::size_t I>
+    constexpr typename types::template element<I> get() {
+        using result = typename types::template element<I>;
+        if constexpr (kaixo::info<result>::is_lvalue_reference)
+            return std::get<I>(*this);
+        else if constexpr (kaixo::info<result>::is_rvalue_reference)
+            return std::move(std::get<I>(*this));
+    }
+};
+
+template<class ...Args>
+forwarding_tuple(Args&&...)->forwarding_tuple<Args...>;
+
+//template<std::size_t I, class ...Args>
+//constexpr decltype(auto) get(Args&&...args) {
+//    forwarding_tuple _args{ std::forward<Args>(args)... };
+//
+//    return _args.get<I>();
+//}
+
+template<class ...Args>
+struct template_pack : std::tuple<std::add_lvalue_reference_t<Args>...>, kaixo::pack<Args...> {
+    using _parent = std::tuple<std::add_lvalue_reference_t<Args>...>;
+    using _parent::_parent;
+
+    template<std::size_t I>
+    constexpr decltype(auto) get() const {
+        using result = template_pack::element_info<I>;
+        if constexpr (result::is_lvalue_reference)
+            return std::get<I>(*this);
+        else return std::move(std::get<I>(*this));
+    }
+};
+
+template<class Ty>
+struct forwarder {
+    constexpr forwarder(Ty val) {}
+};
+
+template<class Ty>
+forwarder(Ty)->forwarder<Ty>;
+
+template<std::size_t I, class ...Args>
+constexpr decltype(auto) g(Args&&...args) {
+    const template_pack<Args...> _args{ args... };
+
+    return _args.get<I>();
+}
+
+
+using namespace kaixo::type_concepts;
+using namespace kaixo::type_traits;
+
+template<require<is_aggregate or is_integral> Ty>
+struct Test {
+
+};
+
 int main() {
     using namespace kaixo;
     using namespace kaixo::fold;
     using namespace kaixo::type_concepts;
+    using namespace kaixo::type_traits;
 
-    constexpr auto res = array_to_pack<info<Struct>::members::indices_filter<[]<integral>{}>>::fold(Args + ___);
+    int ggggre = 1;
+    auto& resfaea = g<1>(1, ggggre, 3, 4, 5);
 
-
-    pack<int, long, char>::copy_cvref_from<int&&>::size;
-
+    constexpr auto res = array_to_pack<info<Struct>::members::indices_filter<is_integral>>::fold(Args + ___);
+    
     constexpr auto aeaoine = function_name<next_multiple<int>>;
     constexpr auto aione = 10.;
     constexpr auto aoine = value_name<aione>;
