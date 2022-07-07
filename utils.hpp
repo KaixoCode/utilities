@@ -1941,7 +1941,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
          * All standard type traits wrapped in an object, allows for
          * simple boolean operations and partial application.
          * Even allows for complex concept constraints like:
-         * template<matches<is_integral || is_floating_point> Ty>
+         * template<require<is_integral || is_floating_point> Ty>
          */
         namespace type_traits {
 
@@ -2091,6 +2091,9 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
                 template<class ...Tys>
                 constexpr static bool value = Trait<Tys...>::value;
             };
+
+            template<class Ty>
+            concept is_type_trait = std::convertible_to<decltype(Ty::template value<int>), bool>;
 
             /**
              * Boolean and on 2 type traits
