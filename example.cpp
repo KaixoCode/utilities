@@ -558,14 +558,22 @@ using namespace kaixo::type_traits;
 static inline std::size_t container_id_counter = 0;
 
 template<class Ty>
-struct container_wrapper {
+struct container_wrapper_base {
     using container_type = Ty;
     using value_type = Ty::value_type;
+    constexpr container_wrapper_base(Ty& container)
+        : container(container) {}
+
     Ty& container;
     std::size_t id = ++container_id_counter;
 
     constexpr auto begin() const { return container.begin(); }
     constexpr auto end() const { return container.end(); }
+};
+
+template<class Ty>
+struct container_wrapper : container_wrapper_base<Ty> {
+    using container_wrapper_base<Ty>::container_wrapper_base;
 };
 
 template<class ...Tys>
@@ -699,6 +707,24 @@ struct container_constraint {
     }
 };
 
+
+template<class Ty>
+    requires requires (Ty ty) { { ty.begin() }; { ty.end() }; }
+struct container_wrapper<Ty> : container_wrapper_base<Ty> {
+    using container_wrapper_base<Ty>::container_wrapper_base;
+
+#define KAIXO_C_VAL_MEMF(fun)                                                                        \
+    template<class ...Args>                                                                          \
+    constexpr auto fun(Args&& ...args) const {                                                       \
+        return container_constraint{ [id = this->id, ...args = std::forward<Args>(args)] (auto& tpl) \
+        { return tpl.check_constraint(id, [&](auto& v) { return v.fun(args...); }); }};              \
+    }
+
+    KAIXO_C_VAL_MEMF(operator[]);
+    KAIXO_C_VAL_MEMF(size);
+};
+
+
 // Generate operators for constraints
 #define KAIXO_C_OP_ARG(op)                                                                           \
 template<class Arg, class A>                                                                         \
@@ -751,25 +777,28 @@ KAIXO_C_OP_ARG(| ); KAIXO_C_OP_ARG(&& ); KAIXO_C_OP_ARG(|| );
 template<class Ty> requires 
     requires (Ty ty) { { ty.begin() }; { ty.end() }; }
 constexpr auto operator~(Ty& container) {
-    return container_wrapper{ container };
+    return container_wrapper<Ty>{ container };
 }
 
 #define just { return (container_constraint{ [](auto&) { return true; } }
-#define where { return (
-#define yield(...) ).set_yield(__VA_ARGS__); }();
+#define where ]{ return (
+#define select(...) ).set_yield(__VA_ARGS__); }();
 #define in =~
+#define from [
+
+
 
 int main() {
 
 
     {
-        std::vector<int> n1{ 1, 2, 3, 4 };
-        std::vector<int> n2{ 1, 2, 3, 4 };
+        std::vector<int> nums{ 1, 2, 3, 4, 6, 7, 8, 9, 10 };
+        std::vector<std::string> strs{ "a", "ab", "abc", "abcd", "abcde" };
 
-        auto res1 = [x in n1, y in n2] where x < y yield (x, y);
+        auto res1 = from s in strs where s.size() > 1 select(s);
 
-        for (auto [x, y] : res1) {
-            std::cout << "(" << x << ", " << y << ")\n";
+        for (auto [x] : res1) {
+            std::cout << "(" << x << ")\n";
         }
 
 
