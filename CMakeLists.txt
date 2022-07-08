@@ -34,6 +34,7 @@ add_library(utilities STATIC
   "${utilities_SOURCE_DIR}/match.hpp"
   "${utilities_SOURCE_DIR}/function_utils.hpp"
   "${utilities_SOURCE_DIR}/multi_initializer_list.hpp"
+  "${utilities_SOURCE_DIR}/linq.hpp"
 )
 
 set_target_properties(utilities PROPERTIES LINKER_LANGUAGE CXX)
