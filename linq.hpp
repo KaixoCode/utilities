@@ -1,5 +1,6 @@
 #pragma once
 #include "utils.hpp"
+#include <vector>
 
 namespace kaixo {
 #define just ]{ return (container_constraint{ std::tuple{}, [](auto&) { return true; } }
@@ -24,7 +25,7 @@ namespace kaixo {
         return std::tuple_cat(element_as_tuple<Is>(tuple, std::make_index_sequence<Is>())...);
     }
 
-    template<class Tuple> 
+    template<class Tuple>
     constexpr auto unique_tuple(Tuple&& tuple) {
         constexpr auto size = std::tuple_size_v<std::decay_t<Tuple>>;
         using seq = std::make_index_sequence<size>;
@@ -45,8 +46,58 @@ namespace kaixo {
         { a.containers };
     };
 
+    template<class Ty, class V>
+    concept value_type_is = std::same_as<typename std::decay_t<Ty>::value_type, V>;
+
+#define linq_class(Type)                                     \
+    template<class _access_type>                             \
+    struct value_type_specialization<Type, _access_type>     \
+        : value_type_specialization_base<Type, _access_type>
+    
+#define template_linq_class(tp, Type)                        \
+    template<class _access_type, tp>                         \
+    struct value_type_specialization<Type, _access_type>     \
+        : value_type_specialization_base<Type, _access_type>
+
+    template<class V, class Ty>
+    struct value_type_specialization_base {
+        Ty access;
+
+#define member_function(name)                                               \
+        template<class ...Args>                                             \
+        constexpr decltype(auto) name(Args&&...args) const {                \
+            return container_constraint{ std::tuple{},                      \
+                [access = this->access, ...args = std::forward<Args>(args)] \
+                (auto& tpl) { return access(tpl).name(args...); }           \
+            };                                                              \
+        }
+
+#define member_object(name)                                                      \
+        constexpr static auto create_member_ ## name(auto& access) {             \
+        return container_constraint{ std::tuple{},                               \
+            [access = access](auto& tpl) { return access(tpl).name; }            \
+        }; }                                                                     \
+        decltype(create_member_ ## name(std::declval<_access_type&>())) value =  \
+            create_member_ ## name(this->access);
+    };
+
+    template<class V, class Ty>
+    struct value_type_specialization
+        : value_type_specialization_base<V, Ty> {
+    };
+
+    template<std::size_t ID>
+    constexpr auto container_access = [](auto& tpl) { return tpl.get<ID>(); };
+
     template<class Ty, std::size_t ID>
-    struct container_wrapper {
+    struct container_wrapper 
+        : value_type_specialization<
+            typename std::decay_t<Ty>::value_type, 
+            decltype(container_access<ID>)> {
+        using parent = value_type_specialization<
+            typename std::decay_t<Ty>::value_type, 
+            decltype(container_access<ID>)>;
+
         using container_type = Ty;
         using value_type = std::decay_t<Ty>::value_type;
         using iterator = std::conditional_t<
@@ -57,12 +108,14 @@ namespace kaixo {
         constexpr static std::size_t id = ID;
 
         constexpr container_wrapper(Ty& container)
-            : container(container) {}
+            : container(container), parent{ container_access<ID> } {}
 
         Ty& container;
 
         constexpr iterator begin() { return container.begin(); }
         constexpr iterator end() { return container.end(); }
+
+        constexpr decltype(auto) from_tpl() const { return ; }
     };
 
     template<class V, class Ty> requires
@@ -244,4 +297,22 @@ constexpr auto operator op(const A& a, B&& b) {                                 
     KAIXO_C_OP_ARG(== ); KAIXO_C_OP_ARG(!= ); KAIXO_C_OP_ARG(&); KAIXO_C_OP_ARG(^);
     KAIXO_C_OP_ARG(| ); KAIXO_C_OP_ARG(&&); KAIXO_C_OP_ARG(|| );
 #undef KAIXO_C_OP_ARG;
+
+
+
+    linq_class(std::string) {
+        member_function(size);
+        member_function(operator=);
+        member_function(assign);
+        member_function(get_allocator);
+        member_function(at);
+        member_function(operator[]);
+        member_function(front);
+        member_function(back);
+        member_function(data);
+    };
+
+    template_linq_class(class Ty, std::vector<Ty>) {
+        member_function(size);
+    };
 }

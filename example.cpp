@@ -458,6 +458,14 @@ using namespace kaixo::type_traits;
 
 #include "linq.hpp"
 
+struct MyStruct {
+    int value = 1;
+};
+
+linq_class(MyStruct) {
+    member_object(value);
+};
+
 
 int main() {
 
@@ -465,13 +473,29 @@ int main() {
         std::vector<int> n1{ 1, 2, 3, 4 };
         std::vector<int> n2{ 1, 2, 3, 4 };
 
-        auto res1 = from x in n1, y in n2 where x < y select (x * x, y + 2);
+        //auto res1 = from x in n1, y in n2 where x < y select (x * x, y + 2);
 
-        for (auto [x, y] : res1) {
-            std::cout << "(" << x << ", " << y << ")\n";
+        //for (auto [x, y] : res1) {
+        //    std::cout << "(" << x << ", " << y << ")\n";
+        //}
+
+        std::vector<std::string> r1{ "a", "ab", "abc", "abcd", "abcde" };
+
+        auto res3 = from x in r1 where x.size() % 2 == 0 select (x);
+        for (auto [x] : res3) {
+            std::cout << "(" << x << ")\n";
         }
 
+        std::vector<MyStruct> s1{ { 1 }, { 2 }, { 3 }, { 4 } };
 
+        auto x in s1;
+        using sione = decltype(x);
+
+        auto res2 = from x in s1 where x.value == 1 select (x);
+
+        for (auto [x] : res2) {
+            std::cout << "(" << x.value << ")\n";
+        }
     }
 
     int ggggre = 1;
