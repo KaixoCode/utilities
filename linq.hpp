@@ -60,6 +60,25 @@ namespace kaixo {
     struct value_type_specialization<Type, _access_type>     \
         : value_type_specialization_base<Type, _access_type>
 
+#define linq_member_function(name)                                             \
+    template<class ...Args>                                                    \
+    constexpr decltype(auto) name(Args&&...args) const {                       \
+        auto access = this->ptr;                                               \
+        return container_constraint{ to_containers(*access),                   \
+            [access = access->from_tpl(), ...args = std::forward<Args>(args)]  \
+            (auto& tpl) -> decltype(auto) { return access(tpl).name(args...); }\
+        };                                                                     \
+    }
+    
+#define linq_member_object(name)                                               \
+    constexpr static auto create_member_##name(const _access_type* access) {   \
+    return container_constraint{  to_containers(*access),                      \
+        [access = access->from_tpl()](auto& tpl)                               \
+       -> decltype(auto) { return (access(tpl).name); }                        \
+    };                                                                         \
+    }                                                                          \
+    decltype(create_member_##name(std::declval<const _access_type*>())) name = \
+        create_member_##name(this->ptr);
 
     template<class V, class Ty>
     struct value_type_specialization_base {
@@ -67,8 +86,7 @@ namespace kaixo {
     };
 
     template<class V, class Ty>
-    struct value_type_specialization : value_type_specialization_base<V, Ty> {
-    };
+    struct value_type_specialization : value_type_specialization_base<V, Ty> {};
 
     template<class Ty, std::size_t ID>
     struct container_wrapper_base {
@@ -91,7 +109,7 @@ namespace kaixo {
         constexpr iterator cwb_begin() const { return container.begin(); }
         constexpr iterator cwb_end() const { return container.end(); }
 
-        constexpr auto from_tpl() const { return [](auto& tpl) { return tpl.get<ID>(); }; }
+        constexpr auto from_tpl() const { return [](auto& tpl) -> decltype(auto) { return tpl.get<ID>(); }; }
     };
 
     template<class Ty, std::size_t ID>
@@ -238,19 +256,9 @@ namespace kaixo {
     };
 
     template<class Constraint, class ...Tys>
-    struct container_constraint :
-        value_type_specialization<
-        decltype(std::declval<Constraint>()(std::declval<container_iterator_tuple<Tys...>&>())),
-        container_constraint<Constraint, Tys...>> {
+    struct container_constraint_base {
 
-        using value_parent = value_type_specialization<
-            decltype(std::declval<Constraint>()(std::declval<container_iterator_tuple<Tys...>&>())),
-            container_constraint<Constraint, Tys...>>;
-
-        constexpr auto from_tpl() const { return [constraint = constraint](auto& tpl) { return constraint(tpl); }; }
-
-        constexpr container_constraint(std::tuple<Tys...> containers, Constraint constraint)
-            : containers(containers), constraint(constraint), value_parent{ this } {}
+        constexpr auto from_tpl() const { return [constraint = constraint](auto& tpl) -> decltype(auto) { return constraint(tpl); }; }
 
         std::tuple<Tys...> containers;
         Constraint constraint;
@@ -272,7 +280,8 @@ namespace kaixo {
                     _res = (args.op(_res, x), ...);
                 }
                 return _res;
-            } else {
+            }
+            else {
                 return cartesian_container{
                     linq_unique_containers(std::tuple_cat(containers, to_containers(args)...)),
                     constraint,
@@ -280,6 +289,22 @@ namespace kaixo {
                 };
             }
         }
+    };
+
+    template<class Constraint, class ...Tys>
+    struct container_constraint : container_constraint_base<Constraint, Tys...>,
+        value_type_specialization<
+        std::decay_t<decltype(std::declval<Constraint>()(std::declval<container_iterator_tuple<Tys...>&>()))>,
+        container_constraint_base<Constraint, Tys...>> {
+
+        using value_type = std::decay_t<decltype(std::declval<Constraint>()(std::declval<container_iterator_tuple<Tys...>&>()))>;
+
+        using value_parent = value_type_specialization<
+            value_type,
+            container_constraint_base<Constraint, Tys...>>;
+
+        constexpr container_constraint(std::tuple<Tys...> containers, Constraint constraint)
+            : container_constraint_base<Constraint, Tys...>{ containers, constraint }, value_parent{ this } {}
     };
 
 #define KAIXO_C_OP_ARG(op)\
@@ -372,29 +397,15 @@ constexpr auto operator op(const A& a, B&& b) {                                 
 
 #undef KAIXO_C_FOLD_ARG
 
-#define linq_member_function(name)                                             \
-    template<class ...Args>                                                    \
-    constexpr decltype(auto) name(Args&&...args) const {                       \
-        auto access = this->ptr;                                               \
-        return container_constraint{ to_containers(*access),                   \
-            [access = access->from_tpl(), ...args = std::forward<Args>(args)]  \
-            (auto& tpl) { return access(tpl).name(args...); }                  \
-        };                                                                     \
-    }
-
-#define linq_member_object(name)                                               \
-    constexpr static auto create_member_##name(const _access_type* access) {   \
-    return container_constraint{  to_containers(*access),                      \
-        [access = access->from_tpl()](auto& tpl) { return access(tpl).name; }  \
-    };                                                                         \
-    }                                                                          \
-    decltype(create_member_##name(std::declval<const _access_type*>())) name = \
-        create_member_##name(this->ptr);
-
     template<class Ty>
     concept is_container_type = requires(Ty ty) {
         { ty.begin() };
         { ty.end() };
+    };
+
+    template_linq_class(class ...Tys, std::pair<Tys...>) {
+        linq_member_object(first);
+        linq_member_object(second);
     };
 
     template_linq_class(is_container_type Ty, Ty) {
