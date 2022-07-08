@@ -795,7 +795,7 @@ int main() {
         std::vector<int> nums{ 1, 2, 3, 4, 6, 7, 8, 9, 10 };
         std::vector<std::string> strs{ "a", "ab", "abc", "abcd", "abcde" };
 
-        auto res1 = from s in strs where s.size() > 1 select(s);
+        auto res1 = from s in strs where s.size() > 1 select (s);
 
         for (auto [x] : res1) {
             std::cout << "(" << x << ")\n";
