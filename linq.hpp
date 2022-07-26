@@ -104,10 +104,10 @@ namespace kaixo {
 
         Ty& container;
 
-        constexpr iterator cwb_begin() { return container.begin(); }
-        constexpr iterator cwb_end() { return container.end(); }
-        constexpr iterator cwb_begin() const { return container.begin(); }
-        constexpr iterator cwb_end() const { return container.end(); }
+        constexpr iterator cwb_begin() { return std::begin(container); }
+        constexpr iterator cwb_end() { return std::end(container); }
+        constexpr iterator cwb_begin() const { return std::begin(container); }
+        constexpr iterator cwb_end() const { return std::end(container); }
 
         constexpr auto from_tpl() const { return [](auto& tpl) -> decltype(auto) { return tpl.get<ID>(); }; }
     };
@@ -126,7 +126,7 @@ namespace kaixo {
     };
 
     template<class V, class Ty> requires
-        requires (Ty ty) { V::value; { ty.begin() }; { ty.end() }; }
+        requires (Ty ty) { V::value; { std::begin(ty) }; { std::end(ty) }; }
     constexpr auto operator%(V, Ty& container) {
         return container_wrapper<Ty, V::value>{ container };
     }
@@ -399,8 +399,8 @@ constexpr auto operator op(const A& a, B&& b) {                                 
 
     template<class Ty>
     concept is_container_type = requires(Ty ty) {
-        { ty.begin() };
-        { ty.end() };
+        { std::begin(ty) };
+        { std::end(ty) };
     };
 
     template_linq_class(class ...Tys, std::pair<Tys...>) {
