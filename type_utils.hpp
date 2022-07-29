@@ -11,6 +11,174 @@
 namespace kaixo {
     constexpr std::size_t npos = static_cast<std::size_t>(-1);
 
+    template<std::size_t N, class CharType = char>
+    struct string_literal {
+        constexpr static std::size_t npos = std::basic_string_view<CharType>::npos;
+
+        using view_type = std::basic_string_view<CharType>;
+        using size_type = std::size_t;
+        using difference_type = std::ptrdiff_t;
+        using value_type = CharType;
+        using reference = CharType&;
+        using const_reference = const CharType&;
+        using pointer = CharType*;
+        using const_pointer = const CharType*;
+
+        class const_iterator {
+        public:
+            using iterator_category = std::random_access_iterator_tag;
+            using size_type = std::size_t;
+            using difference_type = std::ptrdiff_t;
+            using value_type = const CharType;
+            using reference = const CharType&;
+
+            constexpr const_iterator(const const_iterator&) = default;
+            constexpr const_iterator(const_iterator&&) = default;
+            constexpr const_iterator& operator=(const const_iterator&) = default;
+            constexpr const_iterator& operator=(const_iterator&&) = default;
+            constexpr const_iterator() : m_Ptr(nullptr) {}
+            constexpr const_iterator(const CharType* ptr) : m_Ptr(ptr) {}
+
+            constexpr reference operator*() const { return *m_Ptr; }
+            constexpr const_iterator& operator+=(difference_type d) { m_Ptr += d; return *this; }
+            constexpr const_iterator& operator-=(difference_type d) { m_Ptr -= d; return *this; }
+            constexpr const_iterator& operator++() { ++m_Ptr; return *this; }
+            constexpr const_iterator& operator--() { --m_Ptr; return *this; }
+            constexpr const_iterator operator++(int) { auto _c = *this; ++m_Ptr; return _c; }
+            constexpr const_iterator operator--(int) { auto _c = *this; --m_Ptr; return _c; }
+
+            constexpr reference operator[](difference_type d) const { return m_Ptr[d]; }
+
+            constexpr auto operator<=>(const const_iterator& other) const = default;
+
+            friend constexpr const_iterator operator+(difference_type a, const const_iterator& b) { return { a + b.m_Ptr }; }
+            friend constexpr const_iterator operator+(const const_iterator& a, difference_type b) { return { a.m_Ptr + b }; }
+            friend constexpr const_iterator operator-(difference_type a, const const_iterator& b) { return { a - b.m_Ptr }; }
+            friend constexpr const_iterator operator-(const const_iterator& a, difference_type b) { return { a.m_Ptr - b }; }
+            friend constexpr difference_type operator-(const const_iterator& a, const const_iterator& b) { return a.m_Ptr - b.m_Ptr; }
+        protected:
+            const CharType* m_Ptr;
+        };
+
+        class iterator : public const_iterator {
+        public:
+            using iterator_category = std::random_access_iterator_tag;
+            using size_type = std::size_t;
+            using difference_type = std::ptrdiff_t;
+            using value_type = CharType;
+            using reference = CharType&;
+
+            constexpr iterator(const iterator&) = default;
+            constexpr iterator(iterator&&) = default;
+            constexpr iterator& operator=(const iterator&) = default;
+            constexpr iterator& operator=(iterator&&) = default;
+            constexpr iterator() : const_iterator(nullptr) {}
+            constexpr iterator(CharType* ptr) : const_iterator(ptr) {}
+
+            constexpr reference operator*() const { return *const_cast<CharType*>(this->m_Ptr); }
+            constexpr iterator& operator+=(difference_type d) { this->m_Ptr += d; return *this; }
+            constexpr iterator& operator-=(difference_type d) { this->m_Ptr -= d; return *this; }
+            constexpr iterator& operator++() { ++this->m_Ptr; return *this; }
+            constexpr iterator& operator--() { --this->m_Ptr; return *this; }
+            constexpr iterator operator++(int) { auto _c = *this; ++this->m_Ptr; return _c; }
+            constexpr iterator operator--(int) { auto _c = *this; --this->m_Ptr; return _c; }
+
+            constexpr reference operator[](difference_type d) const { return const_cast<CharType*>(this->m_Ptr)[d]; }
+
+            constexpr auto operator<=>(const iterator& other) const = default;
+
+            friend constexpr iterator operator+(difference_type a, const iterator& b) { return { a + b.m_Ptr }; }
+            friend constexpr iterator operator+(const iterator& a, difference_type b) { return { a.m_Ptr + b }; }
+            friend constexpr iterator operator-(difference_type a, const iterator& b) { return { a - b.m_Ptr }; }
+            friend constexpr iterator operator-(const iterator& a, difference_type b) { return { a.m_Ptr - b }; }
+            friend constexpr difference_type operator-(const iterator& a, const iterator& b) { return a.m_Ptr - b.m_Ptr; }
+        };
+
+        using reverse_iterator = std::reverse_iterator<iterator>;
+        using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+
+        constexpr ~string_literal() = default;
+        constexpr string_literal() = default;
+        constexpr string_literal(const CharType(&data)[N]) {
+            std::copy_n(data, N, m_Data);
+        }
+
+        constexpr string_literal(std::string_view data) {
+            std::copy_n(data.data(), N, m_Data);
+            m_Data[N - 1] = '\0';
+        }
+
+        constexpr string_literal(string_literal&&) = default;
+        constexpr string_literal(const string_literal&) = default;
+        constexpr string_literal& operator=(string_literal&&) = default;
+        constexpr string_literal& operator=(const string_literal&) = default;
+
+        template<std::size_t I> requires (I < N)
+            constexpr string_literal& operator=(const CharType(&data)[I]) {
+            std::copy_n(data, I, m_Data);
+        }
+
+        constexpr iterator begin() { return { m_Data }; }
+        constexpr iterator end() { return { m_Data + size() }; }
+        constexpr const_iterator begin() const { return { m_Data }; }
+        constexpr const_iterator end() const { return { m_Data + size() }; }
+        constexpr const_iterator cbegin() const { return begin(); }
+        constexpr const_iterator cend() const { return end(); }
+        constexpr reverse_iterator rbegin() { return end(); }
+        constexpr reverse_iterator rend() { return begin(); }
+        constexpr const_reverse_iterator rbegin() const { return end(); }
+        constexpr const_reverse_iterator rend() const { return begin(); }
+        constexpr const_reverse_iterator crbegin() const { return end(); }
+        constexpr const_reverse_iterator crend() const { return begin(); }
+
+        constexpr reference at(size_type d) { return m_Data[d]; }
+        constexpr const_reference at(size_type d) const { return m_Data[d]; }
+        constexpr reference operator[](size_type d) { return m_Data[d]; }
+        constexpr const_reference operator[](size_type d) const { return m_Data[d]; }
+        constexpr reference front() { return m_Data[0]; }
+        constexpr const_reference front() const { return m_Data[0]; }
+        constexpr reference back() { return m_Data[size() - 1]; }
+        constexpr const_reference back() const { return m_Data[size() - 1]; }
+
+        constexpr pointer data() { return m_Data; }
+        constexpr const_pointer data() const { return m_Data; }
+        constexpr const_pointer c_str() const { return m_Data; }
+        constexpr size_type size() const { return N - 1; }
+        constexpr size_type length() const { return size(); }
+        constexpr size_type max_size() const { return size(); }
+        constexpr bool empty() const { return false; }
+        constexpr void swap(string_literal& other) { std::swap(data(), other.data()); }
+
+        constexpr view_type view() const { return { data(), size() }; }
+        constexpr operator view_type() const { return { data(), size() }; }
+
+        template<std::size_t I>
+        constexpr auto operator==(const string_literal<I, CharType>& other) const {
+            if constexpr (I != N) return false;
+            else return view() == other.view();
+        };
+        template<std::size_t I>
+        constexpr auto operator<=>(const string_literal<I, CharType>& other) const { return view() <=> other.view(); }
+        template<class Ty>
+        constexpr auto operator==(Ty&& val) const { return view() == std::forward<Ty>(val); }
+        template<class Ty>
+        constexpr auto operator<=>(Ty&& val) const { return view() <=> std::forward<Ty>(val); }
+
+        constexpr auto starts_with(view_type t) const { return view().starts_with(t); }
+        constexpr auto ends_with(view_type t) const { return view().ends_with(t); }
+        constexpr auto substr(size_type pos = 0, size_type count = npos) const { return view().substr(pos, count); }
+        constexpr auto find(std::string_view t, size_type pos = 0) const { return view().find(t, pos); }
+        constexpr auto rfind(view_type t, size_type pos = 0) const { return view().rfind(t, pos); }
+        constexpr auto find_first_of(view_type t, size_type pos = 0) const { return view().find_first_of(t, pos); }
+        constexpr auto find_first_not_of(view_type t, size_type pos = 0) const { return view().find_first_not_of(t, pos); }
+        constexpr auto find_last_of(view_type t, size_type pos = 0) const { return view().find_last_of(t, pos); }
+        constexpr auto find_last_not_of(view_type t, size_type pos = 0) const { return view().find_last_not_of(t, pos); }
+
+        CharType m_Data[N]{};
+    };
+
+    template<class ...Tys> struct info;
+
     /**
      * Find the closes larger power of 2.
      * @param v value
@@ -163,6 +331,79 @@ namespace kaixo {
     static_assert(std::convertible_to<not_convertible_to<int>, const volatile float>);
 
     /**
+     * Call lambda with array values as template arguments, like
+     * Lambda.operator()<Array[Is]...>();
+     */
+    template<auto Array>
+    constexpr auto iterate = [](auto Lambda) {
+        return[Lambda]<std::size_t ...Is>(std::index_sequence<Is...>) {
+            return Lambda.operator() < Array[Is]... > ();
+        }(std::make_index_sequence<Array.size()>{});
+    };
+
+    template<auto Array, template<std::size_t ...> class Ty> 
+    struct array_to_pack {
+        template<class> struct helper;
+        template<std::size_t ...Is>
+        struct helper<std::index_sequence<Is...>> {
+            using type = Ty<Array[Is]...>;
+        };
+
+        using type = typename helper<std::make_index_sequence<Array.size()>>::type;
+    };
+
+    /**
+     * Convert an array of indices to a template pack.
+     * @tparam Array array of std::size_t
+     * @tparam Ty templated type that takes std::size_t's
+     */
+    template<auto Array, template<std::size_t ...> class Ty>
+    using array_to_pack_t = typename array_to_pack<Array, Ty>::type;
+
+    /**
+     * Partially specialize T by setting the first 
+     * template parameters to ...As
+     * @tparam T templated type
+     * @tparam ...As types to 
+     */
+    template<template<class...> class T, class ...As>
+    struct partial_first {
+        template<class ...Bs>
+        using type = T<As..., Bs...>;
+    };
+    template<template<class...> class T, class ...As>
+    using partial = partial_first<T, As...>;
+
+    template<class ...Tys> 
+    struct tparams { 
+        using type = info<typename tparams<Tys>::type...>;
+    };
+    template<class Ty> struct tparams<Ty> { using type = Ty; };
+    template<template<class...> class T, class ...Tys>
+    struct tparams<T<Tys...>> {
+        using type = info<Tys...>;
+    };
+
+    /**
+     * Get the template parameters from a templated type.
+     * @tparam Ty templated type
+     */
+    template<class ...Tys>
+    using tparams_t = typename tparams<Tys...>::type;
+
+    /**
+     * Partially specialize T by setting the first 
+     * template parameters to ...As
+     * @tparam T templated type
+     * @tparam ...As types to 
+     */
+    template<template<class...> class T, class ...As>
+    struct partial_last {
+        template<class ...Bs>
+        using type = T<Bs..., As...>;
+    };
+
+    /**
      * Type for a template value.
      * @tparam V template value
      */
@@ -170,6 +411,45 @@ namespace kaixo {
     struct value_t {
         constexpr static auto value = V;
     };
+
+    /**
+     * Wrapper for a templated type.
+     * @tparam T templated type
+     */
+    template<template<class...> class T>
+    struct templated_t {
+        template<class ...Args>
+        using type = T<Args...>;
+    };
+
+    template<class Ty> struct uninstantiate { using type = Ty; };
+    template<template<class...> class T, class ...Tys> 
+    struct uninstantiate<T<Tys...>> {
+        using type = templated_t<T>; 
+    };
+
+    /**
+     * Remove template parameters from templated type.
+     * @tparam Ty templated type
+     */
+    template<class Ty> 
+    using uninstantiate_t = typename uninstantiate<Ty>::type;
+    
+    template<template<class...> class T, class ...Tys> 
+    struct instantiate {
+        using type = T<Tys...>; 
+    };
+    template<template<class...> class T, class ...Tys> 
+    struct instantiate<T, info<Tys...>> {
+        using type = T<Tys...>; 
+    };
+
+    /**
+     * Specialize a templated type.
+     * @tparam Ty templated type
+     */
+    template<template<class...> class T, class ...Tys>
+    using instantiate_t = typename instantiate<T, Tys...>::type;
 
     /**
      * Overloaded Functor.
@@ -185,19 +465,6 @@ namespace kaixo {
      * when nothing else should match.
      */
     struct dud {};
-
-    template<class, template<class...> class>
-    struct specialization_impl : std::false_type {};
-    template<template<class...> class Ref, class... Args>
-    struct specialization_impl<Ref<Args...>, Ref> : std::true_type {};
-
-    /**
-     * Concept, Test is specialization of Ref
-     * @tparam Test type to test
-     * @tparam Ref templated type
-     */
-    template<class Test, template<class...> class Ref>
-    concept specialization = specialization_impl<std::decay_t<Test>, Ref>::value;
 
     /**
      * Extract enum name from function signature, used in
@@ -249,7 +516,11 @@ namespace kaixo {
      * @tparam V value that's convertible to Ty
      */
     template<class Ty, auto V>
-    constexpr auto enum_name = enum_name_impl<Ty, static_cast<Ty>(V)>();
+    constexpr auto enum_name = [] {
+        constexpr auto name = enum_name_impl<Ty, static_cast<Ty>(V)>();
+        if constexpr (name.data() == nullptr) return string_literal<1>{ "\0" };
+        else return string_literal<name.size() + 1>{ name };
+    }();
 
     /**
      * Extract value name from function signature.
@@ -276,7 +547,11 @@ namespace kaixo {
      * @tparam V template value
      */
     template<auto V>
-    constexpr auto value_name = value_name_impl<V>();
+    constexpr auto value_name = [] {
+        constexpr auto name = value_name_impl<V>();
+        if constexpr (name.data() == nullptr) return string_literal<1>{ "\0" };
+        else return string_literal<name.size() + 1>{ name };
+    }();
 
     /**
      * Get pretty function name from string_view containing
@@ -361,7 +636,11 @@ namespace kaixo {
      * @tparam Value (member) function pointer
      */
     template<auto V>
-    constexpr auto function_name = function_name_impl<V>();
+    constexpr auto function_name = [] {
+        constexpr auto name = function_name_impl<V>();
+        if constexpr (name.data() == nullptr) return string_literal<1>{ "\0" };
+        else return string_literal<name.size() + 1>{ name };
+    }();
 
     /**
      * Get type name from function signature.
@@ -389,7 +668,11 @@ namespace kaixo {
      * @tparam V type
      */
     template<class V>
-    constexpr auto type_name = type_name_impl<V>();
+    constexpr auto type_name = [] {
+        constexpr auto name = type_name_impl<V>();
+        if constexpr (name.data() == nullptr) return string_literal<1>{ "\0" };
+        else return string_literal<name.size() + 1>{ name };
+    }();
 
     /**
      * Basically sizeof(Ty), but special case for
@@ -399,6 +682,7 @@ namespace kaixo {
     constexpr std::size_t sizeof_v = [] {
         if constexpr (std::is_void_v<Ty>) return 0;
         else if constexpr (std::is_function_v<Ty>) return 0;
+        else if constexpr (std::is_array_v<Ty> && std::extent_v<Ty> == 0) return 0;
         else return sizeof(Ty);
     }();
 
@@ -413,7 +697,6 @@ namespace kaixo {
         else return std::alignment_of_v<Ty>;
     }();
 
-    template<class ...Tys> struct info;
 
     /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
      *                                                                                                         *
@@ -430,9 +713,6 @@ namespace kaixo {
     template<template<class Ty, class ...Args> class Trait, class Ty, class ...Args>
     struct pack_trait_helper<Trait, Ty, info<Args...>> : Trait<Ty, Args...> {};
 
-    /**
-     * All standard type traits as concepts.
-     */
     template<class Ty> concept void_type = std::is_void_v<Ty>;
     template<class Ty> concept null_pointer = std::is_null_pointer_v<Ty>;
     template<class Ty> concept boolean = std::is_same_v<Ty, bool>;
@@ -460,7 +740,6 @@ namespace kaixo {
     template<class Ty> concept trivial = std::is_trivial_v<Ty>;
     template<class Ty> concept trivially_copyable = std::is_trivially_copyable_v<Ty>;
     template<class Ty> concept standard_layout = std::is_standard_layout_v<Ty>;
-    template<class Ty> concept unique_object_representations = std::has_unique_object_representations_v<Ty>;
     template<class Ty> concept empty = std::is_empty_v<Ty>;
     template<class Ty> concept polymorphic = std::is_polymorphic_v<Ty>;
     template<class Ty> concept abstract = std::is_abstract_v<Ty>;
@@ -479,9 +758,6 @@ namespace kaixo {
     template<class Ty> concept move_constructible = std::is_move_constructible_v<Ty>;
     template<class Ty> concept trivially_move_constructible = std::is_trivially_move_constructible_v<Ty>;
     template<class Ty> concept nothrow_move_constructible = std::is_nothrow_move_constructible_v<Ty>;
-    template<class Ty, class From> concept assignable = std::is_assignable_v<Ty, From>;
-    template<class Ty, class From> concept trivially_assignable = std::is_trivially_assignable_v<Ty, From>;
-    template<class Ty, class From> concept nothrow_assignable = std::is_nothrow_assignable_v<Ty, From>;
     template<class Ty> concept copy_assignable = std::is_copy_assignable_v<Ty>;
     template<class Ty> concept trivially_copy_assignable = std::is_trivially_copy_assignable_v<Ty>;
     template<class Ty> concept nothrow_copy_assignable = std::is_nothrow_copy_assignable_v<Ty>;
@@ -491,22 +767,41 @@ namespace kaixo {
     template<class Ty> concept destructible = std::is_destructible_v<Ty>;
     template<class Ty> concept trivially_destructible = std::is_trivially_destructible_v<Ty>;
     template<class Ty> concept nothrow_destructible = std::is_nothrow_destructible_v<Ty>;
-    template<class Ty> concept virtual_destructor = std::has_virtual_destructor_v<Ty>;
-    template<class Ty, class Other> concept swappable_with = std::is_swappable_with_v<Ty, Other>;
     template<class Ty> concept swappable = std::is_swappable_v<Ty>;
-    template<class Ty, class Other> concept nothrow_swappable_with = std::is_nothrow_swappable_with_v<Ty, Other>;
     template<class Ty> concept nothrow_swappable = std::is_nothrow_swappable_v<Ty>;
 
-    template<class Ty, class Other> concept same_as = std::same_as<Ty, Other>;
+    template<class Ty> concept unique_object_representations = std::has_unique_object_representations_v<Ty>;
+    template<class Ty> concept virtual_destructor = std::has_virtual_destructor_v<Ty>;
+
+    template<class Ty, class Other> concept assignable = std::is_assignable_v<Ty, Other>;
+    template<class Ty, class Other> concept trivially_assignable = std::is_trivially_assignable_v<Ty, Other>;
+    template<class Ty, class Other> concept nothrow_assignable = std::is_nothrow_assignable_v<Ty, Other>;
+    template<class Ty, class Other> concept assignable_to = std::is_assignable_v<Other, Ty>;
+    template<class Ty, class Other> concept trivially_assignable_to = std::is_trivially_assignable_v<Other, Ty>;
+    template<class Ty, class Other> concept nothrow_assignable_to = std::is_nothrow_assignable_v<Other, Ty>;
+    template<class Ty, class Other> concept swappable_with = std::is_swappable_with_v<Ty, Other>;
+    template<class Ty, class Other> concept nothrow_swappable_with = std::is_nothrow_swappable_with_v<Ty, Other>;
+
+    template<class Ty, class Other> concept same_as = std::is_same_v<Ty, Other>;
     template<class Ty, class Other> concept base_of = std::is_base_of_v<Ty, Other>;
     template<class Ty, class Other> concept convertible_to = std::is_convertible_v<Ty, Other>;
     template<class Ty, class Other> concept nothrow_convertible_to = std::is_nothrow_convertible_v<Ty, Other>;
+    template<class Ty, class Other> concept convertible_from = std::is_convertible_v<Other, Ty>;
+    template<class Ty, class Other> concept nothrow_convertible_from = std::is_nothrow_convertible_v<Other, Ty>;
 
     template<class Ty, class ...Args> concept constructible = pack_trait_helper<std::is_constructible, Ty, Args...>::value;
     template<class Ty, class ...Args> concept trivially_constructible = pack_trait_helper<std::is_trivially_constructible, Ty, Args...>::value;
     template<class Ty, class ...Args> concept nothrow_constructible = pack_trait_helper<std::is_nothrow_constructible, Ty, Args...>::value;
     template<class Ty, class ...Args> concept invocable = pack_trait_helper<std::is_invocable, Ty, Args...>::value;
     template<class Ty, class ...Args> concept nothrow_invocable = pack_trait_helper<std::is_nothrow_invocable, Ty, Args...>::value;
+
+    template<class, template<class...> class>
+    struct specialization_impl : std::false_type {};
+    template<template<class...> class Ref, class... Args>
+    struct specialization_impl<Ref<Args...>, Ref> : std::true_type {};
+
+    template<class Test, template<class...> class Ref>
+    concept specialization = specialization_impl<std::decay_t<Test>, Ref>::value;
 
     /**
      * All standard type traits wrapped in an object, allows for
@@ -685,7 +980,6 @@ namespace kaixo {
     constexpr auto is_trivial = type_trait<std::is_trivial>{};
     constexpr auto is_trivially_copyable = type_trait<std::is_trivially_copyable>{};
     constexpr auto is_standard_layout = type_trait<std::is_standard_layout>{};
-    constexpr auto is_unique_object_representations = type_trait<std::has_unique_object_representations>{};
     constexpr auto is_empty = type_trait<std::is_empty>{};
     constexpr auto is_polymorphic = type_trait<std::is_polymorphic>{};
     constexpr auto is_abstract = type_trait<std::is_abstract>{};
@@ -704,12 +998,6 @@ namespace kaixo {
     constexpr auto is_move_constructible = type_trait<std::is_move_constructible>{};
     constexpr auto is_trivially_move_constructible = type_trait<std::is_trivially_move_constructible>{};
     constexpr auto is_nothrow_move_constructible = type_trait<std::is_nothrow_move_constructible>{};
-    template<class From> constexpr auto is_assignable = type_trait<typename type_trait_partial_last<std::is_assignable, From>::type>{};
-    template<class From> constexpr auto is_trivially_assignable = type_trait<typename type_trait_partial_last<std::is_trivially_assignable, From>::type>{};
-    template<class From> constexpr auto is_nothrow_assignable = type_trait<typename type_trait_partial_last<std::is_nothrow_assignable, From>::type>{};
-    template<class To> constexpr auto is_assignable_to = type_trait<typename type_trait_partial_first<std::is_assignable, To>::type>{};
-    template<class To> constexpr auto is_trivially_assignable_to = type_trait<typename type_trait_partial_first<std::is_trivially_assignable, To>::type>{};
-    template<class To> constexpr auto is_nothrow_assignable_to = type_trait<typename type_trait_partial_first<std::is_nothrow_assignable, To>::type>{};
     constexpr auto is_copy_assignable = type_trait<std::is_copy_assignable>{};
     constexpr auto is_trivially_copy_assignable = type_trait<std::is_trivially_copy_assignable>{};
     constexpr auto is_nothrow_copy_assignable = type_trait<std::is_nothrow_copy_assignable>{};
@@ -719,11 +1007,20 @@ namespace kaixo {
     constexpr auto is_destructible = type_trait<std::is_destructible>{};
     constexpr auto is_trivially_destructible = type_trait<std::is_trivially_destructible>{};
     constexpr auto is_nothrow_destructible = type_trait<std::is_nothrow_destructible>{};
-    constexpr auto has_virtual_destructor = type_trait<std::has_virtual_destructor>{};
-    template<class Other> constexpr auto is_swappable_with = type_trait<typename type_trait_partial_last<std::is_swappable_with, Other>::type>{};
     constexpr auto is_swappable = type_trait<std::is_swappable>{};
-    template<class Other> constexpr auto is_nothrow_swappable_with = type_trait<typename type_trait_partial_last<std::is_nothrow_swappable_with, Other>::type>{};
     constexpr auto is_nothrow_swappable = type_trait<std::is_nothrow_swappable>{};
+
+    constexpr auto has_unique_object_representations = type_trait<std::has_unique_object_representations>{};
+    constexpr auto has_virtual_destructor = type_trait<std::has_virtual_destructor>{};
+
+    template<class Other> constexpr auto is_assignable = type_trait<typename type_trait_partial_last<std::is_assignable, Other>::type>{};
+    template<class Other> constexpr auto is_trivially_assignable = type_trait<typename type_trait_partial_last<std::is_trivially_assignable, Other>::type>{};
+    template<class Other> constexpr auto is_nothrow_assignable = type_trait<typename type_trait_partial_last<std::is_nothrow_assignable, Other>::type>{};
+    template<class Other> constexpr auto is_assignable_to = type_trait<typename type_trait_partial_first<std::is_assignable, Other>::type>{};
+    template<class Other> constexpr auto is_trivially_assignable_to = type_trait<typename type_trait_partial_first<std::is_trivially_assignable, Other>::type>{};
+    template<class Other> constexpr auto is_nothrow_assignable_to = type_trait<typename type_trait_partial_first<std::is_nothrow_assignable, Other>::type>{};
+    template<class Other> constexpr auto is_swappable_with = type_trait<typename type_trait_partial_last<std::is_swappable_with, Other>::type>{};
+    template<class Other> constexpr auto is_nothrow_swappable_with = type_trait<typename type_trait_partial_last<std::is_nothrow_swappable_with, Other>::type>{};
 
     template<class Other> constexpr auto is_same = type_trait<typename type_trait_partial_last<std::is_same, Other>::type>{};
     template<class Other> constexpr auto is_base_of = type_trait<typename type_trait_partial_last<std::is_base_of, Other>::type>{};
@@ -1013,6 +1310,9 @@ namespace kaixo {
         return _match;
     }() > {};
 
+    template<class ...Args>
+    struct unique_count<info<Args...>> : unique_count<Args...> {};
+
     /**
      * Amount of unique types in ...Args.
      * @tparam ...Args types
@@ -1030,6 +1330,9 @@ namespace kaixo {
             return _result;
         }();
     };
+
+    template<class ...Args>
+    struct first_indices<info<Args...>> : first_indices<Args...> {};
 
     /**
      * Get the index of the first occurence of each type in ...Args.
@@ -1077,15 +1380,13 @@ namespace kaixo {
     template<std::size_t N, class Ty>
     using drop_t = typename drop<N, Ty>::type;
 
-    template<auto, class> struct keep_at_indices;
+    template<auto, class> struct keep_indices;
     template<auto Array, template<class...> class T, class ...As>
-    struct keep_at_indices<Array, T<As...>> {
-        template<class> struct helper;
-        template<std::size_t ...Is>
-        struct helper<std::index_sequence<Is...>> {
-            using type = T<element_t<Array[Is], As...>...>;
+    struct keep_indices<Array, T<As...>> {
+        template<std::size_t ...Is> struct helper {
+            using type = T<element_t<Is, As...>...>;
         };
-        using type = typename helper<std::make_index_sequence<Array.size()>>::type;
+        using type = typename array_to_pack_t<Array, helper>::type;
     };
 
     /**
@@ -1094,12 +1395,29 @@ namespace kaixo {
      * @tparam T templated type
      */
     template<auto Array, class T>
-    using keep_at_indices_t = typename keep_at_indices<Array, T>::type;
+    using keep_indices_t = typename keep_indices<Array, T>::type;
+
+    template<auto, class> struct remove_indices;
+    template<auto Array, template<class...> class T, class ...As>
+    struct remove_indices<Array, T<As...>> {
+        template<std::size_t ...Is> struct helper {
+            using type = keep_indices_t<generate_indices_v<0, sizeof...(As), Is...>, T<As...>>;
+        };
+        using type = typename array_to_pack_t<Array, helper>::type;
+    };
+
+    /**
+     * Remove the types at the indices in Array.
+     * @tparam Array std::array of indices
+     * @tparam T templated type
+     */
+    template<auto Array, class T>
+    using remove_indices_t = typename remove_indices<Array, T>::type;
 
     template<class, class> struct remove;
     template<class Ty, template<class...> class T, class ...As>
     struct remove<Ty, T<As...>> {
-        using type = typename keep_at_indices<
+        using type = typename keep_indices<
             indices_except_v<Ty, As...>, T<As...>>::type;
     };
 
@@ -1114,7 +1432,7 @@ namespace kaixo {
     template<class, class> struct keep;
     template<class Ty, template<class...> class T, class ...As>
     struct keep<Ty, T<As...>> {
-        using type = typename keep_at_indices<
+        using type = typename keep_indices<
             indices_v<Ty, As...>, T<As...>>::type;
     };
 
@@ -1129,7 +1447,7 @@ namespace kaixo {
     template<std::size_t, class> struct erase;
     template<std::size_t I, template<class...> class T, class ...As>
     struct erase<I, T<As...>> {
-        using type = keep_at_indices_t<
+        using type = keep_indices_t<
             generate_indices_v<0, sizeof...(As), I>, T<As... >>;
     };
 
@@ -1233,39 +1551,84 @@ namespace kaixo {
         using type = sub_t<S, E, Ty>;
     };
 
+    template<class L>
+    struct filter_object_wrapper {
+        consteval filter_object_wrapper(L value) : value(value) {}
+        L value;
+    };
+
+    template<class L, std::size_t I, class Ty>
+    concept _call_type0 = requires (L l) { // Only type -> bool
+        { l.template operator() < Ty > () } -> convertible_to<bool>;
+    };
+    
+    template<class L, std::size_t I, class Ty>
+    concept _call_type1 = requires (L l) { // Index, type -> bool
+        { l.template operator() < I, Ty > () } -> convertible_to<bool>;
+    };
+    
+    template<class L, std::size_t I, class Ty>
+    concept _call_type2 = requires (L l) { // Only index -> bool
+        { l.template operator() < I > () } -> convertible_to<bool>;
+    };
+    
+    template<class L, std::size_t I, class Ty> 
+    concept _call_type3 = requires (L l) { // Type -> void (type constraint)
+        { l.template operator() < Ty > () } -> same_as<void>;
+    };
+    
+    template<class L, std::size_t I, class Ty> // Type trait
+    concept _call_type4 = requires (L) { L::template value<Ty>; };
+
+    template<class L, std::size_t I, class Ty>// Value
+    concept _call_type5 = requires(L l) { { l == Ty::value } -> convertible_to<bool>; };
+
+    template<class L>
+    struct wrap_filter_object { using type = filter_object_wrapper<L>; };
+    template<class L> requires
+        requires (L) { { L::template value<int> } -> convertible_to<bool>; }
+    struct wrap_filter_object<L> { using type = L; };
+
+
     /**
      * Filter object with operator overloads for several cases
      * for the type filter.
      * @tparam L filter type
      */
     template<class L>
-    struct filter_object : L {
-        // Operator can't be instantiated with Ty
-        template<class Ty> requires (!requires (L l) {
-            { l.template operator() < Ty > () };
-        }) consteval bool operator()() {
-            // if it's a type trait object instead of a lambda
-            if constexpr (requires () { L::template value<Ty>; }) return L::template value<Ty>;
+    struct filter_object : wrap_filter_object<L>::type {
+        template<std::size_t I, class Ty> consteval bool call() {
+            if constexpr (_call_type0<L, I, Ty>) return this->value.template operator() < Ty > ();
+            else if constexpr (_call_type1<L, I, Ty>) return this->value.template operator() < I, Ty > ();
+            else if constexpr (_call_type2<L, I, Ty>) return this->value.template operator() < I > ();
+            else if constexpr (_call_type3<L, I, Ty>) return true;
+            else if constexpr (_call_type4<L, I, Ty>) return L::template value<Ty>;
+            else if constexpr (_call_type5<L, I, Ty>) return this->value == Ty::value;
             else return false; // Otherwise always return false
         }
-        // Operator can be instantiated and returns a bool
-        template<class Ty> requires (requires (L l) {
-            { l.template operator() < Ty > () } -> std::same_as<bool>;
-        }) consteval bool operator()() { // Call operator
-            return L::template operator() < Ty > ();
-        }
-        // Operator can be instantiated but returns void
-        // This means concept constraint on template parameter.
-        // if it matches, return true
-        template<class Ty> requires requires (L l) {
-            { l.template operator() < Ty > () } -> std::same_as<void>;
-        } consteval bool operator()() { return true; }
     };
 
+    template<class T> filter_object(T)->filter_object<T>;
+
     template<auto Filter, class ...Args>
-    struct count_filter : std::integral_constant < std::size_t, [] {
-        return ((static_cast<std::size_t>(filter_object{ Filter }.operator() < Args > ())) + ...);
-    }() > {};
+    consteval std::size_t count_filter_impl(info<Args...>) {
+        return ((static_cast<std::size_t>(filter_object{ Filter }.
+            template call<Args::template element<0>::value,
+            typename Args::template element<1>::type>())) + ...);
+    }
+
+    template<auto Filter, class ...Args>
+    struct count_filter {
+        template<class> struct helper;
+        template<std::size_t ...Is>
+        struct helper<std::index_sequence<Is...>> {
+            consteval static std::size_t value() {
+                return ((static_cast<std::size_t>(filter_object{ Filter }.template call<Is, Args>())) + ...);
+            }
+        };
+
+        constexpr static std::size_t value = helper<std::index_sequence_for<Args...>>::value();
+    };
 
     /**
      * Amount of types in ...Args that match Filter.
@@ -1281,8 +1644,10 @@ namespace kaixo {
             count_filter_v<Filter, Args...>> value = [] {
             std::array<std::size_t, count_filter_v<Filter, Args...>> _indices{};
             std::size_t _index = 0, _match = 0;
-            ((filter_object{ Filter }.operator() < Args > () ?
-                _indices[_match++] = _index++ : ++_index), ...);
+            [&]<std::size_t ...Is>(std::index_sequence<Is...>) {
+                ((filter_object{ Filter }.template call<Is, Args>() ?
+                    _indices[_match++] = _index++ : ++_index), ...);
+            }(std::index_sequence_for<Args...>{});
             return _indices;
         }();
     };
@@ -1306,7 +1671,7 @@ namespace kaixo {
         template<class> struct helper;
         template<std::size_t ...Is>
         struct helper<std::index_sequence<Is...>> {
-            using type = T<element<indices_filter_v<Filter, Args...>[Is], Args...>...>;
+            using type = T<element_t<indices_filter_v<Filter, Args...>[Is], Args...>...>;
         };
         using type = typename helper<
             std::make_index_sequence<count_filter_v<Filter, Args...>>>::type;
@@ -1319,6 +1684,123 @@ namespace kaixo {
      */
     template<auto Filter, class Ty>
     using filter_t = typename filter<Filter, Ty>::type;
+
+    template<auto Sorter, class A, class B>
+    constexpr bool type_sorter_result = Sorter.operator() < A, B > ();
+
+    template<auto, class, class> struct type_merge_sort_merge;
+    template<auto Sorter, class A, class ...As, class B, class ...Bs>
+        requires type_sorter_result<Sorter, A, B>
+    struct type_merge_sort_merge<Sorter, info<A, As...>, info<B, Bs...>> {
+        using _recurse = typename type_merge_sort_merge<Sorter, info<As...>, info<B, Bs...>>::type;
+        using type = append_t<_recurse, info<A>>;
+    };
+
+    template<auto Sorter, class A, class ...As, class B, class ...Bs>
+        requires (!type_sorter_result<Sorter, A, B>)
+    struct type_merge_sort_merge<Sorter, info<A, As...>, info<B, Bs...>> {
+        using _recurse = typename type_merge_sort_merge<Sorter, info<A, As...>, info<Bs...>>::type;
+        using type = append_t<_recurse, info<B>>;
+    };
+
+    template<auto Sorter, class ...As>
+    struct type_merge_sort_merge<Sorter, info<As...>, info<>> { using type = info<As...>; };
+
+    template<auto Sorter, class ...Bs>
+    struct type_merge_sort_merge<Sorter, info<>, info<Bs...>> { using type = info<Bs...>; };
+
+    template<auto Sorter, class Ty> struct type_merge_sort
+        : type_merge_sort<Sorter, move_tparams<Ty, info>> {};
+    template<auto Sorter, class ...Tys>
+    struct type_merge_sort<Sorter, info<Tys...>> {
+        constexpr static std::size_t _mid = sizeof...(Tys) / 2.;
+        using _left = typename type_merge_sort<Sorter, typename info<Tys...>::template take<_mid>>::type;
+        using _right = typename type_merge_sort<Sorter, typename info<Tys...>::template drop<_mid>>::type;
+        using type = typename type_merge_sort_merge<Sorter, _left, _right>::type;
+    };
+
+    template<auto Sorter, class Ty>
+    struct type_merge_sort<Sorter, info<Ty>> {
+        using type = info<Ty>;
+    };
+
+    /**
+     * Merge sort algorithm for the template parameters of Ty.
+     * @tparam Sorter lambda that takes 2 template parameters and returns a bool
+     * @tparam Ty templated type
+     */
+    template<auto Sorter, class Ty>
+    using type_merge_sort_t = typename type_merge_sort<Sorter, Ty>::type;
+
+    template<auto Sorter, class Ty>
+    struct sort_types {
+        using type = type_merge_sort_t<Sorter, Ty>;
+    };
+
+    /**
+     * Sorting algorithm for the template parameters of Ty.
+     * @tparam Sorter lambda that takes 2 template parameters and returns a bool
+     * @tparam Ty templated type
+     */
+    template<auto Sorter, class Ty>
+    using sort_types_t = typename type_merge_sort<Sorter, Ty>::type;
+
+    /**
+     * Some often used sorting methods for types.
+     */
+    namespace type_sorters {
+        constexpr auto size = []<class A, class B>{ return sizeof_v<A> < sizeof_v<B>; };
+        constexpr auto size_desc = []<class A, class B>{ return sizeof_v<A> > sizeof_v<B>; };
+        constexpr auto alignment = []<class A, class B>{ return alignof_v<A> < alignof_v<B>; };
+        constexpr auto alignment_desc = []<class A, class B>{ return alignof_v<A> > alignof_v<B>; };
+    }
+
+    template<template<class...> class T, class Ty>
+    struct transform { using type = T<Ty>; };
+
+    template<template<class...> class T, class ...As>
+    struct transform<T, info<As...>> { using type = info<typename transform<T, As>::type...>; };
+
+    template<template<class...> class T, class Ty>
+    using transform_t = typename transform<T, Ty>::type;
+
+    /**
+     * Grab a certain member in a transform operation.
+     * Most member types in the standard are here.
+     */
+    namespace grab {
+        template<class Ty> using type = typename Ty::type;
+        template<class Ty> using value = value_t<Ty::value>;
+        template<class Ty> using off_type = typename Ty::off_type;
+        template<class Ty> using state_type = typename Ty::state_type;
+        template<class Ty> using int_type = typename Ty::int_type;
+        template<class Ty> using pos_type = typename Ty::pos_type;
+        template<class Ty> using char_type = typename Ty::char_type;
+        template<class Ty> using comparison_category = typename Ty::comparison_category;
+        template<class Ty> using traits_type = typename Ty::traits_type;
+        template<class Ty> using string_type = typename Ty::string_type;
+        template<class Ty> using format = typename Ty::format;
+        template<class Ty> using iterator_category = typename Ty::iterator_category;
+        template<class Ty> using iterator_concept = typename Ty::iterator_concept;
+        template<class Ty> using key_type = typename Ty::key_type;
+        template<class Ty> using mapped_type = typename Ty::mapped_type;
+        template<class Ty> using key_compare = typename Ty::key_compare;
+        template<class Ty> using value_compare = typename Ty::value_compare;
+        template<class Ty> using node_type = typename Ty::node_type;
+        template<class Ty> using insert_return_type = typename Ty::insert_return_type;
+        template<class Ty> using value_type = typename Ty::value_type;
+        template<class Ty> using allocator_type = typename Ty::allocator_type;
+        template<class Ty> using size_type = typename Ty::size_type;
+        template<class Ty> using difference_type = typename Ty::difference_type;
+        template<class Ty> using reference = typename Ty::reference;
+        template<class Ty> using const_reference = typename Ty::const_reference;
+        template<class Ty> using pointer = typename Ty::pointer;
+        template<class Ty> using const_pointer = typename Ty::const_pointer;
+        template<class Ty> using iterator = typename Ty::iterator;
+        template<class Ty> using const_iterator = typename Ty::const_iterator;
+        template<class Ty> using reverse_iterator = typename Ty::reverse_iterator;
+        template<class Ty> using const_reverse_iterator = typename Ty::const_reverse_iterator;
+    }
 
     /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
      *                                                                                                         *
@@ -1361,10 +1843,10 @@ KAIXO_MEMBER_CALL_NOEXCEPT(MAC, noexcept)
 #define KAIXO_MEMBER_FUNCTION_INFO_MOD(CONST, VOLATILE, REF, NOEXCEPT)                   \
 template<class Ty, class R, class ...Args>                                               \
 struct function_info_impl<R(Ty::*)(Args...) CONST VOLATILE REF NOEXCEPT> {               \
-    using pointer = info<R(*)(Args...) NOEXCEPT>;                                        \
-    using signature = info<R(Args...) CONST VOLATILE REF NOEXCEPT>;                      \
-    using object = info<CONST VOLATILE Ty REF>;                                          \
-    using result = info<R>;                                                              \
+    using pointer = R(*)(Args...) NOEXCEPT;                                              \
+    using signature = R(Args...) CONST VOLATILE REF NOEXCEPT;                            \
+    using object = CONST VOLATILE Ty REF;                                                \
+    using result = R;                                                                    \
     using arguments = info<Args...>;                                                     \
     constexpr static bool is_fun_const = std::same_as<const int, CONST int>;             \
     constexpr static bool is_fun_mutable = !is_fun_const;                                \
@@ -1373,18 +1855,18 @@ struct function_info_impl<R(Ty::*)(Args...) CONST VOLATILE REF NOEXCEPT> {      
     constexpr static bool is_fun_rvalue_reference = std::same_as<int&&, int REF>;        \
     constexpr static bool is_fun_reference = std::is_reference_v<int REF>;               \
     constexpr static bool is_noexcept = std::same_as<void() noexcept, void() NOEXCEPT>;  \
-    using add_fun_const = info<R(Ty::*)(Args...) const VOLATILE REF NOEXCEPT>;           \
-    using remove_fun_const = info<R(Ty::*)(Args...) VOLATILE REF NOEXCEPT>;              \
-    using add_fun_volatile = info<R(Ty::*)(Args...) CONST volatile REF NOEXCEPT>;        \
-    using remove_fun_volatile = info<R(Ty::*)(Args...) CONST REF NOEXCEPT>;              \
-    using add_fun_cv = info<R(Ty::*)(Args...) const volatile REF NOEXCEPT>;              \
-    using remove_fun_cv = info<R(Ty::*)(Args...) REF NOEXCEPT>;                          \
-    using add_fun_lvalue_reference = info<R(Ty::*)(Args...) CONST VOLATILE & NOEXCEPT>;  \
-    using add_fun_rvalue_reference = info<R(Ty::*)(Args...) CONST VOLATILE && NOEXCEPT>; \
-    using remove_fun_reference = info<R(Ty::*)(Args...) CONST VOLATILE NOEXCEPT>;        \
-    using remove_fun_cvref = info<R(Ty::*)(Args...) NOEXCEPT>;                           \
-    using add_noexcept = info<R(Ty::*)(Args...) CONST VOLATILE REF noexcept>;            \
-    using remove_noexcept = info<R(Ty::*)(Args...) CONST VOLATILE REF>;                  \
+    using add_fun_const = R(Ty::*)(Args...) const VOLATILE REF NOEXCEPT;                 \
+    using remove_fun_const = R(Ty::*)(Args...) VOLATILE REF NOEXCEPT;                    \
+    using add_fun_volatile = R(Ty::*)(Args...) CONST volatile REF NOEXCEPT;              \
+    using remove_fun_volatile = R(Ty::*)(Args...) CONST REF NOEXCEPT;                    \
+    using add_fun_cv = R(Ty::*)(Args...) const volatile REF NOEXCEPT;                    \
+    using remove_fun_cv = R(Ty::*)(Args...) REF NOEXCEPT;                                \
+    using add_fun_lvalue_reference = R(Ty::*)(Args...) CONST VOLATILE & NOEXCEPT;        \
+    using add_fun_rvalue_reference = R(Ty::*)(Args...) CONST VOLATILE && NOEXCEPT;       \
+    using remove_fun_reference = R(Ty::*)(Args...) CONST VOLATILE NOEXCEPT;              \
+    using remove_fun_cvref = R(Ty::*)(Args...) NOEXCEPT;                                 \
+    using add_noexcept = R(Ty::*)(Args...) CONST VOLATILE REF noexcept;                  \
+    using remove_noexcept = R(Ty::*)(Args...) CONST VOLATILE REF;                        \
 };
 
     KAIXO_MEMBER_CALL(KAIXO_MEMBER_FUNCTION_INFO_MOD);
@@ -1393,9 +1875,9 @@ struct function_info_impl<R(Ty::*)(Args...) CONST VOLATILE REF NOEXCEPT> {      
 #define KAIXO_FUNCTION_INFO_MOD(CONST, VOLATILE, REF, NOEXCEPT)                         \
 template<class R, class ...Args>                                                        \
 struct function_info_impl<R(Args...) CONST VOLATILE REF NOEXCEPT> {                     \
-    using pointer = info<R(*)(Args...) NOEXCEPT>;                                       \
-    using signature = info<R(Args...) CONST VOLATILE REF NOEXCEPT>;                     \
-    using result = info<R>;                                                             \
+    using pointer = R(*)(Args...) NOEXCEPT;                                             \
+    using signature = R(Args...) CONST VOLATILE REF NOEXCEPT;                           \
+    using result = R;                                                                   \
     using arguments = info<Args...>;                                                    \
     constexpr static bool is_fun_const = std::same_as<const int, CONST int>;            \
     constexpr static bool is_fun_mutable = !is_fun_const;                               \
@@ -1404,18 +1886,18 @@ struct function_info_impl<R(Args...) CONST VOLATILE REF NOEXCEPT> {             
     constexpr static bool is_fun_rvalue_reference = std::same_as<int&&, int REF>;       \
     constexpr static bool is_fun_reference = std::is_reference_v<int REF>;              \
     constexpr static bool is_noexcept = std::same_as<void() noexcept, void() NOEXCEPT>; \
-    using add_fun_const = info<R(Args...) const VOLATILE REF NOEXCEPT>;                 \
-    using remove_fun_const = info<R(Args...) VOLATILE REF NOEXCEPT>;                    \
-    using add_fun_volatile = info<R(Args...) CONST volatile REF NOEXCEPT>;              \
-    using remove_fun_volatile = info<R(Args...) CONST REF NOEXCEPT>;                    \
-    using add_fun_cv = info<R(Args...) const volatile REF NOEXCEPT>;                    \
-    using remove_fun_cv = info<R(Args...) REF NOEXCEPT>;                                \
-    using add_fun_lvalue_reference = info<R(Args...) CONST VOLATILE & NOEXCEPT>;        \
-    using add_fun_rvalue_reference = info<R(Args...) CONST VOLATILE && NOEXCEPT>;       \
-    using remove_fun_reference = info<R(Args...) CONST VOLATILE NOEXCEPT>;              \
-    using remove_fun_cvref = info<R(Args...) NOEXCEPT>;                                 \
-    using add_noexcept = info<R(Args...) CONST VOLATILE REF noexcept>;                  \
-    using remove_noexcept = info<R(Args...) CONST VOLATILE REF>;                        \
+    using add_fun_const = R(Args...) const VOLATILE REF NOEXCEPT;                       \
+    using remove_fun_const = R(Args...) VOLATILE REF NOEXCEPT;                          \
+    using add_fun_volatile = R(Args...) CONST volatile REF NOEXCEPT;                    \
+    using remove_fun_volatile = R(Args...) CONST REF NOEXCEPT;                          \
+    using add_fun_cv = R(Args...) const volatile REF NOEXCEPT;                          \
+    using remove_fun_cv = R(Args...) REF NOEXCEPT;                                      \
+    using add_fun_lvalue_reference = R(Args...) CONST VOLATILE & NOEXCEPT;              \
+    using add_fun_rvalue_reference = R(Args...) CONST VOLATILE && NOEXCEPT;             \
+    using remove_fun_reference = R(Args...) CONST VOLATILE NOEXCEPT;                    \
+    using remove_fun_cvref = R(Args...) NOEXCEPT;                                       \
+    using add_noexcept = R(Args...) CONST VOLATILE REF noexcept;                        \
+    using remove_noexcept = R(Args...) CONST VOLATILE REF;                              \
 };
 
     KAIXO_MEMBER_CALL(KAIXO_FUNCTION_INFO_MOD);
@@ -1424,13 +1906,13 @@ struct function_info_impl<R(Args...) CONST VOLATILE REF NOEXCEPT> {             
 #define KAIXO_FUNCTION_PTR_INFO_MOD(NOEXCEPT)                                               \
 template<class R, class ...Args>                                                            \
 struct function_info_impl<R(*)(Args...) NOEXCEPT> {                                         \
-    using pointer = info<R(*)(Args...) NOEXCEPT>;                                           \
-    using signature = info<R(Args...) NOEXCEPT>;                                            \
-    using result = info<R>;                                                                 \
+    using pointer = R(*)(Args...) NOEXCEPT;                                                 \
+    using signature = R(Args...) NOEXCEPT;                                                  \
+    using result = R;                                                                       \
     using arguments = info<Args...>;                                                        \
     constexpr static bool is_noexcept = std::same_as<void() noexcept, void() NOEXCEPT>;     \
-    using add_noexcept = info<R(Args...) noexcept>;                                         \
-    using remove_noexcept = info<R(Args...)>;                                               \
+    using add_noexcept = R(Args...) noexcept;                                               \
+    using remove_noexcept = R(Args...);                                                     \
 };
 
     KAIXO_FUNCTION_PTR_INFO_MOD(NO_ARG);
@@ -1451,10 +1933,10 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
      *                                                                                                         *
      * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-    /**
-     * Find amount of members in a struct.
-     * @tparam Ty struct
-     */
+     /**
+      * Find amount of members in a struct.
+      * @tparam Ty struct
+      */
     template<class Ty>
     struct struct_size {
         /**
@@ -1491,19 +1973,19 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
      */
     template<aggregate Ty, std::size_t N>
     struct struct_members {
-        using type = info<>;
+        using type = info<Ty>;
     };
 
     template<aggregate Ty>
     struct struct_members<Ty, 0> {
-        using type = info<>;
+        using type = info<Ty>;
     };
 
 #define KAIXO_STRUCT_MEMBERS_M(c, ...)                                         \
         template<aggregate Ty>                                                 \
             requires (struct_size_v<Ty> == c)                                  \
         struct struct_members<Ty, c> {                                         \
-            using types = decltype([](Ty& ty) {                                \
+            using type = typename decltype([](Ty& ty) {                        \
                 auto& [__VA_ARGS__] = ty;                                      \
                 using tuple_t = decltype(std::tuple{ __VA_ARGS__ });           \
                 return move_tparams_t<tuple_t, info>{};                        \
@@ -1616,7 +2098,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
 #define KAIXO_UNIQUE_98(m, c, ...) KAIXO_UNIQUE_97(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 97), __VA_ARGS__)
 #define KAIXO_UNIQUE_99(m, c, ...) KAIXO_UNIQUE_98(m, c, KAIXO_UNIQUE_NAME, __VA_ARGS__) KAIXO_UNIQUE_1(m, (c - 98), __VA_ARGS__)
 
-KAIXO_UNIQUE_99(KAIXO_STRUCT_MEMBERS_M, 99);
+    KAIXO_UNIQUE_99(KAIXO_STRUCT_MEMBERS_M, 99);
 
     /**
      * Find the member types of a struct.
@@ -1635,82 +2117,252 @@ KAIXO_UNIQUE_99(KAIXO_STRUCT_MEMBERS_M, 99);
      *                                                                                                         *
      * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-    template<class From, class To>
+    template<class To, class From>
     struct add_ref {
         using _lvalue = std::conditional_t<std::is_lvalue_reference_v<From>, std::add_lvalue_reference_t<To>, To>;
         using _rvalue = std::conditional_t<std::is_rvalue_reference_v<From>, std::add_rvalue_reference_t<_lvalue>, _lvalue>;
         using type = typename _rvalue;
     };
 
-    template<class From, class To>
-    using copy_ref = add_ref<From, std::decay_t<To>>;
+    template<class From, class ...Tys>
+    struct add_ref<info<Tys...>, From> {
+        using type = info<typename add_ref<Tys, From>::type...>;
+    };
 
-    template<class From, class To>
+    template<class To, class From>
+    struct copy_ref {
+        using type = add_ref<std::decay_t<To>, From>::type;
+    };
+
+    template<class From, class ...Tys>
+    struct copy_ref<info<Tys...>, From> {
+        using type = info<typename copy_ref<Tys, From>::type...>;
+    };
+
+    template<class To, class From = const int>
     struct add_const {
         using _unrefFrom = std::remove_reference_t<From>;
         using _unrefTo = std::remove_reference_t<To>;
-        using _const = std::conditional_t<std::is_const_v<_unrefFrom>, typename add_ref<To, std::add_const_t<_unrefTo>>::type, To>;
+        using _const = std::conditional_t<std::is_const_v<_unrefFrom>, typename add_ref<std::add_const_t<_unrefTo>, To>::type, To>;
         using type = _const;
     };
 
-    template<class From, class To>
+    template<class From, class ...Tys>
+    struct add_const<info<Tys...>, From> {
+        using type = info<typename add_const<Tys, From>::type...>;
+    };
+
+    template<class To, class From = volatile int>
     struct add_volatile {
         using _unrefFrom = std::remove_reference_t<From>;
         using _unrefTo = std::remove_reference_t<To>;
-        using _volatile = std::conditional_t<std::is_volatile_v<_unrefFrom>, typename add_ref<To, std::add_volatile_t<To>>::type, To>;
+        using _volatile = std::conditional_t<std::is_volatile_v<_unrefFrom>, typename add_ref<std::add_volatile_t<To>, To>::type, To>;
         using type = _volatile;
     };
 
-    template<class From, class To>
-    struct add_cv {
-        using type = typename add_volatile<From, typename add_const<From, To>::type>::type;
+    template<class From, class ...Tys>
+    struct add_volatile<info<Tys...>, From> {
+        using type = info<typename add_volatile<Tys, From>::type...>;
     };
 
-    template<class From, class To>
-    using copy_const = add_ref<To, typename add_const<From, std::remove_const_t<std::remove_reference_t<To>>>::type>;
-    template<class From, class To>
-    using copy_volatile = add_ref<To, typename add_volatile<From, std::remove_volatile_t<std::remove_reference_t<To>>>::type>;
-    template<class From, class To>
-    using copy_cv = add_ref<To, typename add_cv<From, std::remove_cv_t<std::remove_reference_t<To>>>::type>;
+    template<class To, class From = const volatile int>
+    struct add_cv {
+        using type = typename add_volatile<typename add_const<To, From>::type, From>::type;
+    };
 
-    template<class From, class To>
+    template<class From, class ...Tys>
+    struct add_cv<info<Tys...>, From> {
+        using type = info<typename add_cv<Tys, From>::type...>;
+    };
+
+    template<class To, class From>
+    struct copy_const {
+        using type = add_ref<typename add_const<std::remove_const_t<std::remove_reference_t<To>>, From>::type, To>::type;
+    };
+
+    template<class From, class ...Tys>
+    struct copy_const<info<Tys...>, From> {
+        using type = info<typename copy_const<Tys, From>::type...>;
+    };
+
+    template<class To, class From>
+    struct copy_volatile {
+        using type = add_ref<typename add_volatile<std::remove_volatile_t<std::remove_reference_t<To>>, From>::type, To>::type;
+    };
+
+    template<class From, class ...Tys>
+    struct copy_volatile<info<Tys...>, From> {
+        using type = info<typename copy_volatile<Tys, From>::type...>;
+    };
+
+    template<class To, class From>
+    struct copy_cv {
+        using type = add_ref<typename add_cv<std::remove_cv_t<std::remove_reference_t<To>>, From>::type, To>::type;
+    };
+
+    template<class From, class ...Tys>
+    struct copy_cv<info<Tys...>, From> {
+        using type = info<typename copy_cv<Tys, From>::type...>;
+    };
+
+    template<class To, class From>
     struct add_cvref {
-        using _cv = typename add_cv<From, To>::type;
+        using _cv = typename add_cv<To, From>::type;
         using _lvalue = std::conditional_t<std::is_lvalue_reference_v<From>, std::add_lvalue_reference_t<_cv>, _cv>;
         using _rvalue = std::conditional_t<std::is_rvalue_reference_v<From>, std::add_rvalue_reference_t<_lvalue>, _lvalue>;
         using type = typename _rvalue;
     };
 
-    template<class From, class To>
-    using copy_cvref = add_cvref<From, std::decay_t<To>>;
+    template<class From, class ...Tys>
+    struct add_cvref<info<Tys...>, From> {
+        using type = info<typename add_cvref<Tys, From>::type...>;
+    };
 
     template<class To, class From>
-    using copy_const_t = typename copy_const<From, To>::type;
+    struct copy_cvref {
+        using type = add_cvref<std::decay_t<To>, From>::type;
+    };
+
+    template<class From, class ...Tys>
+    struct copy_cvref<info<Tys...>, From> {
+        using type = info<typename copy_cvref<Tys, From>::type...>;
+    };
+
     template<class To, class From>
-    using copy_volatile_t = typename copy_volatile<From, To>::type;
+    using copy_const_t = typename copy_const<To, From>::type;
     template<class To, class From>
-    using copy_cv_t = typename copy_cv<From, To>::type;
+    using copy_volatile_t = typename copy_volatile<To, From>::type;
     template<class To, class From>
-    using copy_ref_t = typename copy_ref<From, To>::type;
+    using copy_cv_t = typename copy_cv<To, From>::type;
     template<class To, class From>
-    using copy_cvref_t = typename copy_cvref<From, To>::type;
+    using copy_ref_t = typename copy_ref<To, From>::type;
+    template<class To, class From>
+    using copy_cvref_t = typename copy_cvref<To, From>::type;
     template<class To, class From = const int>
-    using add_const_t = typename add_const<From, To>::type;
+    using add_const_t = typename add_const<To, From>::type;
     template<class To, class From = volatile int>
-    using add_volatile_t = typename add_volatile<From, To>::type;
+    using add_volatile_t = typename add_volatile<To, From>::type;
     template<class To, class From = const volatile int>
-    using add_cv_t = typename add_cv<From, To>::type;
+    using add_cv_t = typename add_cv<To, From>::type;
     template<class To, class From>
-    using add_ref_t = typename add_ref<From, To>::type;
+    using add_ref_t = typename add_ref<To, From>::type;
     template<class To, class From>
-    using add_cvref_t = typename add_cvref<From, To>::type;
+    using add_cvref_t = typename add_cvref<To, From>::type;
 
     template<class To>
-    using remove_const_t = typename copy_const<int, To>::type;
+    struct remove_const {
+        using type = typename copy_const<To, int>::type;
+    };
+
     template<class To>
-    using remove_volatile_t = typename copy_volatile<int, To>::type;
+    using remove_const_t = typename remove_const<To>::type;
+
     template<class To>
-    using remove_cv_t = typename copy_cv<int, To>::type;
+    struct remove_volatile {
+        using type = typename copy_volatile<To, int>::type;
+    };
+
+    template<class To>
+    using remove_volatile_t = typename remove_volatile<To>::type;
+
+    template<class To>
+    struct remove_cv {
+        using type = typename copy_cv<To, int>::type;
+    };
+
+    template<class To>
+    using remove_cv_t = typename remove_cv<To>::type;
+
+    template<class Ty>
+    struct decay {
+        using type = std::decay_t<Ty>;
+    };
+
+    template<class ...Tys>
+    struct decay<info<Tys...>> {
+        using type = info<typename decay<Tys>::type...>;
+    };
+
+    template<class Ty>
+    using decay_t = typename decay<Ty>::type;
+
+    template<class Ty>
+    struct remove_reference {
+        using type = std::remove_reference_t<Ty>;
+    };
+
+    template<class ...Tys>
+    struct remove_reference<info<Tys...>> {
+        using type = info<typename remove_reference<Tys>::type...>;
+    };
+
+    template<class Ty>
+    using remove_reference_t = typename remove_reference<Ty>::type;
+
+    template<class Ty>
+    struct remove_cvref {
+        using type = std::remove_cvref_t<Ty>;
+    };
+
+    template<class ...Tys>
+    struct remove_cvref<info<Tys...>> {
+        using type = info<typename remove_cvref<Tys>::type...>;
+    };
+
+    template<class Ty>
+    using remove_cvref_t = typename remove_cvref<Ty>::type;
+
+    template<class Ty>
+    struct add_lvalue_reference {
+        using type = std::add_lvalue_reference_t<Ty>;
+    };
+
+    template<class ...Tys>
+    struct add_lvalue_reference<info<Tys...>> {
+        using type = info<typename add_lvalue_reference<Tys>::type...>;
+    };
+
+    template<class Ty>
+    using add_lvalue_reference_t = typename add_lvalue_reference<Ty>::type;
+
+    template<class Ty>
+    struct add_rvalue_reference {
+        using type = std::add_rvalue_reference_t<Ty>;
+    };
+
+    template<class ...Tys>
+    struct add_rvalue_reference<info<Tys...>> {
+        using type = info<typename add_rvalue_reference<Tys>::type...>;
+    };
+
+    template<class Ty>
+    using add_rvalue_reference_t = typename add_rvalue_reference<Ty>::type;
+
+    template<class Ty>
+    struct remove_pointer {
+        using type = std::remove_pointer_t<Ty>;
+    };
+
+    template<class ...Tys>
+    struct remove_pointer<info<Tys...>> {
+        using type = info<typename remove_pointer<Tys>::type...>;
+    };
+
+    template<class Ty>
+    using remove_pointer_t = typename remove_pointer<Ty>::type;
+
+    template<class Ty>
+    struct add_pointer {
+        using type = std::add_pointer_t<Ty>;
+    };
+
+    template<class ...Tys>
+    struct add_pointer<info<Tys...>> {
+        using type = info<typename add_pointer<Tys>::type...>;
+    };
+
+    template<class Ty>
+    using add_pointer_t = typename add_pointer<Ty>::type;
 
     /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
      *                                                                                                         *
@@ -1722,77 +2374,156 @@ KAIXO_UNIQUE_99(KAIXO_STRUCT_MEMBERS_M, 99);
      *                                                                                                         *
      * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-    template<class Ty>
-    struct specialized_info {};
+    struct _s_none {};
+    struct _s_fun {};
+    struct _s_fun_ptr {};
+    struct _s_integral {};
+    struct _s_floating {};
+    struct _s_enum {};
+    struct _s_array {};
+    struct _s_aggregate {};
+    struct _s_memfun {};
+    struct _s_value {};
+    struct _s_templated {};
+
+    template<class ...Tys>
+    struct specialized_info {
+        using _selected_specialization = _s_none;
+    };
 
     /**
      * Specialization for callable types, to also
      * contain function info.
      */
-    template<callable_type Ty>
-    struct specialized_info<Ty> : function_info<Ty> {};
+    template<class ...Tys>
+    struct specialized_info_fun0;
+
+    template<class ...Tys> requires (sizeof...(Tys) > 1)
+        struct specialized_info_fun0<Tys...> {
+        using arguments = info<typename function_info<Tys>::arguments...>;
+    };
+
+    template<class Ty>
+    struct specialized_info_fun0<Ty> {
+        using arguments = typename function_info<Ty>::arguments;
+    };
+
+    template<class ...Tys>
+    struct specialized_info_fun1 : specialized_info_fun0<Tys...> {
+        using pointer = info<typename function_info<Tys>::pointer...>;
+        using signature = info<typename function_info<Tys>::signature...>;
+        using result = info<typename function_info<Tys>::result...>;
+
+        using is_noexcept = info<value_t<function_info<Tys>::is_noexcept>...>;
+
+        using add_noexcept = info<typename function_info<Tys>::add_noexcept...>;
+        using remove_noexcept = info<typename function_info<Tys>::remove_noexcept...>;
+    };
+
+    template<class ...Tys>
+    struct specialized_info_fun2 : specialized_info_fun1<Tys...> {
+        using is_fun_const = info<value_t<function_info<Tys>::is_fun_const>...>;
+        using is_fun_mutable = info<value_t<function_info<Tys>::is_fun_mutable>...>;
+        using is_fun_volatile = info<value_t<function_info<Tys>::is_fun_volatile>...>;
+        using is_fun_lvalue_reference = info<value_t<function_info<Tys>::is_fun_lvalue_reference>...>;
+        using is_fun_rvalue_reference = info<value_t<function_info<Tys>::is_fun_rvalue_reference>...>;
+        using is_fun_reference = info<value_t<function_info<Tys>::is_fun_reference>...>;
+
+        using add_fun_const = info<typename function_info<Tys>::add_fun_const...>;
+        using remove_fun_const = info<typename function_info<Tys>::remove_fun_const...>;
+        using add_fun_volatile = info<typename function_info<Tys>::add_fun_volatile...>;
+        using remove_fun_volatile = info<typename function_info<Tys>::remove_fun_volatile...>;
+        using add_fun_cv = info<typename function_info<Tys>::add_fun_cv...>;
+        using remove_fun_cv = info<typename function_info<Tys>::remove_fun_cv...>;
+        using add_fun_lvalue_reference = info<typename function_info<Tys>::add_fun_lvalue_reference...>;
+        using add_fun_rvalue_reference = info<typename function_info<Tys>::add_fun_rvalue_reference...>;
+        using remove_fun_reference = info<typename function_info<Tys>::remove_fun_reference...>;
+        using remove_fun_cvref = info<typename function_info<Tys>::remove_fun_cvref...>;
+    };
+
+    template<class ...Tys>
+        requires ((callable_type<Tys> && ...) && (pointer<Tys> || ...))
+    struct specialized_info<Tys...> : specialized_info_fun1<Tys...> {
+        using _selected_specialization = _s_fun_ptr;
+    };
+
+    template<class ...Tys>
+        requires ((callable_type<Tys> && ...) && (!pointer<Tys> && ...))
+    struct specialized_info<Tys...> : specialized_info_fun2<Tys...> {
+        using _selected_specialization = _s_fun;
+    };
 
     /**
      * Specialization for integral types, to
      * add the make_signed/make_unsigned type traits.
      * Also inherits from std::numeric_limits<Ty>
      */
-    template<class Ty>
-        requires (integral<Ty> && !boolean<Ty>)
-    struct specialized_info<Ty> : std::numeric_limits<Ty> {
-        using make_signed = info<std::make_signed<Ty>>;
-        using make_unsigned = info<std::make_unsigned<Ty>>;
+    template<class ...Tys>
+        requires ((integral<Tys> && !boolean<Tys>) && ...)
+    struct specialized_info<Tys...> {
+        using _selected_specialization = _s_integral;
+
+        using make_signed = info<std::make_signed<Tys>...>;
+        using make_unsigned = info<std::make_unsigned<Tys>...>;
     };
 
     /**
      * Specialization for floating pointer, inherits
      * from std::numeric_limits<Ty>
      */
-    template<class Ty>
-        requires (floating_point<Ty>)
-    struct specialized_info<Ty> : std::numeric_limits<Ty> {};
+    template<class Ty, class ...Tys>
+        requires (floating_point<Ty> && (same_as<Ty, Tys> && ...))
+    struct specialized_info<Ty, Tys...> : std::numeric_limits<Ty> {
+        using _selected_specialization = _s_floating;
+    };
 
     /**
      * Specialization for enum types, contains underlying
      * type, and enum names.
      */
-    template<class Ty>
-        requires (enum_type<Ty>)
-    struct specialized_info<Ty> {
-        using underlying = info<std::underlying_type_t<Ty>>;
+    template<class ...Tys>
+        requires (enum_type<Tys> && ...)
+    struct specialized_info<Tys...> {
+        using _selected_specialization = _s_enum;
+
+        using underlying = info<std::underlying_type_t<Tys>...>;
 
         template<auto Value>
-        constexpr static auto name = enum_name<Ty, Value>;
+        using name = info<value_t<enum_name<Tys, Value>>...>;
 
         template<auto Value>
-        constexpr static auto defined = name<Value>.data() != nullptr;
+        using defined = info<value_t<enum_name<Tys, Value>[0] != '\0'>...>;
     };
 
     /**
      * Specialization for member object pointer,
      * contains the 'object' and 'value_type'
      */
-    template<class Ty, class Obj>
-        requires member_object_pointer<Ty Obj::*>
-    struct specialized_info<Ty Obj::*> {
-        using object = info<Obj>;
-        using value_type = info<Ty>;
+    template<class ...Tys, class ...Objs>
+        requires member_object_pointer<Tys Objs::*...>
+    struct specialized_info<Tys Objs::*...> {
+        using _selected_specialization = _s_memfun;
+
+        using object = info<Objs...>;
+        using value_type = info<Tys...>;
     };
 
     /**
      * Specialization for Arrays,
      * contains rank/extent traits.
      */
-    template<class Ty>
-        requires (array<Ty>)
-    struct specialized_info<Ty> {
-        constexpr static std::size_t rank = std::rank_v<Ty>;
+    template<class ...Tys>
+        requires (array<Tys> && ...)
+    struct specialized_info<Tys...> {
+        using _selected_specialization = _s_array;
+
+        using rank = info<value_t<std::rank_v<Tys>>...>;
 
         template<std::size_t Dim = 0>
-        constexpr static std::size_t extent = std::extent_v<Ty, Dim>;
+        using extent = info<value_t<std::extent_v<Tys, Dim>>...>;
 
-        using remove_extent = info<std::remove_extent_t<Ty>>;
-        using remove_all_extents = info<std::remove_all_extents_t<Ty>>;
+        using remove_extent = info<std::remove_extent_t<Tys>...>;
+        using remove_all_extents = info<std::remove_all_extents_t<Tys>...>;
     };
 
     /**
@@ -1802,64 +2533,66 @@ KAIXO_UNIQUE_99(KAIXO_STRUCT_MEMBERS_M, 99);
      * non-constexpr member pointers, made using std::bit_cast
      * and the calculated offset of each member.
      */
-    template<class Ty>
-        requires (aggregate<Ty>)
-    struct specialized_info<Ty> {
-        using members = struct_members_t<Ty>;
+    template<class ...Tys>
+        requires ((aggregate<Tys> && ...) && (!array<Tys> && ...))
+    struct specialized_info<Tys...> {
+        using _selected_specialization = _s_aggregate;
 
-        template<std::size_t I>
-        constexpr static std::size_t offset = [] {
-            if constexpr (I == 0) return 0;
-            else if constexpr (I != 0) {
-                // Wrapped in lambda because somehow it gets infinite
-                // recursion without, even though there's an if-constexpr
-                return[]<std::size_t N>(value_t<N>) {
-                    using prev = typename members::template element<N - 1>::type;
-                    using curr = typename members::template element<N>::type;
-
-                    constexpr std::size_t off = offset<N - 1> +sizeof_v<prev>;
-                    constexpr std::size_t align = alignof_v<curr>;
-
-                    return next_multiple(off, align);
-                }(value_t<I>{});
-            }
-        }();
-
-        template<std::size_t I>
-        const inline static auto member_ptr = _member_impl<I>();
-
-        template<std::size_t I>
-        constexpr static auto _member_impl() {
-            return std::bit_cast<typename members::template element<I> Ty::*>(
-                static_cast<std::uint32_t>(offset<I>));
-        }
+        using members = info<struct_members_t<Tys>...>;
     };
+
+    template<auto V>
+    struct specialized_info<value_t<V>> : info<decltype(V)> {
+        using _selected_specialization = _s_value;
+
+        constexpr static auto value = V;
+    };
+
+    template<auto ...Vs> requires (sizeof...(Vs) > 1)
+        struct specialized_info<value_t<Vs>...> : info<decltype(Vs)...> {
+        using _selected_specialization = _s_value;
+
+        template<std::size_t I> constexpr static auto value = element_t<I, value_t<Vs>...>::value;
+    };
+    
+    template<template<class...> class ...Tys>
+    struct specialized_info<templated_t<Tys>...> {
+        using _selected_specialization = _s_templated;
+
+        template<class ...Args>
+        using instantiate = info<instantiate_t<Tys, Args...>...>;
+    };
+
+    template<class ...T>
+    struct info_base;
 
     /**
      * Base for a pack of types.
      * @tparam ...Tys types
      */
-    template<class ...Tys>
-    struct info_base {
-        using type = info<Tys...>;
+    template<class ...Tys> requires (sizeof...(Tys) > 1)
+        struct info_base<Tys...> : specialized_info<Tys...> {
+        template<std::size_t I>
+        using type = element_t<I, Tys...>;
+
+        using alignment = info<value_t<alignof_v<Tys>>...>;
     };
 
-    /**
-     * Base for a single type.
-     * @tparam Ty type
-     */
     template<class Ty>
     struct info_base<Ty> : specialized_info<Ty> {
         using type = Ty;
 
-        constexpr static std::size_t alignment = alignof_v<Ty>;
+        using alignment = info<value_t<alignof_v<Ty>>>;
     };
+
+    template<> struct info_base<> {};
 
     template<class ...Tys>
     struct info : info_base<Tys...> {
         constexpr static auto size = sizeof...(Tys);
         constexpr static auto unique_size = unique_count_v<Tys...>;
-        constexpr static auto bytes = (sizeof_v<Tys> +... + 0);
+
+        using bytes = info<value_t<sizeof_v<Tys>>...>;
 
         template<class T> constexpr static auto index = index_v<T, Tys...>;
         template<class T> constexpr static auto last_index = last_index_v<T, Tys...>;
@@ -1868,9 +2601,13 @@ KAIXO_UNIQUE_99(KAIXO_STRUCT_MEMBERS_M, 99);
         template<class T> constexpr static auto indices = indices_v<T, Tys...>;
         template<class T> constexpr static auto indices_except = indices_except_v<T, Tys...>;
 
+        template<auto Filter> constexpr static auto count_filter = count_filter_v<Filter, Tys...>;
         template<auto Filter> constexpr static auto indices_filter = indices_filter_v<Filter, Tys...>;
 
-        template<std::size_t I> using element = info<element_t<I, Tys...>>;
+        template<class Ty> struct _element_is_info { using type = info<Ty>; };
+        template<class ...Tys> struct _element_is_info<info<Tys...>> { using type = info<Tys...>; };
+
+        template<std::size_t I> using element = typename _element_is_info<element_t<I, Tys...>>::type;
         template<std::size_t I> using take = take_t<I, info>;
         template<std::size_t I> using last = drop_t<size - I, info>;
         template<std::size_t I> using drop = drop_t<I, info>;
@@ -1881,6 +2618,9 @@ KAIXO_UNIQUE_99(KAIXO_STRUCT_MEMBERS_M, 99);
 
         template<std::size_t A, std::size_t B> using sub = sub_t<A, B, info>;
 
+        template<auto Array> using remove_indices = remove_indices_t<Array, info>;
+        template<auto Array> using keep_indices = keep_indices_t<Array, info>;
+
         template<class T> using remove = remove_t<T, info>;
         template<class T> using keep = keep_t<T, info>;
 
@@ -1889,90 +2629,98 @@ KAIXO_UNIQUE_99(KAIXO_STRUCT_MEMBERS_M, 99);
 
         using unique = unique_t<info>;
         using reverse = reverse_t<info>;
+        using uninstantiate = info<uninstantiate_t<Tys>...>;
+        using tparams = tparams_t<Tys...>;
 
+        template<template<class...> class T> using transform = transform_t<T, info>;
+        template<template<class...> class T> using as = T<Tys...>;
         template<auto Filter> using filter = filter_t<Filter, info>;
+        template<auto Sorter> using sort = sort_types_t<Sorter, info>;
+        constexpr static auto for_each = []<class Ty>(Ty && lambda) {
+            return lambda.operator()<Tys...>();
+        };
 
-        constexpr static bool is_void = (std::is_void_v<Tys> && ...);
-        constexpr static bool is_null_pointer = (std::is_null_pointer_v<Tys> && ...);
-        constexpr static bool is_integral = (std::is_integral_v<Tys> && ...);
-        constexpr static bool is_floating_point = (std::is_floating_point_v<Tys> && ...);
-        constexpr static bool is_array = (std::is_array_v<Tys> && ...);
-        constexpr static bool is_enum = (std::is_enum_v<Tys> && ...);
-        constexpr static bool is_union = (std::is_union_v<Tys> && ...);
-        constexpr static bool is_class = (std::is_class_v<Tys> && ...);
-        constexpr static bool is_function = (std::is_function_v<Tys> && ...);
-        constexpr static bool is_pointer = (std::is_pointer_v<Tys> && ...);
-        constexpr static bool is_lvalue_reference = (std::is_lvalue_reference_v<Tys> && ...);
-        constexpr static bool is_rvalue_reference = (std::is_rvalue_reference_v<Tys> && ...);
-        constexpr static bool is_member_object_pointer = (std::is_member_object_pointer_v<Tys> && ...);
-        constexpr static bool is_member_function_pointer = (std::is_member_function_pointer_v<Tys> && ...);
-        constexpr static bool is_fundamental = (std::is_fundamental_v<Tys> && ...);
-        constexpr static bool is_arithmetic = (std::is_arithmetic_v<Tys> && ...);
-        constexpr static bool is_scalar = (std::is_scalar_v<Tys> && ...);
-        constexpr static bool is_object = (std::is_object_v<Tys> && ...);
-        constexpr static bool is_compound = (std::is_compound_v<Tys> && ...);
-        constexpr static bool is_reference = (std::is_reference_v<Tys> && ...);
-        constexpr static bool is_member_pointer = (std::is_member_pointer_v<Tys> && ...);
-        constexpr static bool is_const = (std::is_const_v<Tys> && ...);
-        constexpr static bool is_volatile = (std::is_volatile_v<Tys> && ...);
-        constexpr static bool is_trivial = (std::is_trivial_v<Tys> && ...);
-        constexpr static bool is_trivially_copyable = (std::is_trivially_copyable_v<Tys> && ...);
-        constexpr static bool is_standard_layout = (std::is_standard_layout_v<Tys> && ...);
-        constexpr static bool is_empty = (std::is_empty_v<Tys> && ...);
-        constexpr static bool is_polymorphic = (std::is_polymorphic_v<Tys> && ...);
-        constexpr static bool is_abstract = (std::is_abstract_v<Tys> && ...);
-        constexpr static bool is_final = (std::is_final_v<Tys> && ...);
-        constexpr static bool is_aggregate = (std::is_aggregate_v<Tys> && ...);
-        constexpr static bool is_signed_integral = (std::is_signed_v<Tys> && ...);
-        constexpr static bool is_unsigned_integral = (std::is_unsigned_v<Tys> && ...);
-        constexpr static bool is_bounded_array = (std::is_bounded_array_v<Tys> && ...);
-        constexpr static bool is_unbounded_array = (std::is_unbounded_array_v<Tys> && ...);
-        constexpr static bool is_default_constructible = (std::is_default_constructible_v<Tys> && ...);
-        constexpr static bool is_trivially_default_constructible = (std::is_trivially_default_constructible_v<Tys> && ...);
-        constexpr static bool is_nothrow_default_constructible = (std::is_nothrow_default_constructible_v<Tys> && ...);
-        constexpr static bool is_copy_constructible = (std::is_copy_constructible_v<Tys> && ...);
-        constexpr static bool is_trivially_copy_constructible = (std::is_trivially_copy_constructible_v<Tys> && ...);
-        constexpr static bool is_nothrow_copy_constructible = (std::is_nothrow_copy_constructible_v<Tys> && ...);
-        constexpr static bool is_move_constructible = (std::is_move_constructible_v<Tys> && ...);
-        constexpr static bool is_trivially_move_constructible = (std::is_trivially_move_constructible_v<Tys> && ...);
-        constexpr static bool is_nothrow_move_constructible = (std::is_nothrow_move_constructible_v<Tys> && ...);
-        constexpr static bool is_copy_assignable = (std::is_copy_assignable_v<Tys> && ...);
-        constexpr static bool is_trivially_copy_assignable = (std::is_trivially_copy_assignable_v<Tys> && ...);
-        constexpr static bool is_nothrow_copy_assignable = (std::is_nothrow_copy_assignable_v<Tys> && ...);
-        constexpr static bool is_move_assignable = (std::is_move_assignable_v<Tys> && ...);
-        constexpr static bool is_trivially_move_assignable = (std::is_trivially_move_assignable_v<Tys> && ...);
-        constexpr static bool is_nothrow_move_assignable = (std::is_nothrow_move_assignable_v<Tys> && ...);
-        constexpr static bool is_destructible = (std::is_destructible_v<Tys> && ...);
-        constexpr static bool is_trivially_destructible = (std::is_trivially_destructible_v<Tys> && ...);
-        constexpr static bool is_nothrow_destructible = (std::is_nothrow_destructible_v<Tys> && ...);
-        constexpr static bool is_swappable = (std::is_swappable_v<Tys> && ...);
-        constexpr static bool is_nothrow_swappable = (std::is_nothrow_swappable_v<Tys> && ...);
+        using is_void = info<value_t<std::is_void_v<Tys>>...>;
+        using is_null_pointer = info<value_t<std::is_null_pointer_v<Tys>>...>;
+        using is_integral = info<value_t<std::is_integral_v<Tys>>...>;
+        using is_floating_point = info<value_t<std::is_floating_point_v<Tys>>...>;
+        using is_array = info<value_t<std::is_array_v<Tys>>...>;
+        using is_enum = info<value_t<std::is_enum_v<Tys>>...>;
+        using is_union = info<value_t<std::is_union_v<Tys>>...>;
+        using is_class = info<value_t<std::is_class_v<Tys>>...>;
+        using is_function = info<value_t<std::is_function_v<Tys>>...>;
+        using is_pointer = info<value_t<std::is_pointer_v<Tys>>...>;
+        using is_lvalue_reference = info<value_t<std::is_lvalue_reference_v<Tys>>...>;
+        using is_rvalue_reference = info<value_t<std::is_rvalue_reference_v<Tys>>...>;
+        using is_member_object_pointer = info<value_t<std::is_member_object_pointer_v<Tys>>...>;
+        using is_member_function_pointer = info<value_t<std::is_member_function_pointer_v<Tys>>...>;
+        using is_fundamental = info<value_t<std::is_fundamental_v<Tys>>...>;
+        using is_arithmetic = info<value_t<std::is_arithmetic_v<Tys>>...>;
+        using is_scalar = info<value_t<std::is_scalar_v<Tys>>...>;
+        using is_object = info<value_t<std::is_object_v<Tys>>...>;
+        using is_compound = info<value_t<std::is_compound_v<Tys>>...>;
+        using is_reference = info<value_t<std::is_reference_v<Tys>>...>;
+        using is_member_pointer = info<value_t<std::is_member_pointer_v<Tys>>...>;
+        using is_const = info<value_t<std::is_const_v<Tys>>...>;
+        using is_volatile = info<value_t<std::is_volatile_v<Tys>>...>;
+        using is_trivial = info<value_t<std::is_trivial_v<Tys>>...>;
+        using is_trivially_copyable = info<value_t<std::is_trivially_copyable_v<Tys>>...>;
+        using is_standard_layout = info<value_t<std::is_standard_layout_v<Tys>>...>;
+        using is_empty = info<value_t<std::is_empty_v<Tys>>...>;
+        using is_polymorphic = info<value_t<std::is_polymorphic_v<Tys>>...>;
+        using is_abstract = info<value_t<std::is_abstract_v<Tys>>...>;
+        using is_final = info<value_t<std::is_final_v<Tys>>...>;
+        using is_aggregate = info<value_t<std::is_aggregate_v<Tys>>...>;
+        using is_signed_integral = info<value_t<std::is_signed_v<Tys>>...>;
+        using is_unsigned_integral = info<value_t<std::is_unsigned_v<Tys>>...>;
+        using is_bounded_array = info<value_t<std::is_bounded_array_v<Tys>>...>;
+        using is_unbounded_array = info<value_t<std::is_unbounded_array_v<Tys>>...>;
+        using is_default_constructible = info<value_t<std::is_default_constructible_v<Tys>>...>;
+        using is_trivially_default_constructible = info<value_t<std::is_trivially_default_constructible_v<Tys>>...>;
+        using is_nothrow_default_constructible = info<value_t<std::is_nothrow_default_constructible_v<Tys>>...>;
+        using is_copy_constructible = info<value_t<std::is_copy_constructible_v<Tys>>...>;
+        using is_trivially_copy_constructible = info<value_t<std::is_trivially_copy_constructible_v<Tys>>...>;
+        using is_nothrow_copy_constructible = info<value_t<std::is_nothrow_copy_constructible_v<Tys>>...>;
+        using is_move_constructible = info<value_t<std::is_move_constructible_v<Tys>>...>;
+        using is_trivially_move_constructible = info<value_t<std::is_trivially_move_constructible_v<Tys>>...>;
+        using is_nothrow_move_constructible = info<value_t<std::is_nothrow_move_constructible_v<Tys>>...>;
+        using is_copy_assignable = info<value_t<std::is_copy_assignable_v<Tys>>...>;
+        using is_trivially_copy_assignable = info<value_t<std::is_trivially_copy_assignable_v<Tys>>...>;
+        using is_nothrow_copy_assignable = info<value_t<std::is_nothrow_copy_assignable_v<Tys>>...>;
+        using is_move_assignable = info<value_t<std::is_move_assignable_v<Tys>>...>;
+        using is_trivially_move_assignable = info<value_t<std::is_trivially_move_assignable_v<Tys>>...>;
+        using is_nothrow_move_assignable = info<value_t<std::is_nothrow_move_assignable_v<Tys>>...>;
+        using is_destructible = info<value_t<std::is_destructible_v<Tys>>...>;
+        using is_trivially_destructible = info<value_t<std::is_trivially_destructible_v<Tys>>...>;
+        using is_nothrow_destructible = info<value_t<std::is_nothrow_destructible_v<Tys>>...>;
+        using is_swappable = info<value_t<std::is_swappable_v<Tys>>...>;
+        using is_nothrow_swappable = info<value_t<std::is_nothrow_swappable_v<Tys>>...>;
 
-        constexpr static bool has_unique_object_representations = (std::has_unique_object_representations_v<Tys> && ...);
-        constexpr static bool has_virtual_destructors = (std::has_virtual_destructor_v<Tys> && ...);
+        using has_unique_object_representations = info<value_t<std::has_unique_object_representations_v<Tys>>...>;
+        using has_virtual_destructors = info<value_t<std::has_virtual_destructor_v<Tys>>...>;
 
-        template<class Other> constexpr static bool is_assignable = (std::is_assignable_v<Tys, Other> && ...);
-        template<class Other> constexpr static bool is_trivially_assignable = (std::is_trivially_assignable_v<Tys, Other> && ...);
-        template<class Other> constexpr static bool is_nothrow_assignable = (std::is_nothrow_assignable_v<Tys, Other> && ...);
-        template<class Other> constexpr static bool is_swappable_with = (std::is_swappable_with_v<Tys, Other> && ...);
-        template<class Other> constexpr static bool is_nothrow_swappable_with = (std::is_nothrow_swappable_with_v<Tys, Other> && ...);
+        template<class Other> using is_assignable = info<value_t<std::is_assignable_v<Tys, Other>>...>;
+        template<class Other> using is_trivially_assignable = info<value_t<std::is_trivially_assignable_v<Tys, Other>>...>;
+        template<class Other> using is_nothrow_assignable = info<value_t<std::is_nothrow_assignable_v<Tys, Other>>...>;
+        template<class Other> using is_swappable_with = info<value_t<std::is_swappable_with_v<Tys, Other>>...>;
+        template<class Other> using is_nothrow_swappable_with = info<value_t<std::is_nothrow_swappable_with_v<Tys, Other>>...>;
 
-        template<class Other> constexpr static bool is_same = (std::is_same_v<Tys, Other> && ...);
-        template<class Other> constexpr static bool is_base_of = (std::is_base_of_v<Tys, Other> && ...);
-        template<class Other> constexpr static bool is_convertible_to = (std::is_convertible_v<Tys, Other> && ...);
-        template<class Other> constexpr static bool is_nothrow_convertible_to = (std::is_nothrow_convertible_v<Tys, Other> && ...);
+        template<class Other> using is_same = info<value_t<std::is_same_v<Tys, Other>>...>;
+        template<class Other> using is_base_of = info<value_t<std::is_base_of_v<Tys, Other>>...>;
+        template<class Other> using is_convertible_to = info<value_t<std::is_convertible_v<Tys, Other>>...>;
+        template<class Other> using is_nothrow_convertible_to = info<value_t<std::is_nothrow_convertible_v<Tys, Other>>...>;
 
-        template<class ...Args> constexpr static bool is_constructible = (std::is_constructible_v<Tys, Args...> && ...);
-        template<class ...Args> constexpr static bool is_trivially_constructible = (std::is_trivially_constructible_v<Tys, Args...> && ...);
-        template<class ...Args> constexpr static bool is_nothrow_constructible = (std::is_nothrow_constructible_v<Tys, Args...> && ...);
-        template<class ...Args> constexpr static bool is_invocable = (std::is_invocable_v<Tys, Args...> && ...);
-        template<class ...Args> constexpr static bool is_nothrow_invocable = (std::is_nothrow_invocable_v<Tys, Args...> && ...);
+        template<class ...Args> using is_constructible = info<value_t<std::is_constructible_v<Tys, Args...>>...>;
+        template<class ...Args> using is_trivially_constructible = info<value_t<std::is_trivially_constructible_v<Tys, Args...>>...>;
+        template<class ...Args> using is_nothrow_constructible = info<value_t<std::is_nothrow_constructible_v<Tys, Args...>>...>;
+        template<class ...Args> using is_invocable = info<value_t<std::is_invocable_v<Tys, Args...>>...>;
+        template<class ...Args> using is_nothrow_invocable = info<value_t<std::is_nothrow_invocable_v<Tys, Args...>>...>;
 
-        template<class Ty> constexpr static bool can_construct = std::is_constructible_v<Ty, Tys...>;
-        template<class Ty> constexpr static bool can_trivially_construct = std::is_trivially_constructible_v<Ty, Tys...>;
-        template<class Ty> constexpr static bool can_nothrow_construct = std::is_nothrow_constructible_v<Ty, Tys...>;
-        template<class Ty> constexpr static bool can_invoke = std::is_invocable_v<Ty, Tys...>;
-        template<class Ty> constexpr static bool can_nothrow_invoke = std::is_nothrow_invocable_v<Ty, Tys...>;
+        template<class Ty> using can_construct = info<value_t<std::is_constructible_v<Ty, Tys...>>>;
+        template<class Ty> using can_trivially_construct = info<value_t<std::is_trivially_constructible_v<Ty, Tys...>>>;
+        template<class Ty> using can_nothrow_construct = info<value_t<std::is_nothrow_constructible_v<Ty, Tys...>>>;
+        template<class Ty> using can_invoke = info<value_t<std::is_invocable_v<Ty, Tys...>>>;
+        template<class Ty> using can_nothrow_invoke = info<value_t<std::is_nothrow_invocable_v<Ty, Tys...>>>;
 
         // Copy modifiers from From to ...Tys
         template<class From>
@@ -2022,22 +2770,394 @@ KAIXO_UNIQUE_99(KAIXO_STRUCT_MEMBERS_M, 99);
         template<class To>
         using add_cvref_to = info<kaixo::add_cvref_t<To, Tys>...>;
 
-        using decay = info<std::decay_t<Tys>...>;
+        using decay = info<kaixo::decay_t<Tys>...>;
         using remove_cv = info<kaixo::remove_cv_t<Tys>...>;
         using remove_const = info<kaixo::remove_const_t<Tys>...>;
         using remove_volatile = info<kaixo::remove_volatile_t<Tys>...>;
         using add_cv = info<kaixo::add_cv_t<Tys>...>;
         using add_const = info<kaixo::add_const_t<Tys>...>;
         using add_volatile = info<kaixo::add_volatile_t<Tys>...>;
-        using remove_reference = info<std::remove_reference_t<Tys>...>;
-        using remove_cvref = info<std::remove_cvref_t<Tys>...>;
-        using add_lvalue_reference = info<std::add_lvalue_reference_t<Tys>...>;
-        using add_rvalue_reference = info<std::add_rvalue_reference_t<Tys>...>;
-        using remove_pointer = info<std::remove_pointer_t<Tys>...>;
-        using add_pointer = info<std::add_pointer_t<Tys>...>;
+        using remove_reference = info<kaixo::remove_reference_t<Tys>...>;
+        using remove_cvref = info<kaixo::remove_cvref_t<Tys>...>;
+        using add_lvalue_reference = info<kaixo::add_lvalue_reference_t<Tys>...>;
+        using add_rvalue_reference = info<kaixo::add_rvalue_reference_t<Tys>...>;
+        using remove_pointer = info<kaixo::remove_pointer_t<Tys>...>;
+        using add_pointer = info<kaixo::add_pointer_t<Tys>...>;
 
-        template<class Ty> using to_function = info<Ty(Tys...)>;
-        template<class Ty> using to_member_pointer = info<std::remove_reference_t<Tys> Ty::* ...>;
+        template<class Ty> using to_function_args = info<Ty(Tys...)>;
+        template<class Ty> using to_member_pointer = info<kaixo::remove_reference_t<Tys> Ty::* ...>;
+    };
+
+    /**
+     * Info object of value_t's.
+     * @tparam ...Vs non-type template parameters
+     */
+    template<auto ...Vs>
+    using info_v = info<value_t<Vs>...>;
+    
+    /**
+     * Info object of templated types.
+     * @tparam ...Tys templated types
+     */
+    template<template<class...> class ...Tys>
+    using info_t = info<templated_t<Tys>...>;
+
+    /**
+     * Template parameters of Ty to info.
+     * @tparam Ty templated type
+     */
+    template<class Ty>
+    using as_info = move_tparams_t<Ty, info>;
+
+    template<std::size_t ...Is>
+    constexpr std::array<std::size_t, sizeof...(Is)> as_array{ Is... };
+
+    /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+     *                                                                                                         *
+     *                                                                                                         *
+     *                                                                                                         *
+     *                                     template pack value helper.                                         *
+     *                                                                                                         *
+     *                                                                                                         *
+     *                                                                                                         *
+     * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+    /**
+     * Helper for dealing with the actual values in a template pack.
+     * Used like this:
+     * 
+     * template<class ...Tys>
+     * void my_fun(Tys&&...tys) {
+     *     template_pack<Tys...> vals{ tys... };
+     *     vals.get<0>(); // etc...
+     * 
+     * @tparam ...Args types
+     */
+    template<class ...Args> struct template_pack : std::tuple<Args&&...>, info<Args...> {
+        using types = info<Args...>;
+
+        constexpr template_pack(Args&...args)
+            : std::tuple<Args&&...>{ std::forward<Args>(args)... } {}
+
+        /**
+         * Get the template pack as a tuple.
+         */
+        template<class Self>
+        constexpr std::tuple<Args&&...> as_tuple(this Self&& self) { return std::forward<Self>(self); }
+
+        /**
+         * Get I'th element in pack.
+         * @tparam I index
+         */
+        template<std::size_t I, class Self, class Type
+            = typename types::template element<I>::type>
+        constexpr auto get(this Self&& self) -> Type&& {
+            return std::forward<Type>(std::get<I>(std::forward<Self>(self)));
+        }
+
+        /**
+         * Take I elements from pack.
+         * @tparam I amount of elements to take
+         */
+        template<std::size_t I, class Self, class Type
+            = typename types::template take<I>::template as<kaixo::template_pack>>
+        constexpr auto take(this Self&& self) -> Type {
+            return sequence<I>([&]<std::size_t ...Is>{
+                return Type{ std::get<Is>(self)... };
+            });
+        }
+        
+        /**
+         * Get last I elements from pack.
+         * @tparam I amount of elements
+         */
+        template<std::size_t I, class Self, class Type
+            = typename types::template take<I>::template as<kaixo::template_pack>>
+        constexpr auto last(this Self&& self) -> Type {
+            return std::forward<Self>(self).drop<types::size - I>();
+        }
+
+        /**
+         * Drop the first I elements from pack.
+         * @tparam I amount of elements
+         */
+        template<std::size_t I, class Self, class Type
+            = typename types::template drop<I>::template as<kaixo::template_pack>>
+        constexpr auto drop(this Self&& self) -> Type {
+            return sequence<I, types::size>([&]<std::size_t ...Is>{
+                return Type{ std::get<Is>(self)...};
+            });
+        }
+        
+        /**
+         * Erase the element at index I.
+         * @tparam I index of element
+         */
+        template<std::size_t I, class Self, class Type
+            = typename types::template erase<I>::template as<kaixo::template_pack>>
+        constexpr auto erase(this Self&& self) -> Type {
+            return iterate<generate_indices_v<0, types::size, I>>([&]<std::size_t ...Is>{
+                return Type{ std::get<Is>(self)...};
+            });
+        }
+
+        /**
+         * Insert ...Tys at index I in ...Args.
+         * Be careful!! This class doesn't take ownership of anything.
+         * Make sure temporaries and references remain valid while using this!!
+         * @param ...args arguments to insert
+         * @tparam I index to insert at
+         */
+        template<std::size_t I, class ...Tys, class Self, class Type
+            = typename types::template insert<I, info<Tys...>>::template as<kaixo::template_pack>>
+            requires (!specialization<Tys, kaixo::template_pack> && ...)
+        constexpr Type insert(this Self&& self, Tys&& ...args) {
+            return sequence<I>([&]<std::size_t ...Is>{
+                return sequence<I, types::size>([&]<std::size_t ...Ns>{
+                    return Type{ std::get<Is>(self)..., args..., std::get<Ns>(self)... };
+                });
+            });
+        }
+        
+        /**
+         * Insert template pack at index I in ...Args.
+         * Be careful!! This class doesn't take ownership of anything.
+         * Make sure temporaries and references remain valid while using this!!
+         * @param args template pack to insert
+         * @tparam I index to insert at
+         */
+        template<std::size_t I, class ...Tys, class Self, class Type
+            = typename types::template insert<I, info<Tys...>>::template as<kaixo::template_pack>>
+        constexpr Type insert(this Self&& self, const template_pack<Tys...>& args) {
+            return [&]<std::size_t ...Is, std::size_t ...Ns, std::size_t ...Qs>
+                (std::index_sequence<Is...>, std::index_sequence<Ns...>, std::index_sequence<Qs...>) {
+                return Type{ std::get<Is>(self)..., std::get<Qs>(args)..., std::get<I + Ns>(self)... };
+            }(std::make_index_sequence<I>{}, std::make_index_sequence<types::size - I>{}, 
+                std::index_sequence_for<Tys...>{});
+        }
+        
+        /**
+         * Swap value at index I with argument.
+         * Be careful!! This class doesn't take ownership of anything.
+         * Make sure temporaries and references remain valid while using this!!
+         * @param arg arguments to swap
+         * @tparam I index to swap with
+         */
+        template<std::size_t I, class Ty, class Self, class Type
+            = typename types::template swap<I, Ty>::template as<kaixo::template_pack>>
+        constexpr Type swap(this Self&& self, Ty&& arg) {
+            return std::forward<Self>(self).erase<I>().template insert<I>(std::forward<Ty>(arg));
+        }
+
+        /**
+         * Get a sub region of the elements in the pack.
+         * @tparam A start index
+         * @tparam B end index
+         */
+        template<std::size_t A, std::size_t B, class Self, class Type 
+            = typename types::template sub<A, B>::template as<kaixo::template_pack>>
+        constexpr auto sub(this Self&& self) -> Type {
+            return iterate<generate_indices_v<A, B>>([&]<std::size_t ...Is>{
+                return Type{ std::get<Is>(self)...};
+            });
+        }
+        
+        /**
+         * Remove type R from the pack. Decays types first!!
+         * @tparam R type to remove, or info<Types...> for multiple
+         */
+        template<class R, class Self,
+            auto Indices = types::decay::template indices_except<R>,
+            class Type = typename keep_indices_t<Indices, types>::template as<kaixo::template_pack>>
+        constexpr auto remove(this Self&& self) -> Type {
+            return iterate<Indices>([&]<std::size_t ...Is>{
+                return Type{ std::get<Is>(self)...};
+            });
+        }
+
+        /**
+         * Only keep at Indices.
+         * @tparam R type to remove, or info<Types...> for multiple
+         */
+        template<auto Indices, class Self,
+            class Type = typename remove_indices_t<Indices, types>::template as<kaixo::template_pack>>
+            constexpr auto remove_indices(this Self&& self) -> Type {
+            return iterate<Indices>([&]<std::size_t ...Is>{
+                return Type{ std::get<Is>(self)... };
+            });
+        }
+
+        /**
+         * Remove type R from the pack, but doesn't decay types.
+         * @tparam R type to remove, or info<Types...> for multiple
+         */
+        template<class R, class Self,
+            auto Indices = types::template indices_except<R>,
+            class Type = typename keep_indices_t<Indices, types>::template as<kaixo::template_pack>>
+        constexpr auto remove_raw(this Self&& self) -> Type {
+            return iterate<Indices>([&]<std::size_t ...Is>{
+                return Type{ std::get<Is>(self)...};
+            });
+        }
+
+        /**
+         * Only keep type R in the pack. Decays types first!!
+         * @tparam R type to remove, or info<Types...> for multiple
+         */
+        template<class R, class Self,
+            auto Indices = types::decay::template indices<R>,
+            class Type = typename keep_indices_t<Indices, types>::template as<kaixo::template_pack>>
+        constexpr auto keep(this Self&& self) -> Type {
+            return iterate<Indices>([&]<std::size_t ...Is>{
+                return Type{ std::get<Is>(self)...};
+            });
+        }
+        
+        /**
+         * Only keep at Indices.
+         * @tparam R type to remove, or info<Types...> for multiple
+         */
+        template<auto Indices, class Self,
+            class Type = typename keep_indices_t<Indices, types>::template as<kaixo::template_pack>>
+        constexpr auto keep_indices(this Self&& self) -> Type {
+            return iterate<Indices>([&]<std::size_t ...Is>{
+                return Type{ std::get<Is>(self)...};
+            });
+        }
+        
+        /**
+         * Only keep type R in the pack, but doesn't decays.
+         * @tparam R type to remove, or info<Types...> for multiple
+         */
+        template<class R, class Self,
+            auto Indices = types::template indices<R>,
+            class Type = typename keep_indices_t<Indices, types>::template as<kaixo::template_pack>>
+        constexpr auto keep_raw(this Self&& self) -> Type {
+            return iterate<Indices>([&]<std::size_t ...Is>{
+                return Type{ std::get<Is>(self)...};
+            });
+        }
+        
+        /**
+         * Append ...Tys to ...Args. 
+         * Be careful!! This class doesn't take ownership of anything.
+         * Make sure temporaries and references remain valid while using this!!
+         * @param ...args arguments to append
+         */
+        template<class ...Tys, class Self>
+            requires (!specialization<Tys, kaixo::template_pack> && ...)
+        constexpr auto append(this Self&& self, Tys&&...args)
+            -> template_pack<Args..., Tys...> {
+            return sequence<types::size>([&]<std::size_t ...Is> {
+                return template_pack<Args..., Tys...>{ std::get<Is>(self)..., args... };
+            });
+        }
+        
+        /**
+         * Append template_pack to ...Args. 
+         * Be careful!! This class doesn't take ownership of anything.
+         * Make sure temporaries and references remain valid while using this!!
+         * @param args template pack to append
+         */
+        template<class ...Tys, class Self>
+        constexpr auto append(this Self&& self, const template_pack<Tys...>& args)
+            -> template_pack<Args..., Tys...> {
+            return sequence<types::size>([&]<std::size_t ...Is> {
+                return sequence<sizeof...(Tys)>([&]<std::size_t ...Ns> {
+                    return template_pack<Args..., Tys...>{ std::get<Is>(self)..., std::get<Ns>(args)... };
+                });
+            });
+        }
+        
+        /**
+         * Prepend ...Tys to ...Args. 
+         * Be careful!! This class doesn't take ownership of anything.
+         * Make sure temporaries and references remain valid while using this!!
+         * @param ...args arguments to prepend
+         */
+        template<class ...Tys, class Self>
+            requires (!specialization<Tys, kaixo::template_pack> && ...)
+        constexpr auto prepend(this Self&& self, Tys&&...args)
+            -> template_pack<Tys..., Args...> {
+            return sequence<types::size>([&]<std::size_t ...Is> {
+                return template_pack<Tys..., Args...>{ args..., std::get<Is>(self)... };
+            });
+        }
+
+        /**
+         * Prepend template_pack to ...Args. 
+         * Be careful!! This class doesn't take ownership of anything.
+         * Make sure temporaries and references remain valid while using this!!
+         * @param args template pack to prepend
+         */
+        template<class ...Tys, class Self>
+        constexpr auto prepend(this Self&& self, const template_pack<Tys...>& args)
+            -> template_pack<Tys..., Args...> {
+            return sequence<types::size>([&]<std::size_t ...Is> {
+                return sequence<sizeof...(Tys)>([&]<std::size_t ...Ns> {
+                    return template_pack<Tys..., Args...>{ std::get<Ns>(args)..., std::get<Is>(self)... };
+                });
+            });
+        }
+
+        /**
+         * Only keep the first occurence of a type.
+         */
+        template<class Self,
+            class Type = typename keep_indices_t<first_indices_v<typename types::decay>, 
+                types>::template as<kaixo::template_pack>>
+        constexpr auto unique(this Self&& self) -> Type {
+            return iterate<first_indices_v<typename types::decay>>([&]<std::size_t ...Is>{
+                return Type{ std::get<Is>(self)...};
+            });
+        }
+        
+        /**
+         * Reverse the pack.
+         */
+        template<class Self,
+            class Type = typename types::reverse::template as<kaixo::template_pack>>
+        constexpr auto reverse(this Self&& self) -> Type {
+            return sequence<0, types::size>([&]<std::size_t ...Is>{
+                return Type{ std::get<types::size - Is - 1>(self)...};
+            });
+        }
+
+        /**
+         * Filter the pack with a lambda or type trait object.
+         * @tparam Filter lambda or type trait object
+         */
+        template<auto Filter, class Self,
+            auto Indices = types::decay::template indices_filter<Filter>,
+            class Type = typename keep_indices_t<Indices, types>::template as<kaixo::template_pack>>
+        constexpr auto filter(this Self&& self) -> Type {
+            return iterate<Indices>([&]<std::size_t ...Is>{
+                return Type{ std::get<Is>(self)... };
+            });
+        }
+
+        /**
+         * Call the functor once for every element in the pack.
+         * Lambda has to be callable with all the types!
+         * @param functor functor
+         */
+        template<class Functor, class Self>
+        constexpr void for_each(this Self&& self, Functor&& functor) {
+            sequence<0, types::size>([&]<std::size_t ...Is>{
+                (functor(self.template get<Is>()), ...);
+            });
+        }
+
+        /**
+         * Call the functor with all elements of pack.
+         * @param functor functor
+         */
+        template<class Functor, class Self>
+        constexpr decltype(auto) call(this Self&& self, Functor&& functor) {
+            return sequence<0, types::size>([&]<std::size_t ...Is>() -> decltype(auto) {
+                return functor(self.template get<Is>()...);
+            });
+        }
     };
 
     /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
@@ -2056,7 +3176,7 @@ KAIXO_UNIQUE_99(KAIXO_STRUCT_MEMBERS_M, 99);
         using _small_info = info<int, double, float>;
         static_assert(_big_info::size == 6);
         static_assert(_big_info_d::unique_size == 3);
-        static_assert(_small_info::bytes == (sizeof(int) + sizeof(double) + sizeof(float)));
+        static_assert(_small_info::bytes::value<0> == sizeof(int));
         static_assert(_big_info_d::index<double> == 1);
         static_assert(_big_info_d::last_index<double> == 4);
         static_assert(_big_info_d::count<float> == 2);

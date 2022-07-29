@@ -1,7 +1,7 @@
 #pragma once
 #include <any>
 #include <variant>
-#include "utils.hpp" // Contains helpers for getting lambda argument types
+#include "type_utils.hpp" // Contains helpers for getting lambda argument types
 
 /**
  * example:
@@ -158,7 +158,7 @@ namespace kaixo {
         enum class body_type { Value, NoArgs, Args };
         constexpr static body_type TYPE =
             std::invocable<body_t> ? body_type::NoArgs // If invocable with no arguments: NoArgs
-            : kaixo::is_functor<body_t> ? body_type::Args // If it does have a function operator: Args
+            : is_functor<body_t> ? body_type::Args // If it does have a function operator: Args
             : body_type::Value; // Otherwise it's just a value
 
         match_types::l<As...> args;
@@ -191,14 +191,14 @@ namespace kaixo {
             using res_type = decltype(body());
             using result = match_result<res_type>;
             if (compare_tuples(c.tuple(), args.tuple()))
-                if constexpr (std::same_as<res_type, void>) return result{ 0 };
+                if constexpr (std::same_as<res_type, void>) return (body(), result{ 0 });
                 else return result{ body() };
             else return result{};
         }
 
         template<class ...Tys>
         constexpr auto check_arg(match_types::l<Tys...>& c) {
-            using fargs = kaixo::function_info<body_t>::argument_types::template as<std::tuple>;
+            using fargs = info<body_t>::arguments::template as<std::tuple>;
             using res_type = decltype(std::apply(body, std::declval<fargs>()));
             using result = match_result<res_type>;
 
