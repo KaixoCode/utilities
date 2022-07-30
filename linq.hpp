@@ -1,5 +1,5 @@
 #pragma once
-#include "utils.hpp"
+#include "type_utils.hpp"
 #include <vector>
 #include <functional>
 
@@ -133,13 +133,13 @@ namespace kaixo {
 
     template<class ...Tys>
     struct container_iterator_tuple {
-        using containers = kaixo::pack<Tys...>;
+        using containers = kaixo::info<Tys...>;
         std::tuple<typename Tys::iterator...> its;
 
         template<std::size_t I>
         constexpr decltype(auto) get() const {
             return *[&]<std::size_t N, class Self>(this Self && self) {
-                if constexpr (containers::template element<N>::id == I)
+                if constexpr (containers::template element<N>::type::id == I)
                     return std::get<N>(its);
                 else return self.operator() < N + 1 > ();
             }.operator() < 0 > ();
@@ -167,7 +167,7 @@ namespace kaixo {
 
     template<class Select, class Constraint, class Containers>
     struct cartesian_container {
-        using containers_t = kaixo::as_pack<Containers>;
+        using containers_t = kaixo::as_info<Containers>;
 
         Containers containers{};
         Constraint constraint{};
@@ -265,7 +265,7 @@ namespace kaixo {
 
         template<class ...Args>
         constexpr auto set_select(Args&&...args) {
-            using args_pack = kaixo::pack<std::decay_t<Args>...>;
+            using args_pack = kaixo::info<std::decay_t<Args>...>;
             if constexpr ((is_linq_fold<Args> && ...)) {
                 static_assert(sizeof...(Args) == 1);
                 cartesian_container _container{
@@ -369,6 +369,13 @@ constexpr auto operator op(const A& a, B&& b) {                                 
         Constraint constraint;
         Op op;
     };
+
+    namespace fold {
+        struct fold_t {
+        };
+
+        constexpr fold_t ___{};
+    }
 
 #define KAIXO_C_FOLD_ARG(op, cls)                                             \
     template<is_container_wrapper A>                                          \

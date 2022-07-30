@@ -1379,6 +1379,25 @@ namespace kaixo {
      */
     template<std::size_t N, class Ty>
     using drop_t = typename drop<N, Ty>::type;
+    
+    template<std::size_t, class> struct drop_last;
+    template<std::size_t N, template<class...> class T, class ...As>
+    struct drop_last<N, T<As...>> {
+        template<class> struct helper;
+        template<std::size_t ...Is>
+        struct helper<std::index_sequence<Is...>> {
+            using type = T<element_t<Is, As...>...>;
+        };
+        using type = typename helper<std::make_index_sequence<sizeof...(As) - N>>::type;
+    };
+
+    /**
+     * Drop last N types from the templated type Ty.
+     * @tparam N amount of types to drop
+     * @tparam Ty templated type
+     */
+    template<std::size_t N, class Ty>
+    using drop_last_t = typename drop_last<N, Ty>::type;
 
     template<auto, class> struct keep_indices;
     template<auto Array, template<class...> class T, class ...As>
@@ -1744,6 +1763,20 @@ namespace kaixo {
      */
     template<auto Sorter, class Ty>
     using sort_types_t = typename type_merge_sort<Sorter, Ty>::type;
+
+    template<class...>struct concat;
+    template<template<class...> class A, class ...As>
+    struct concat<A<As...>> { using type = A<As...>; };
+    template<template<class...> class A, template<class...> class B, class ...As, class ...Bs, class ...Rest>
+    struct concat<A<As...>, B<Bs...>, Rest...> { using type = typename concat<B<As..., Bs...>, Rest...>::type; };
+
+    /**
+     * Concat all template parameters of all templated
+     * types in ...Tys.
+     * @tparam ...Tys templated types
+     */
+    template<class ...Tys>
+    using concat_t = typename concat<Tys...>::type;
 
     /**
      * Some often used sorting methods for types.
@@ -2611,6 +2644,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         template<std::size_t I> using take = take_t<I, info>;
         template<std::size_t I> using last = drop_t<size - I, info>;
         template<std::size_t I> using drop = drop_t<I, info>;
+        template<std::size_t I> using drop_last = drop_last_t<I, info>;
         template<std::size_t I> using erase = erase_t<I, info>;
 
         template<std::size_t I, class T> using insert = insert_t<I, T, info>;
@@ -2887,6 +2921,16 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             return sequence<I, types::size>([&]<std::size_t ...Is>{
                 return Type{ std::get<Is>(self)...};
             });
+        }
+        
+        /**
+         * Drop the first I elements from pack.
+         * @tparam I amount of elements
+         */
+        template<std::size_t I, class Self, class Type
+            = typename types::template drop_last<I>::template as<kaixo::template_pack>>
+        constexpr auto drop_last(this Self&& self) -> Type {
+            return std::forward<Self>(self).take<types::size - I>();
         }
         
         /**
