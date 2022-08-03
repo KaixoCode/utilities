@@ -469,27 +469,164 @@ std::size_t sizeof_t(std::any value) {
 }
 
 
+template<class ...Tys> struct tuple {};
+template<> struct tuple<> {};             
+
+#define KAIXO_TUPLE_DEF_I(I, ...)                                       \
+template<class ...Tys> requires (info<Tys...>::size == I)               \
+struct tuple<Tys...> {                                                  \
+    using types = info<Tys...>;                                         \
+    template<std::size_t N>                                             \
+    using _type = typename types::template element<N>::type;            \
+    __VA_ARGS__;                                                        \
+};
+
+#define KAIXO_TUPLE_DEF_100(...) KAIXO_TUPLE_DEF_I(100, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_99(...) KAIXO_TUPLE_DEF_100(__VA_ARGS__ _type<99> _100;) KAIXO_TUPLE_DEF_I(99, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_98(...) KAIXO_TUPLE_DEF_99(__VA_ARGS__ _type<98> _99;) KAIXO_TUPLE_DEF_I(98, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_97(...) KAIXO_TUPLE_DEF_98(__VA_ARGS__ _type<97> _98;) KAIXO_TUPLE_DEF_I(97, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_96(...) KAIXO_TUPLE_DEF_97(__VA_ARGS__ _type<96> _97;) KAIXO_TUPLE_DEF_I(96, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_95(...) KAIXO_TUPLE_DEF_96(__VA_ARGS__ _type<95> _96;) KAIXO_TUPLE_DEF_I(95, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_94(...) KAIXO_TUPLE_DEF_95(__VA_ARGS__ _type<94> _95;) KAIXO_TUPLE_DEF_I(94, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_93(...) KAIXO_TUPLE_DEF_94(__VA_ARGS__ _type<93> _94;) KAIXO_TUPLE_DEF_I(93, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_92(...) KAIXO_TUPLE_DEF_93(__VA_ARGS__ _type<92> _93;) KAIXO_TUPLE_DEF_I(92, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_91(...) KAIXO_TUPLE_DEF_92(__VA_ARGS__ _type<91> _92;) KAIXO_TUPLE_DEF_I(91, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_90(...) KAIXO_TUPLE_DEF_91(__VA_ARGS__ _type<90> _91;) KAIXO_TUPLE_DEF_I(90, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_89(...) KAIXO_TUPLE_DEF_90(__VA_ARGS__ _type<89> _90;) KAIXO_TUPLE_DEF_I(89, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_88(...) KAIXO_TUPLE_DEF_89(__VA_ARGS__ _type<88> _89;) KAIXO_TUPLE_DEF_I(88, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_87(...) KAIXO_TUPLE_DEF_88(__VA_ARGS__ _type<87> _88;) KAIXO_TUPLE_DEF_I(87, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_86(...) KAIXO_TUPLE_DEF_87(__VA_ARGS__ _type<86> _87;) KAIXO_TUPLE_DEF_I(86, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_85(...) KAIXO_TUPLE_DEF_86(__VA_ARGS__ _type<85> _86;) KAIXO_TUPLE_DEF_I(85, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_84(...) KAIXO_TUPLE_DEF_85(__VA_ARGS__ _type<84> _85;) KAIXO_TUPLE_DEF_I(84, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_83(...) KAIXO_TUPLE_DEF_84(__VA_ARGS__ _type<83> _84;) KAIXO_TUPLE_DEF_I(83, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_82(...) KAIXO_TUPLE_DEF_83(__VA_ARGS__ _type<82> _83;) KAIXO_TUPLE_DEF_I(82, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_81(...) KAIXO_TUPLE_DEF_82(__VA_ARGS__ _type<81> _82;) KAIXO_TUPLE_DEF_I(81, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_80(...) KAIXO_TUPLE_DEF_81(__VA_ARGS__ _type<80> _81;) KAIXO_TUPLE_DEF_I(80, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_79(...) KAIXO_TUPLE_DEF_80(__VA_ARGS__ _type<79> _80;) KAIXO_TUPLE_DEF_I(79, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_78(...) KAIXO_TUPLE_DEF_79(__VA_ARGS__ _type<78> _79;) KAIXO_TUPLE_DEF_I(78, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_77(...) KAIXO_TUPLE_DEF_78(__VA_ARGS__ _type<77> _78;) KAIXO_TUPLE_DEF_I(77, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_76(...) KAIXO_TUPLE_DEF_77(__VA_ARGS__ _type<76> _77;) KAIXO_TUPLE_DEF_I(76, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_75(...) KAIXO_TUPLE_DEF_76(__VA_ARGS__ _type<75> _76;) KAIXO_TUPLE_DEF_I(75, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_74(...) KAIXO_TUPLE_DEF_75(__VA_ARGS__ _type<74> _75;) KAIXO_TUPLE_DEF_I(74, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_73(...) KAIXO_TUPLE_DEF_74(__VA_ARGS__ _type<73> _74;) KAIXO_TUPLE_DEF_I(73, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_72(...) KAIXO_TUPLE_DEF_73(__VA_ARGS__ _type<72> _73;) KAIXO_TUPLE_DEF_I(72, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_71(...) KAIXO_TUPLE_DEF_72(__VA_ARGS__ _type<71> _72;) KAIXO_TUPLE_DEF_I(71, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_70(...) KAIXO_TUPLE_DEF_71(__VA_ARGS__ _type<70> _71;) KAIXO_TUPLE_DEF_I(70, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_69(...) KAIXO_TUPLE_DEF_70(__VA_ARGS__ _type<69> _70;) KAIXO_TUPLE_DEF_I(69, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_68(...) KAIXO_TUPLE_DEF_69(__VA_ARGS__ _type<68> _69;) KAIXO_TUPLE_DEF_I(68, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_67(...) KAIXO_TUPLE_DEF_68(__VA_ARGS__ _type<67> _68;) KAIXO_TUPLE_DEF_I(67, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_66(...) KAIXO_TUPLE_DEF_67(__VA_ARGS__ _type<66> _67;) KAIXO_TUPLE_DEF_I(66, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_65(...) KAIXO_TUPLE_DEF_66(__VA_ARGS__ _type<65> _66;) KAIXO_TUPLE_DEF_I(65, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_64(...) KAIXO_TUPLE_DEF_65(__VA_ARGS__ _type<64> _65;) KAIXO_TUPLE_DEF_I(64, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_63(...) KAIXO_TUPLE_DEF_64(__VA_ARGS__ _type<63> _64;) KAIXO_TUPLE_DEF_I(63, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_62(...) KAIXO_TUPLE_DEF_63(__VA_ARGS__ _type<62> _63;) KAIXO_TUPLE_DEF_I(62, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_61(...) KAIXO_TUPLE_DEF_62(__VA_ARGS__ _type<61> _62;) KAIXO_TUPLE_DEF_I(61, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_60(...) KAIXO_TUPLE_DEF_61(__VA_ARGS__ _type<60> _61;) KAIXO_TUPLE_DEF_I(60, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_59(...) KAIXO_TUPLE_DEF_60(__VA_ARGS__ _type<59> _60;) KAIXO_TUPLE_DEF_I(59, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_58(...) KAIXO_TUPLE_DEF_59(__VA_ARGS__ _type<58> _59;) KAIXO_TUPLE_DEF_I(58, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_57(...) KAIXO_TUPLE_DEF_58(__VA_ARGS__ _type<57> _58;) KAIXO_TUPLE_DEF_I(57, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_56(...) KAIXO_TUPLE_DEF_57(__VA_ARGS__ _type<56> _57;) KAIXO_TUPLE_DEF_I(56, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_55(...) KAIXO_TUPLE_DEF_56(__VA_ARGS__ _type<55> _56;) KAIXO_TUPLE_DEF_I(55, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_54(...) KAIXO_TUPLE_DEF_55(__VA_ARGS__ _type<54> _55;) KAIXO_TUPLE_DEF_I(54, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_53(...) KAIXO_TUPLE_DEF_54(__VA_ARGS__ _type<53> _54;) KAIXO_TUPLE_DEF_I(53, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_52(...) KAIXO_TUPLE_DEF_53(__VA_ARGS__ _type<52> _53;) KAIXO_TUPLE_DEF_I(52, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_51(...) KAIXO_TUPLE_DEF_52(__VA_ARGS__ _type<51> _52;) KAIXO_TUPLE_DEF_I(51, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_50(...) KAIXO_TUPLE_DEF_51(__VA_ARGS__ _type<50> _51;) KAIXO_TUPLE_DEF_I(50, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_49(...) KAIXO_TUPLE_DEF_50(__VA_ARGS__ _type<49> _50;) KAIXO_TUPLE_DEF_I(49, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_48(...) KAIXO_TUPLE_DEF_49(__VA_ARGS__ _type<48> _49;) KAIXO_TUPLE_DEF_I(48, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_47(...) KAIXO_TUPLE_DEF_48(__VA_ARGS__ _type<47> _48;) KAIXO_TUPLE_DEF_I(47, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_46(...) KAIXO_TUPLE_DEF_47(__VA_ARGS__ _type<46> _47;) KAIXO_TUPLE_DEF_I(46, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_45(...) KAIXO_TUPLE_DEF_46(__VA_ARGS__ _type<45> _46;) KAIXO_TUPLE_DEF_I(45, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_44(...) KAIXO_TUPLE_DEF_45(__VA_ARGS__ _type<44> _45;) KAIXO_TUPLE_DEF_I(44, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_43(...) KAIXO_TUPLE_DEF_44(__VA_ARGS__ _type<43> _44;) KAIXO_TUPLE_DEF_I(43, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_42(...) KAIXO_TUPLE_DEF_43(__VA_ARGS__ _type<42> _43;) KAIXO_TUPLE_DEF_I(42, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_41(...) KAIXO_TUPLE_DEF_42(__VA_ARGS__ _type<41> _42;) KAIXO_TUPLE_DEF_I(41, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_40(...) KAIXO_TUPLE_DEF_41(__VA_ARGS__ _type<40> _41;) KAIXO_TUPLE_DEF_I(40, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_39(...) KAIXO_TUPLE_DEF_40(__VA_ARGS__ _type<39> _40;) KAIXO_TUPLE_DEF_I(39, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_38(...) KAIXO_TUPLE_DEF_39(__VA_ARGS__ _type<38> _39;) KAIXO_TUPLE_DEF_I(38, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_37(...) KAIXO_TUPLE_DEF_38(__VA_ARGS__ _type<37> _38;) KAIXO_TUPLE_DEF_I(37, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_36(...) KAIXO_TUPLE_DEF_37(__VA_ARGS__ _type<36> _37;) KAIXO_TUPLE_DEF_I(36, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_35(...) KAIXO_TUPLE_DEF_36(__VA_ARGS__ _type<35> _36;) KAIXO_TUPLE_DEF_I(35, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_34(...) KAIXO_TUPLE_DEF_35(__VA_ARGS__ _type<34> _35;) KAIXO_TUPLE_DEF_I(34, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_33(...) KAIXO_TUPLE_DEF_34(__VA_ARGS__ _type<33> _34;) KAIXO_TUPLE_DEF_I(33, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_32(...) KAIXO_TUPLE_DEF_33(__VA_ARGS__ _type<32> _33;) KAIXO_TUPLE_DEF_I(32, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_31(...) KAIXO_TUPLE_DEF_32(__VA_ARGS__ _type<31> _32;) KAIXO_TUPLE_DEF_I(31, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_30(...) KAIXO_TUPLE_DEF_31(__VA_ARGS__ _type<30> _31;) KAIXO_TUPLE_DEF_I(30, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_29(...) KAIXO_TUPLE_DEF_30(__VA_ARGS__ _type<29> _30;) KAIXO_TUPLE_DEF_I(29, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_28(...) KAIXO_TUPLE_DEF_29(__VA_ARGS__ _type<28> _29;) KAIXO_TUPLE_DEF_I(28, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_27(...) KAIXO_TUPLE_DEF_28(__VA_ARGS__ _type<27> _28;) KAIXO_TUPLE_DEF_I(27, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_26(...) KAIXO_TUPLE_DEF_27(__VA_ARGS__ _type<26> _27;) KAIXO_TUPLE_DEF_I(26, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_25(...) KAIXO_TUPLE_DEF_26(__VA_ARGS__ _type<25> _26;) KAIXO_TUPLE_DEF_I(25, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_24(...) KAIXO_TUPLE_DEF_25(__VA_ARGS__ _type<24> _25;) KAIXO_TUPLE_DEF_I(24, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_23(...) KAIXO_TUPLE_DEF_24(__VA_ARGS__ _type<23> _24;) KAIXO_TUPLE_DEF_I(23, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_22(...) KAIXO_TUPLE_DEF_23(__VA_ARGS__ _type<22> _23;) KAIXO_TUPLE_DEF_I(22, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_21(...) KAIXO_TUPLE_DEF_22(__VA_ARGS__ _type<21> _22;) KAIXO_TUPLE_DEF_I(21, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_20(...) KAIXO_TUPLE_DEF_21(__VA_ARGS__ _type<20> _21;) KAIXO_TUPLE_DEF_I(20, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_19(...) KAIXO_TUPLE_DEF_20(__VA_ARGS__ _type<19> _20;) KAIXO_TUPLE_DEF_I(19, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_18(...) KAIXO_TUPLE_DEF_19(__VA_ARGS__ _type<18> _19;) KAIXO_TUPLE_DEF_I(18, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_17(...) KAIXO_TUPLE_DEF_18(__VA_ARGS__ _type<17> _18;) KAIXO_TUPLE_DEF_I(17, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_16(...) KAIXO_TUPLE_DEF_17(__VA_ARGS__ _type<16> _17;) KAIXO_TUPLE_DEF_I(16, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_15(...) KAIXO_TUPLE_DEF_16(__VA_ARGS__ _type<15> _16;) KAIXO_TUPLE_DEF_I(15, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_14(...) KAIXO_TUPLE_DEF_15(__VA_ARGS__ _type<14> _15;) KAIXO_TUPLE_DEF_I(14, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_13(...) KAIXO_TUPLE_DEF_14(__VA_ARGS__ _type<13> _14;) KAIXO_TUPLE_DEF_I(13, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_12(...) KAIXO_TUPLE_DEF_13(__VA_ARGS__ _type<12> _13;) KAIXO_TUPLE_DEF_I(12, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_11(...) KAIXO_TUPLE_DEF_12(__VA_ARGS__ _type<11> _12;) KAIXO_TUPLE_DEF_I(11, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_10(...) KAIXO_TUPLE_DEF_11(__VA_ARGS__ _type<10> _11;) KAIXO_TUPLE_DEF_I(10, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_9(...) KAIXO_TUPLE_DEF_10(__VA_ARGS__ _type<9> _10;) KAIXO_TUPLE_DEF_I(9, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_8(...) KAIXO_TUPLE_DEF_9(__VA_ARGS__ _type<8> _9;) KAIXO_TUPLE_DEF_I(8, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_7(...) KAIXO_TUPLE_DEF_8(__VA_ARGS__ _type<7> _8;) KAIXO_TUPLE_DEF_I(7, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_6(...) KAIXO_TUPLE_DEF_7(__VA_ARGS__ _type<6> _7;) KAIXO_TUPLE_DEF_I(6, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_5(...) KAIXO_TUPLE_DEF_6(__VA_ARGS__ _type<5> _6;) KAIXO_TUPLE_DEF_I(5, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_4(...) KAIXO_TUPLE_DEF_5(__VA_ARGS__ _type<4> _5;) KAIXO_TUPLE_DEF_I(4, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_3(...) KAIXO_TUPLE_DEF_4(__VA_ARGS__ _type<3> _4;) KAIXO_TUPLE_DEF_I(3, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_2(...) KAIXO_TUPLE_DEF_3(__VA_ARGS__ _type<2> _3;) KAIXO_TUPLE_DEF_I(2, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF_1(...) KAIXO_TUPLE_DEF_2(__VA_ARGS__ _type<1> _2;) KAIXO_TUPLE_DEF_I(1, __VA_ARGS__)
+#define KAIXO_TUPLE_DEF KAIXO_TUPLE_DEF_1(_type<0> _1;) 
+
+KAIXO_TUPLE_DEF;
+
 int main() {
 
+    tuple<
+        int, int, int, int, int, int, int, int, int, int,
+        int, int, int, int, int, int, int, int, int, int,
+        int, int, int, int, int, int, int, int, int, int,
+        int, int, int, int, int, int, int, int, int, int,
+        int, int, int, int, int, int, int, int, int, int,
+        int, int, int, int, int, int, int, int, int, int,
+        int, int, int, int, int, int, int, int, int, int,
+        int, int, int, int, int, int, int, int, int, int,
+        int, int, int, int, int, int, int, int, int, int,
+        int, int, int, int, int, int, int, int, int, int
+    > my_tuple;
 
-    constexpr tuple a{ 1, 2, 3 };
-    constexpr tuple b{ 1, 2, 3 };
-    constexpr tuple c{ 1, 2, 3 };
+    my_tuple._1;
+    my_tuple._39;
+    my_tuple._99;
 
 
-    constexpr tuple g{ 357 };
-    constexpr auto aein = cartesian_v(a, b);
+    constexpr std::tuple a{ 1, 2, 3 };
+    constexpr std::tuple b{ 1, 2, 3 };
+    constexpr std::tuple c{ 1, 2, 3 };
 
-    
-    constexpr tuple vals{ 1, 2., 3.f, 4u, 5ll, 6ull, 7l };
+    auto oiane = concat_v(a, b, c);
+
+    constexpr std::tuple vals{ 1, 2., 3.f, 4u, 5ll, 6ull, 7l };
     constexpr auto res1 = vals | filter_v<is_integral> | remove_v<long, long long>;
     constexpr auto res2 = vals | filter_v<is_floating_point> | reverse_v;
     constexpr auto res3 = zip_v(res1, res2);
+    constexpr auto res4 = zip_v(res2, res1);
 
     static_assert((res3 | get_v<0> | get_v<0>) == 1);
     static_assert((res3 | get_v<0> | get_v<1>) == 3.f);
     static_assert((res3 | get_v<1> | get_v<0>) == 4u);
     static_assert((res3 | get_v<1> | get_v<1>) == 2.);
-   
+
+    int q = 1;
+    int r = 2;
+    template_pack<int, int&> g{ q, r };
+
+    auto aein1 = g | append_v(1);
+
     return 0;
 }
