@@ -451,6 +451,23 @@ namespace kaixo {
      */
     template<template<class...> class T, class ...Tys>
     using instantiate_t = typename instantiate<T, Tys...>::type;
+    
+    template<class T, class ...Tys> struct reinstantiate;
+    template<template<class...> class T, class ...Args, class ...Tys> 
+    struct reinstantiate<T<Args...>, Tys...> {
+        using type = T<Tys...>; 
+    };
+    template<template<class...> class T, class ...Args, class ...Tys> 
+    struct reinstantiate<T<Args...>, info<Tys...>> {
+        using type = T<Tys...>; 
+    };
+
+    /**
+     * Specialize a templated type with new parameters.
+     * @tparam Ty templated type
+     */
+    template<class T, class ...Tys>
+    using reinstantiate_t = typename reinstantiate<T, Tys...>::type;
 
     /**
      * Overloaded Functor.
@@ -1119,7 +1136,9 @@ namespace kaixo {
     };
 
     template<std::size_t I, class ...Args>
-    struct element<I, info<Args...>> : element<I, Args...> {};
+    struct element<I, info<Args...>> {
+        using type = typename decltype(element_impl<I>(indexer<Args...>{}))::type;
+    };
 
     /**
      * Get the I'th type in ...Args.
@@ -1640,7 +1659,7 @@ namespace kaixo {
     consteval std::size_t count_filter_impl(info<Args...>) {
         return ((static_cast<std::size_t>(filter_object{ Filter }.
             template call<Args::template element<0>::value,
-            typename Args::template element<1>::type>())) + ...);
+            typename Args::template element<1>::type>())) + ... + 0);
     }
 
     template<auto Filter, class ...Args>
@@ -1649,7 +1668,7 @@ namespace kaixo {
         template<std::size_t ...Is>
         struct helper<std::index_sequence<Is...>> {
             consteval static std::size_t value() {
-                return ((static_cast<std::size_t>(filter_object{ Filter }.template call<Is, Args>())) + ...);
+                return ((static_cast<std::size_t>(filter_object{ Filter }.template call<Is, Args>())) + ... + 0);
             }
         };
 
@@ -1776,16 +1795,16 @@ namespace kaixo {
      */
     namespace type_sorters {
         constexpr auto size = []<class A, class B>{ return sizeof_v<A> < sizeof_v<B>; };
-        constexpr auto size_desc = []<class A, class B>{ return sizeof_v<A> > sizeof_v<B>; };
+        constexpr auto rsize = []<class A, class B>{ return sizeof_v<A> > sizeof_v<B>; };
         constexpr auto alignment = []<class A, class B>{ return alignof_v<A> < alignof_v<B>; };
-        constexpr auto alignment_desc = []<class A, class B>{ return alignof_v<A> > alignof_v<B>; };
+        constexpr auto ralignment = []<class A, class B>{ return alignof_v<A> > alignof_v<B>; };
     }
 
     template<class...>struct concat;
     template<template<class...> class A, class ...As>
     struct concat<A<As...>> { using type = A<As...>; };
     template<template<class...> class A, template<class...> class B, class ...As, class ...Bs, class ...Rest>
-    struct concat<A<As...>, B<Bs...>, Rest...> { using type = typename concat<B<As..., Bs...>, Rest...>::type; };
+    struct concat<A<As...>, B<Bs...>, Rest...> { using type = typename concat<A<As..., Bs...>, Rest...>::type; };
 
     /**
      * Concat all template parameters of all templated
@@ -1796,13 +1815,17 @@ namespace kaixo {
     using concat_t = typename concat<Tys...>::type;
 
     template<class... As> struct zip {
-        template<class A, std::size_t I> using a_a_i = typename A::template element<I>::type;
-        template<std::size_t I> using at_index = info<a_a_i<As, I>...>;
+        using _first = info<typename info<As...>::template type<0>>;
+        template<class A, std::size_t I> using a_a_i = typename info<A>::tparams::template element<I>::type;
+        template<std::size_t I> using at_index = typename _first::template reinstantiate<a_a_i<As, I>...>::type;
         template<std::size_t ...Is> struct helper {
-            using type = info<at_index<Is>...>;
+            using type = typename _first::template reinstantiate<at_index<Is>...>::type;
         };
-        using type = array_to_pack_t<generate_indices_v<0, std::min({ As::size... })>, helper>::type;
+        using type = array_to_pack_t<generate_indices_v<0, std::min({ info<As>::tparams::size... })>, helper>::type;
     };
+
+    template<class A> struct zip<A> { using type = A; };
+    template<> struct zip<> { using type = info<>; };
 
     /**
      * Zip all types in the info's ...As
@@ -2048,6 +2071,12 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
      *                                                                                                         *
      * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+    template<class Ty, class ...Args>
+    concept struct_constructible_with = requires (Args...args) {
+        { Ty{ args... } };
+    };
+
+
      /**
       * Find amount of members in a struct.
       * @tparam Ty struct
@@ -2067,7 +2096,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
 
             std::size_t res = 0;
             constexpr auto try_one = []<std::size_t ...Is> {
-                return constructible<Ty, change<value_t<Is>, convertible_type>...>;
+                return struct_constructible_with<Ty, change<value_t<Is>, convertible_type>...>;
             };
 
             ((sequence<Ns>(try_one) ? (res = Ns, true) : false) || ...);
@@ -2722,7 +2751,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         template<class Ty> struct _element_is_info { using type = info<Ty>; };
         template<class ...Tys> struct _element_is_info<info<Tys...>> { using type = info<Tys...>; };
 
-        template<std::size_t I> using element = typename _element_is_info<element_t<I, Tys...>>::type;
+        template<std::size_t I> using element = _element_is_info<element_t<I, Tys...>>::type;
         template<std::size_t I> using take = take_t<I, info>;
         template<std::size_t I> using last = drop_t<size - I, info>;
         template<std::size_t I> using drop = drop_t<I, info>;
@@ -2747,6 +2776,8 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         using reverse = reverse_t<info>;
         using uninstantiate = info<uninstantiate_t<Tys>...>;
         using tparams = tparams_t<Tys...>;
+
+        template<class ...Args> using reinstantiate = info<reinstantiate_t<Tys, Args...>...>;
 
         template<template<class...> class T> using transform = transform_t<T, info>;
         template<template<class...> class T> using as = T<Tys...>;
@@ -3267,9 +3298,9 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
 
     constexpr auto zip_v = []<class ...Tys>(Tys&&... tuples) {
         constexpr std::size_t min_size = std::min({ as_info<Tys>::size... });
-        using zipped = zip_t<as_info<Tys>...>;
+        using zipped = as_info<zip_t<decay_t<Tys>...>>;
         auto _one = [&]<std::size_t I>(value_t<I>)
-            -> typename zipped::template element<I>::template as<std::tuple>{
+            -> typename zipped::template type<I> {
             return { (tuples | get_v<I>)... };
         };
         return sequence<min_size>([&]<std::size_t ...Is> {
@@ -3285,7 +3316,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
 
     constexpr auto concat_v = []<class ...Tys>(Tys&&... tuples) -> concat_t<decay_t<Tys>...> {
         template_pack<Tys...> _tuples{ tuples... };
-        return sequence<sizeof...(Tys)>([&]<std::size_t ...Is>{
+        return sequence<sizeof...(Tys)>([&]<std::size_t ...Is>() -> concat_t<decay_t<Tys>...> {
             using types = info<as_info<Tys>...>;
             using indices = concat_t<typename concat_v_helper<Is, 
                 std::make_index_sequence<types::template element<Is>::size>>::type...>;
