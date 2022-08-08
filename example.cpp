@@ -10,7 +10,7 @@ using namespace kaixo;
 template<class Ty, class ...Tys>
 concept OneOf = (std::same_as<Ty, Tys> || ...);
 
-template<class Ty> concept attribute = requires(Ty) { typename Ty::is_attribute; };
+template<class Ty> concept attribute = requires(Ty) { typename Ty::attribute_tag; };
 template<class Ty> struct is_attribute_impl { constexpr static bool value = attribute<Ty>; };
 
 constexpr auto is_attribute = type_trait<is_attribute_impl>{};
@@ -51,6 +51,16 @@ struct attributes_from_struct {
 template<class Ty>
 using attributes_from_struct_t = typename attributes_from_struct<Ty>::type;
 
+template<class Ty, class Tag> concept attribute_tag = requires(Ty) {
+    std::same_as<typename Ty::attribute_tag, Tag>;
+};
+
+template<class Tag> struct is_attribute_tag {
+    template<class Ty> struct type : std::bool_constant<attribute_tag<Ty, Tag>>{};
+};
+
+#define ATTRIBUTE(x) no_unique_address]] x KAIXO_MERGE(_attribute, __COUNTER__){}; [[
+
 template<class Ty> struct member_offsets {
     constexpr static auto value = [] {
         using members = struct_members_t<decay_t<Ty>>;
@@ -84,17 +94,15 @@ template<aggregate Ty> constexpr auto get_member_ptrs() {
     });
 }
 
-struct json_property_flag {};
+struct json_property_tag {};
 template<string_literal Name> struct json_property {
-    using is_attribute = json_property_flag;
+    using attribute_tag = json_property_tag;
     constexpr static std::string_view name = Name.view();
 };
 
-template<class Ty> concept json_property_attribute = requires(Ty) { std::same_as<typename Ty::is_attribute, json_property_flag>; };
-template<class Ty> struct is_json_property_attribute_impl { constexpr static bool value = json_property_attribute<Ty>; };
-constexpr type_trait<is_json_property_attribute_impl> is_json_property{};
+constexpr type_trait<is_attribute_tag<json_property_tag>::type> is_json_property{};
+#define JsonPropertyName(NAME) ATTRIBUTE(json_property<NAME>)
 
-#define JsonPropertyName(NAME) no_unique_address]] json_property<NAME> KAIXO_MERGE(_json_property, __COUNTER__){}; [[
 class Json {
 public:
     using Floating = double;
@@ -199,28 +207,55 @@ struct Struct2 {
     std::string value;
 };
 
-int main() {
 
-    Struct2 _s2{
-        .nested {
-            .value = 1,
-            .carrot = 2.2,
-        },
-        .value = "soup"
+struct meta_tag {};
+template<string_literal Name> struct MetaName {
+    using attribute_tag = meta_tag;
+    constexpr static auto name = Name.view();
+};
+constexpr type_trait<is_attribute_tag<meta_tag>::type> is_meta{};
+#define Meta(NAME) ATTRIBUTE(MetaName<NAME>)
+
+
+template<string_literal Name, class Ty>
+decltype(auto) get(Ty&& value) {
+    static const auto member_pointers = get_member_ptrs<decay_t<Ty>>();
+    using members = attributes_from_struct_t<decay_t<Ty>>;
+
+    auto _lambda = [&]<std::size_t I, class Lambda>(Lambda& lambda) -> decltype(auto) {
+        if constexpr (I == members::size) return;
+        else {
+            using member = members::template member<I>;
+            using type = member::type;
+            using attributes = member::attributes;
+            using find_meta = attributes::template filter<is_meta>;
+            if constexpr (find_meta::size != 0)
+                if constexpr (find_meta::template element<0>::type::name == Name)
+                    return (std::forward<Ty>(value).*std::get<I>(member_pointers));
+                else return lambda.operator()<I + 1> (lambda);
+            else return lambda.operator()<I + 1>(lambda);
+        }
+    };
+    return _lambda.operator()<0>(_lambda);
+}
+
+#define Property(NAME) ]] \
+decltype(auto) get_##NAME() { return get<#NAME>(*this); } \
+template<class Ty> void set_##NAME(Ty&& val) { get<#NAME>(*this) = std::forward<Ty>(val); } \
+[[Meta(#NAME)
+
+struct MyStruct {
+    [[Property(carrot)]]
+    float value;
+};
+
+int main() {
+    MyStruct _val{
+        .value = 1
     };
 
-    Json _json = _s2;
-
-
-
-
-
-
-
-
-
-
-    Struct2 _value = _json.get<Struct2>();
+    auto& carrot = _val.get_carrot();
+    _val.set_carrot(3);
 
     return 0;
 }
