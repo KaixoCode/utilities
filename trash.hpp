@@ -7337,3 +7337,115 @@ constexpr decltype(auto) g(Args&&...args) {
 
     return _args.get<I>();
 }
+
+
+namespace event_example {
+    struct ref_counted {
+        virtual ~ref_counted() = default;
+        void remember() { ++_refs; }
+        void forget() { if (--_refs == 0) delete this; }
+        std::size_t _refs = 1;
+    };
+
+    template<class Ty> struct pointer {
+        constexpr pointer(Ty* value) : value(value) {}
+        constexpr ~pointer() { clean(); }
+        constexpr pointer(const pointer& p) : value(p.value) { value->remember(); }
+        constexpr pointer(pointer&& p) noexcept : value(p.value) { p.value = nullptr; }
+        constexpr pointer& operator=(const pointer& p) { clean(), value = p.value, value->remember(); }
+        constexpr pointer& operator=(pointer&& p) { clean(), value = p.value, p.value = nullptr; }
+        constexpr Ty* operator->() { return value; }
+        constexpr Ty& operator*() { return *value; }
+        template<class T> requires std::derived_from<Ty, T>
+        constexpr operator pointer<T>() { value->remember(); return { dynamic_cast<T*>(value) }; }
+        void clean() { if (value) value->forget(); }
+        Ty* value = nullptr;
+    };
+
+    using state_id = const void*;
+    template<class Ty> struct state {
+        constexpr bool operator==(state_id ptr) const { return ptr == this; };
+    };
+
+    struct event_listener;
+    struct event {
+        virtual ~event() = default;
+        virtual bool forward(const event_listener&) const = 0;
+    };
+
+    template<class Ty> struct event_type {
+        virtual void handle(const Ty& arg) = 0;
+    };
+
+    struct state_storage {
+        std::any value;
+        template<class Ty> Ty& get() { return std::any_cast<Ty&>(value); }
+    };
+
+    struct state_listener : virtual ref_counted {
+        virtual void changed(state_id, state_storage&) = 0;
+    };
+
+    struct event_listener : virtual ref_counted {
+        template<class Event>
+        void handle_event(const Event& e) {
+            ((event_type<Event>*)this)->handle(e);
+        }
+
+        template<class Ty> const Ty& get(const state<Ty>& s) const {
+            auto _it = data.find(&s);
+            if (_it == data.end() || !_it->second.value.has_value()) return Ty{};
+            else return std::any_cast<const Ty&>(_it->second.value);
+        }
+
+        template<class Ty, class Val> void set(const state<Ty>& s, Val&& value) {
+            data[&s].value.emplace<Ty>(std::forward<Val>(value));
+            for (auto& _l : state_listeners) _l->changed(&s, data[&s]);
+        }
+
+        template<class Ty> void link(pointer<Ty> obj) {
+            state_listeners.push_back(obj);
+        }
+
+        template<class Ty> void unlink(pointer<Ty> obj) {
+            state_listeners.erase(std::remove_if(state_listeners.begin(), state_listeners.end(),
+                [&](pointer<state_listener>& p) { return p.value == obj.value; }), state_listeners.end());
+        }
+
+        std::map<state_id, state_storage> data{};
+        std::vector<pointer<state_listener>> state_listeners{};
+        std::vector<pointer<event_listener>> event_listeners{};
+    };
+
+    struct object : event_listener {};
+
+
+
+
+
+    constexpr state<bool> Hovering;
+
+    struct MyEvent : event {
+        bool forward(const event_listener& obj) const override { return obj.get(Hovering); };
+    };
+
+    struct MyEvent2 : event {
+        bool forward(const event_listener& obj) const override { return true; };
+    };
+}
+
+using namespace event_example;
+
+struct Thing : object {
+    bool hovering = false;
+
+    Thing() {
+
+    }
+
+    void changed(state_id id, state_storage& value) {
+        if (Hovering == id) {
+            hovering = value.get<bool>();
+        }
+    }
+};

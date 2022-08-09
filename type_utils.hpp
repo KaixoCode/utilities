@@ -2636,7 +2636,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         using name = info<value_t<enum_name<Tys, Value>>...>;
 
         template<auto Value>
-        using defined = info<value_t<enum_name<Tys, Value>[0] != '\0'>...>;
+        using defined = info<value_t<enum_name<Tys, Value>.size() == 0>...>;
     };
 
     /**
