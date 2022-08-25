@@ -731,96 +731,97 @@ namespace kaixo {
     template<template<class Ty, class ...Args> class Trait, class Ty, class ...Args>
     struct pack_trait_helper<Trait, Ty, info<Args...>> : Trait<Ty, Args...> {};
 
-    template<class Ty> concept void_type = std::is_void_v<Ty>;
-    template<class Ty> concept null_pointer = std::is_null_pointer_v<Ty>;
-    template<class Ty> concept boolean = std::is_same_v<Ty, bool>;
-    template<class Ty> concept integral = std::is_integral_v<Ty>;
-    template<class Ty> concept floating_point = std::is_floating_point_v<Ty>;
-    template<class Ty> concept array = std::is_array_v<Ty>;
-    template<class Ty> concept enum_type = std::is_enum_v<Ty>;
-    template<class Ty> concept union_type = std::is_union_v<Ty>;
-    template<class Ty> concept class_type = std::is_class_v<Ty>;
-    template<class Ty> concept function = std::is_function_v<Ty>;
-    template<class Ty> concept pointer = std::is_pointer_v<Ty>;
-    template<class Ty> concept lvalue_reference = std::is_lvalue_reference_v<Ty>;
-    template<class Ty> concept rvalue_reference = std::is_rvalue_reference_v<Ty>;
-    template<class Ty> concept member_object_pointer = std::is_member_object_pointer_v<Ty>;
-    template<class Ty> concept member_function_pointer = std::is_member_function_pointer_v<Ty>;
-    template<class Ty> concept fundamental = std::is_fundamental_v<Ty>;
-    template<class Ty> concept arithmetic = std::is_arithmetic_v<Ty>;
-    template<class Ty> concept scalar = std::is_scalar_v<Ty>;
-    template<class Ty> concept object = std::is_object_v<Ty>;
-    template<class Ty> concept compound = std::is_compound_v<Ty>;
-    template<class Ty> concept reference = std::is_reference_v<Ty>;
-    template<class Ty> concept member_pointer = std::is_member_pointer_v<Ty>;
-    template<class Ty> concept const_type = std::is_const_v<std::remove_reference_t<Ty>>;
-    template<class Ty> concept volatile_type = std::is_volatile_v<std::remove_reference_t<Ty>>;
-    template<class Ty> concept trivial = std::is_trivial_v<Ty>;
-    template<class Ty> concept trivially_copyable = std::is_trivially_copyable_v<Ty>;
-    template<class Ty> concept standard_layout = std::is_standard_layout_v<Ty>;
-    template<class Ty> concept empty = std::is_empty_v<Ty>;
-    template<class Ty> concept polymorphic = std::is_polymorphic_v<Ty>;
-    template<class Ty> concept abstract = std::is_abstract_v<Ty>;
-    template<class Ty> concept final = std::is_final_v<Ty>;
-    template<class Ty> concept aggregate = std::is_aggregate_v<Ty>;
-    template<class Ty> concept signed_integral = std::is_signed_v<Ty>;
-    template<class Ty> concept unsigned_integral = std::is_unsigned_v<Ty>;
-    template<class Ty> concept bounded_array = std::is_bounded_array_v<Ty>;
-    template<class Ty> concept unbounded_array = std::is_unbounded_array_v<Ty>;
-    template<class Ty> concept default_constructible = std::is_default_constructible_v<Ty>;
-    template<class Ty> concept trivially_default_constructible = std::is_trivially_default_constructible_v<Ty>;
-    template<class Ty> concept nothrow_default_constructible = std::is_nothrow_default_constructible_v<Ty>;
-    template<class Ty> concept copy_constructible = std::is_copy_constructible_v<Ty>;
-    template<class Ty> concept trivially_copy_constructible = std::is_trivially_copy_constructible_v<Ty>;
-    template<class Ty> concept nothrow_copy_constructible = std::is_nothrow_copy_constructible_v<Ty>;
-    template<class Ty> concept move_constructible = std::is_move_constructible_v<Ty>;
-    template<class Ty> concept trivially_move_constructible = std::is_trivially_move_constructible_v<Ty>;
-    template<class Ty> concept nothrow_move_constructible = std::is_nothrow_move_constructible_v<Ty>;
-    template<class Ty> concept copy_assignable = std::is_copy_assignable_v<Ty>;
-    template<class Ty> concept trivially_copy_assignable = std::is_trivially_copy_assignable_v<Ty>;
-    template<class Ty> concept nothrow_copy_assignable = std::is_nothrow_copy_assignable_v<Ty>;
-    template<class Ty> concept move_assignable = std::is_move_assignable_v<Ty>;
-    template<class Ty> concept trivially_move_assignable = std::is_trivially_move_assignable_v<Ty>;
-    template<class Ty> concept nothrow_move_assignable = std::is_nothrow_move_assignable_v<Ty>;
-    template<class Ty> concept destructible = std::is_destructible_v<Ty>;
-    template<class Ty> concept trivially_destructible = std::is_trivially_destructible_v<Ty>;
-    template<class Ty> concept nothrow_destructible = std::is_nothrow_destructible_v<Ty>;
-    template<class Ty> concept swappable = std::is_swappable_v<Ty>;
-    template<class Ty> concept nothrow_swappable = std::is_nothrow_swappable_v<Ty>;
+    inline namespace type_concepts {
+        template<class Ty> concept void_type = std::is_void_v<Ty>;
+        template<class Ty> concept null_pointer = std::is_null_pointer_v<Ty>;
+        template<class Ty> concept boolean = std::is_same_v<Ty, bool>;
+        template<class Ty> concept integral = std::is_integral_v<Ty>;
+        template<class Ty> concept floating_point = std::is_floating_point_v<Ty>;
+        template<class Ty> concept array = std::is_array_v<Ty>;
+        template<class Ty> concept enum_type = std::is_enum_v<Ty>;
+        template<class Ty> concept union_type = std::is_union_v<Ty>;
+        template<class Ty> concept class_type = std::is_class_v<Ty>;
+        template<class Ty> concept function = std::is_function_v<Ty>;
+        template<class Ty> concept pointer = std::is_pointer_v<Ty>;
+        template<class Ty> concept lvalue_reference = std::is_lvalue_reference_v<Ty>;
+        template<class Ty> concept rvalue_reference = std::is_rvalue_reference_v<Ty>;
+        template<class Ty> concept member_object_pointer = std::is_member_object_pointer_v<Ty>;
+        template<class Ty> concept member_function_pointer = std::is_member_function_pointer_v<Ty>;
+        template<class Ty> concept fundamental = std::is_fundamental_v<Ty>;
+        template<class Ty> concept arithmetic = std::is_arithmetic_v<Ty>;
+        template<class Ty> concept scalar = std::is_scalar_v<Ty>;
+        template<class Ty> concept object = std::is_object_v<Ty>;
+        template<class Ty> concept compound = std::is_compound_v<Ty>;
+        template<class Ty> concept reference = std::is_reference_v<Ty>;
+        template<class Ty> concept member_pointer = std::is_member_pointer_v<Ty>;
+        template<class Ty> concept const_type = std::is_const_v<std::remove_reference_t<Ty>>;
+        template<class Ty> concept volatile_type = std::is_volatile_v<std::remove_reference_t<Ty>>;
+        template<class Ty> concept trivial = std::is_trivial_v<Ty>;
+        template<class Ty> concept trivially_copyable = std::is_trivially_copyable_v<Ty>;
+        template<class Ty> concept standard_layout = std::is_standard_layout_v<Ty>;
+        template<class Ty> concept empty = std::is_empty_v<Ty>;
+        template<class Ty> concept polymorphic = std::is_polymorphic_v<Ty>;
+        template<class Ty> concept abstract = std::is_abstract_v<Ty>;
+        template<class Ty> concept final = std::is_final_v<Ty>;
+        template<class Ty> concept aggregate = std::is_aggregate_v<Ty>;
+        template<class Ty> concept signed_integral = std::is_signed_v<Ty>;
+        template<class Ty> concept unsigned_integral = std::is_unsigned_v<Ty>;
+        template<class Ty> concept bounded_array = std::is_bounded_array_v<Ty>;
+        template<class Ty> concept unbounded_array = std::is_unbounded_array_v<Ty>;
+        template<class Ty> concept default_constructible = std::is_default_constructible_v<Ty>;
+        template<class Ty> concept trivially_default_constructible = std::is_trivially_default_constructible_v<Ty>;
+        template<class Ty> concept nothrow_default_constructible = std::is_nothrow_default_constructible_v<Ty>;
+        template<class Ty> concept copy_constructible = std::is_copy_constructible_v<Ty>;
+        template<class Ty> concept trivially_copy_constructible = std::is_trivially_copy_constructible_v<Ty>;
+        template<class Ty> concept nothrow_copy_constructible = std::is_nothrow_copy_constructible_v<Ty>;
+        template<class Ty> concept move_constructible = std::is_move_constructible_v<Ty>;
+        template<class Ty> concept trivially_move_constructible = std::is_trivially_move_constructible_v<Ty>;
+        template<class Ty> concept nothrow_move_constructible = std::is_nothrow_move_constructible_v<Ty>;
+        template<class Ty> concept copy_assignable = std::is_copy_assignable_v<Ty>;
+        template<class Ty> concept trivially_copy_assignable = std::is_trivially_copy_assignable_v<Ty>;
+        template<class Ty> concept nothrow_copy_assignable = std::is_nothrow_copy_assignable_v<Ty>;
+        template<class Ty> concept move_assignable = std::is_move_assignable_v<Ty>;
+        template<class Ty> concept trivially_move_assignable = std::is_trivially_move_assignable_v<Ty>;
+        template<class Ty> concept nothrow_move_assignable = std::is_nothrow_move_assignable_v<Ty>;
+        template<class Ty> concept destructible = std::is_destructible_v<Ty>;
+        template<class Ty> concept trivially_destructible = std::is_trivially_destructible_v<Ty>;
+        template<class Ty> concept nothrow_destructible = std::is_nothrow_destructible_v<Ty>;
+        template<class Ty> concept swappable = std::is_swappable_v<Ty>;
+        template<class Ty> concept nothrow_swappable = std::is_nothrow_swappable_v<Ty>;
 
-    template<class Ty> concept unique_object_representations = std::has_unique_object_representations_v<Ty>;
-    template<class Ty> concept virtual_destructor = std::has_virtual_destructor_v<Ty>;
+        template<class Ty> concept unique_object_representations = std::has_unique_object_representations_v<Ty>;
+        template<class Ty> concept virtual_destructor = std::has_virtual_destructor_v<Ty>;
 
-    template<class Ty, class Other> concept assignable = std::is_assignable_v<Ty, Other>;
-    template<class Ty, class Other> concept trivially_assignable = std::is_trivially_assignable_v<Ty, Other>;
-    template<class Ty, class Other> concept nothrow_assignable = std::is_nothrow_assignable_v<Ty, Other>;
-    template<class Ty, class Other> concept assignable_to = std::is_assignable_v<Other, Ty>;
-    template<class Ty, class Other> concept trivially_assignable_to = std::is_trivially_assignable_v<Other, Ty>;
-    template<class Ty, class Other> concept nothrow_assignable_to = std::is_nothrow_assignable_v<Other, Ty>;
-    template<class Ty, class Other> concept swappable_with = std::is_swappable_with_v<Ty, Other>;
-    template<class Ty, class Other> concept nothrow_swappable_with = std::is_nothrow_swappable_with_v<Ty, Other>;
+        template<class Ty, class Other> concept assignable = std::is_assignable_v<Ty, Other>;
+        template<class Ty, class Other> concept trivially_assignable = std::is_trivially_assignable_v<Ty, Other>;
+        template<class Ty, class Other> concept nothrow_assignable = std::is_nothrow_assignable_v<Ty, Other>;
+        template<class Ty, class Other> concept assignable_to = std::is_assignable_v<Other, Ty>;
+        template<class Ty, class Other> concept trivially_assignable_to = std::is_trivially_assignable_v<Other, Ty>;
+        template<class Ty, class Other> concept nothrow_assignable_to = std::is_nothrow_assignable_v<Other, Ty>;
+        template<class Ty, class Other> concept swappable_with = std::is_swappable_with_v<Ty, Other>;
+        template<class Ty, class Other> concept nothrow_swappable_with = std::is_nothrow_swappable_with_v<Ty, Other>;
 
-    template<class Ty, class Other> concept same_as = std::is_same_v<Ty, Other>;
-    template<class Ty, class Other> concept base_of = std::is_base_of_v<Ty, Other>;
-    template<class Ty, class Other> concept convertible_to = std::is_convertible_v<Ty, Other>;
-    template<class Ty, class Other> concept nothrow_convertible_to = std::is_nothrow_convertible_v<Ty, Other>;
-    template<class Ty, class Other> concept convertible_from = std::is_convertible_v<Other, Ty>;
-    template<class Ty, class Other> concept nothrow_convertible_from = std::is_nothrow_convertible_v<Other, Ty>;
+        template<class Ty, class Other> concept same_as = std::is_same_v<Ty, Other>;
+        template<class Ty, class Other> concept base_of = std::is_base_of_v<Ty, Other>;
+        template<class Ty, class Other> concept convertible_to = std::is_convertible_v<Ty, Other>;
+        template<class Ty, class Other> concept nothrow_convertible_to = std::is_nothrow_convertible_v<Ty, Other>;
+        template<class Ty, class Other> concept convertible_from = std::is_convertible_v<Other, Ty>;
+        template<class Ty, class Other> concept nothrow_convertible_from = std::is_nothrow_convertible_v<Other, Ty>;
 
-    template<class Ty, class ...Args> concept constructible = pack_trait_helper<std::is_constructible, Ty, Args...>::value;
-    template<class Ty, class ...Args> concept trivially_constructible = pack_trait_helper<std::is_trivially_constructible, Ty, Args...>::value;
-    template<class Ty, class ...Args> concept nothrow_constructible = pack_trait_helper<std::is_nothrow_constructible, Ty, Args...>::value;
-    template<class Ty, class ...Args> concept invocable = pack_trait_helper<std::is_invocable, Ty, Args...>::value;
-    template<class Ty, class ...Args> concept nothrow_invocable = pack_trait_helper<std::is_nothrow_invocable, Ty, Args...>::value;
+        template<class Ty, class ...Args> concept constructible = pack_trait_helper<std::is_constructible, Ty, Args...>::value;
+        template<class Ty, class ...Args> concept trivially_constructible = pack_trait_helper<std::is_trivially_constructible, Ty, Args...>::value;
+        template<class Ty, class ...Args> concept nothrow_constructible = pack_trait_helper<std::is_nothrow_constructible, Ty, Args...>::value;
+        template<class Ty, class ...Args> concept invocable = pack_trait_helper<std::is_invocable, Ty, Args...>::value;
+        template<class Ty, class ...Args> concept nothrow_invocable = pack_trait_helper<std::is_nothrow_invocable, Ty, Args...>::value;
 
-    template<class, template<class...> class>
-    struct specialization_impl : std::false_type {};
-    template<template<class...> class Ref, class... Args>
-    struct specialization_impl<Ref<Args...>, Ref> : std::true_type {};
+        template<class, template<class...> class>
+        struct specialization_impl : std::false_type {};
+        template<template<class...> class Ref, class... Args>
+        struct specialization_impl<Ref<Args...>, Ref> : std::true_type {};
 
-    template<class Test, template<class...> class Ref>
-    concept specialization = specialization_impl<std::decay_t<Test>, Ref>::value;
-
+        template<class Test, template<class...> class Ref>
+        concept specialization = specialization_impl<std::decay_t<Test>, Ref>::value;
+    }
     /**
      * All standard type traits wrapped in an object, allows for
      * simple boolean operations and partial application.
@@ -828,245 +829,246 @@ namespace kaixo {
      * template<require<is_integral || is_floating_point> Ty>
      */
 
-     /**
-      * Concept to match a type_trait.
-      * @tparam Ty type
-      * @tparam V type_trait value
-      */
-    template<class Ty, auto V>
-    concept require = V.template value<Ty>;
+    inline namespace type_traits {
+         /**
+          * Concept to match a type_trait.
+          * @tparam Ty type
+          * @tparam V type_trait value
+          */
+        template<class Ty, auto V>
+        concept require = V.template value<Ty>;
 
-    /**
-     * Boolean and on 2 type_trait classes.
-     * @tparam A type trait 1
-     * @tparam B type trait 2
-     */
-    template<template<class ...> class A, template<class ...> class B>
-    struct type_trait_and {
-        template<class ...Args> struct type {
-            constexpr static bool value = A<Args...>::value && B<Args...>::value;
+        /**
+         * Boolean and on 2 type_trait classes.
+         * @tparam A type trait 1
+         * @tparam B type trait 2
+         */
+        template<template<class ...> class A, template<class ...> class B>
+        struct type_trait_and {
+            template<class ...Args> struct type {
+                constexpr static bool value = A<Args...>::value && B<Args...>::value;
+            };
         };
-    };
 
-    /**
-     * Boolean or on 2 type_trait classes.
-     * @tparam A type trait 1
-     * @tparam B type trait 2
-     */
-    template<template<class ...> class A, template<class ...> class B>
-    struct type_trait_or {
-        template<class ...Args> struct type {
-            constexpr static bool value = A<Args...>::value || B<Args...>::value;
+        /**
+         * Boolean or on 2 type_trait classes.
+         * @tparam A type trait 1
+         * @tparam B type trait 2
+         */
+        template<template<class ...> class A, template<class ...> class B>
+        struct type_trait_or {
+            template<class ...Args> struct type {
+                constexpr static bool value = A<Args...>::value || B<Args...>::value;
+            };
         };
-    };
 
-    /**
-     * Boolean not on a type_trait class.
-     * @tparam A type trait
-     */
-    template<template<class ...> class A>
-    struct type_trait_not {
-        template<class ...Args> struct type {
-            constexpr static bool value = !A<Args...>::value;
+        /**
+         * Boolean not on a type_trait class.
+         * @tparam A type trait
+         */
+        template<template<class ...> class A>
+        struct type_trait_not {
+            template<class ...Args> struct type {
+                constexpr static bool value = !A<Args...>::value;
+            };
         };
-    };
 
-    /**
-     * Partially applied type trait, where last types
-     * are provided.
-     * @tparam A type trait
-     * @tparam Tys... provided arguments
-     */
-    template<template<class ...> class A, class ...Tys>
-    struct type_trait_partial_last {
-        template<class ...Args> struct type {
-            constexpr static bool value = A<Args..., Tys...>::value;
+        /**
+         * Partially applied type trait, where last types
+         * are provided.
+         * @tparam A type trait
+         * @tparam Tys... provided arguments
+         */
+        template<template<class ...> class A, class ...Tys>
+        struct type_trait_partial_last {
+            template<class ...Args> struct type {
+                constexpr static bool value = A<Args..., Tys...>::value;
+            };
         };
-    };
 
-    /**
-     * Partially applied type trait, where last types
-     * are provided in a pack.
-     * @tparam A type trait
-     * @tparam Tys... provided arguments
-     */
-    template<template<class ...> class A, class ...Tys>
-    struct type_trait_partial_last<A, info<Tys...>> {
-        template<class ...Args> struct type {
-            constexpr static bool value = A<Args..., Tys...>::value;
+        /**
+         * Partially applied type trait, where last types
+         * are provided in a pack.
+         * @tparam A type trait
+         * @tparam Tys... provided arguments
+         */
+        template<template<class ...> class A, class ...Tys>
+        struct type_trait_partial_last<A, info<Tys...>> {
+            template<class ...Args> struct type {
+                constexpr static bool value = A<Args..., Tys...>::value;
+            };
         };
-    };
 
-    /**
-     * Partially applied type trait, where first types
-     * are provided.
-     * @tparam A type trait
-     * @tparam Tys... provided arguments
-     */
-    template<template<class ...> class A, class ...Tys>
-    struct type_trait_partial_first {
-        template<class ...Args> struct type {
-            constexpr static bool value = A<Tys..., Args...>::value;
+        /**
+         * Partially applied type trait, where first types
+         * are provided.
+         * @tparam A type trait
+         * @tparam Tys... provided arguments
+         */
+        template<template<class ...> class A, class ...Tys>
+        struct type_trait_partial_first {
+            template<class ...Args> struct type {
+                constexpr static bool value = A<Tys..., Args...>::value;
+            };
         };
-    };
 
-    /**
-     * Partially applied type trait, where first types
-     * are provided in a pack.
-     * @tparam A type trait
-     * @tparam Tys... provided arguments
-     */
-    template<template<class ...> class A, class ...Tys>
-    struct type_trait_partial_first<A, info<Tys...>> {
-        template<class ...Args> struct type {
-            constexpr static bool value = A<Tys..., Args...>::value;
+        /**
+         * Partially applied type trait, where first types
+         * are provided in a pack.
+         * @tparam A type trait
+         * @tparam Tys... provided arguments
+         */
+        template<template<class ...> class A, class ...Tys>
+        struct type_trait_partial_first<A, info<Tys...>> {
+            template<class ...Args> struct type {
+                constexpr static bool value = A<Tys..., Args...>::value;
+            };
         };
-    };
 
-    /**
-     * Unevaluated type trait wrapper.
-     * @tparam Trait type trait
-     */
-    template<template<class ...> class Trait>
-    struct type_trait {
-        template<class ...Tys>
-        constexpr static bool value = Trait<Tys...>::value;
-    };
+        /**
+         * Unevaluated type trait wrapper.
+         * @tparam Trait type trait
+         */
+        template<template<class ...> class Trait>
+        struct type_trait {
+            template<class ...Tys>
+            constexpr static bool value = Trait<Tys...>::value;
+        };
 
-    template<class> struct is_type_trait_impl : std::false_type{};
-    template<template<class ...> class T>
-    struct is_type_trait_impl<type_trait<T>> : std::true_type {};
+        template<class> struct is_type_trait_impl : std::false_type{};
+        template<template<class ...> class T>
+        struct is_type_trait_impl<type_trait<T>> : std::true_type {};
 
-    /**
-     * Check if Ty is a type trait object.
-     * @tparam Ty type
-     */
-    template<class Ty>
-    concept is_type_trait = is_type_trait_impl<Ty>::value;
+        /**
+         * Check if Ty is a type trait object.
+         * @tparam Ty type
+         */
+        template<class Ty>
+        concept is_type_trait = is_type_trait_impl<Ty>::value;
 
-    /**
-     * Boolean and on 2 type traits
-     * @tparam A type trait 1
-     * @tparam B type trait 2
-     * @return type trait that matches if both match
-     */
-    template<template<class ...> class A, template<class ...> class B>
-    consteval auto operator and(type_trait<A>, type_trait<B>) {
-        return type_trait<typename type_trait_and<A, B>::type>{};
+        /**
+         * Boolean and on 2 type traits
+         * @tparam A type trait 1
+         * @tparam B type trait 2
+         * @return type trait that matches if both match
+         */
+        template<template<class ...> class A, template<class ...> class B>
+        consteval auto operator and(type_trait<A>, type_trait<B>) {
+            return type_trait<typename type_trait_and<A, B>::type>{};
+        }
+
+        /**
+         * Boolean or on 2 type traits
+         * @tparam A type trait 1
+         * @tparam B type trait 2
+         * @return type trait that matches if either matches
+         */
+        template<template<class ...> class A, template<class ...> class B>
+        consteval auto operator or(type_trait<A>, type_trait<B>) {
+            return type_trait<typename type_trait_or<A, B>::type>{};
+        }
+
+        /**
+         * Boolean not on a type trait
+         * @tparam A type trait
+         * @return type trait that matches if A doesn't match
+         */
+        template<template<class ...> class A>
+        consteval auto operator not(type_trait<A>) {
+            return type_trait<typename type_trait_not<A>::type>{};
+        }
+
+        constexpr auto is_void = type_trait<std::is_void>{};
+        constexpr auto is_null_pointer = type_trait<std::is_null_pointer>{};
+        constexpr auto is_integral = type_trait<std::is_integral>{};
+        constexpr auto is_floating_point = type_trait<std::is_floating_point>{};
+        constexpr auto is_array = type_trait<std::is_array>{};
+        constexpr auto is_enum = type_trait<std::is_enum>{};
+        constexpr auto is_union = type_trait<std::is_union>{};
+        constexpr auto is_class = type_trait<std::is_class>{};
+        constexpr auto is_function = type_trait<std::is_function>{};
+        constexpr auto is_pointer = type_trait<std::is_pointer>{};
+        constexpr auto is_lvalue_reference = type_trait<std::is_lvalue_reference>{};
+        constexpr auto is_rvalue_reference = type_trait<std::is_rvalue_reference>{};
+        constexpr auto is_member_object_pointer = type_trait<std::is_member_object_pointer>{};
+        constexpr auto is_member_function_pointer = type_trait<std::is_member_function_pointer>{};
+        constexpr auto is_fundamental = type_trait<std::is_fundamental>{};
+        constexpr auto is_arithmetic = type_trait<std::is_arithmetic>{};
+        constexpr auto is_scalar = type_trait<std::is_scalar>{};
+        constexpr auto is_object = type_trait<std::is_object>{};
+        constexpr auto is_compound = type_trait<std::is_compound>{};
+        constexpr auto is_reference = type_trait<std::is_reference>{};
+        constexpr auto is_member_pointer = type_trait<std::is_member_pointer>{};
+        constexpr auto is_const = type_trait<std::is_const>{};
+        constexpr auto is_volatile = type_trait<std::is_volatile>{};
+        constexpr auto is_trivial = type_trait<std::is_trivial>{};
+        constexpr auto is_trivially_copyable = type_trait<std::is_trivially_copyable>{};
+        constexpr auto is_standard_layout = type_trait<std::is_standard_layout>{};
+        constexpr auto is_empty = type_trait<std::is_empty>{};
+        constexpr auto is_polymorphic = type_trait<std::is_polymorphic>{};
+        constexpr auto is_abstract = type_trait<std::is_abstract>{};
+        constexpr auto is_final = type_trait<std::is_final>{};
+        constexpr auto is_aggregate = type_trait<std::is_aggregate>{};
+        constexpr auto is_signed = type_trait<std::is_signed>{};
+        constexpr auto is_unsigned = type_trait<std::is_unsigned>{};
+        constexpr auto is_bounded_array = type_trait<std::is_bounded_array>{};
+        constexpr auto is_unbounded_array = type_trait<std::is_unbounded_array>{};
+        constexpr auto is_default_constructible = type_trait<std::is_default_constructible>{};
+        constexpr auto is_trivially_default_constructible = type_trait<std::is_trivially_default_constructible>{};
+        constexpr auto is_nothrow_default_constructible = type_trait<std::is_nothrow_default_constructible>{};
+        constexpr auto is_copy_constructible = type_trait<std::is_copy_constructible>{};
+        constexpr auto is_trivially_copy_constructible = type_trait<std::is_trivially_copy_constructible>{};
+        constexpr auto is_nothrow_copy_constructible = type_trait<std::is_nothrow_copy_constructible>{};
+        constexpr auto is_move_constructible = type_trait<std::is_move_constructible>{};
+        constexpr auto is_trivially_move_constructible = type_trait<std::is_trivially_move_constructible>{};
+        constexpr auto is_nothrow_move_constructible = type_trait<std::is_nothrow_move_constructible>{};
+        constexpr auto is_copy_assignable = type_trait<std::is_copy_assignable>{};
+        constexpr auto is_trivially_copy_assignable = type_trait<std::is_trivially_copy_assignable>{};
+        constexpr auto is_nothrow_copy_assignable = type_trait<std::is_nothrow_copy_assignable>{};
+        constexpr auto is_move_assignable = type_trait<std::is_move_assignable>{};
+        constexpr auto is_trivially_move_assignable = type_trait<std::is_trivially_move_assignable>{};
+        constexpr auto is_nothrow_move_assignable = type_trait<std::is_nothrow_move_assignable>{};
+        constexpr auto is_destructible = type_trait<std::is_destructible>{};
+        constexpr auto is_trivially_destructible = type_trait<std::is_trivially_destructible>{};
+        constexpr auto is_nothrow_destructible = type_trait<std::is_nothrow_destructible>{};
+        constexpr auto is_swappable = type_trait<std::is_swappable>{};
+        constexpr auto is_nothrow_swappable = type_trait<std::is_nothrow_swappable>{};
+
+        constexpr auto has_unique_object_representations = type_trait<std::has_unique_object_representations>{};
+        constexpr auto has_virtual_destructor = type_trait<std::has_virtual_destructor>{};
+
+        template<class Other> constexpr auto is_assignable = type_trait<typename type_trait_partial_last<std::is_assignable, Other>::type>{};
+        template<class Other> constexpr auto is_trivially_assignable = type_trait<typename type_trait_partial_last<std::is_trivially_assignable, Other>::type>{};
+        template<class Other> constexpr auto is_nothrow_assignable = type_trait<typename type_trait_partial_last<std::is_nothrow_assignable, Other>::type>{};
+        template<class Other> constexpr auto is_assignable_to = type_trait<typename type_trait_partial_first<std::is_assignable, Other>::type>{};
+        template<class Other> constexpr auto is_trivially_assignable_to = type_trait<typename type_trait_partial_first<std::is_trivially_assignable, Other>::type>{};
+        template<class Other> constexpr auto is_nothrow_assignable_to = type_trait<typename type_trait_partial_first<std::is_nothrow_assignable, Other>::type>{};
+        template<class Other> constexpr auto is_swappable_with = type_trait<typename type_trait_partial_last<std::is_swappable_with, Other>::type>{};
+        template<class Other> constexpr auto is_nothrow_swappable_with = type_trait<typename type_trait_partial_last<std::is_nothrow_swappable_with, Other>::type>{};
+
+        template<class Other> constexpr auto is_same = type_trait<typename type_trait_partial_last<std::is_same, Other>::type>{};
+        template<class Other> constexpr auto is_base_of = type_trait<typename type_trait_partial_last<std::is_base_of, Other>::type>{};
+        template<class Other> constexpr auto is_derived_of = type_trait<typename type_trait_partial_first<std::is_base_of, Other>::type>{};
+        template<class Other> constexpr auto is_convertible_to = type_trait<typename type_trait_partial_last<std::is_convertible, Other>::type>{};
+        template<class Other> constexpr auto is_nothrow_convertible_to = type_trait<typename type_trait_partial_last<std::is_nothrow_convertible, Other>::type>{};
+        template<class Other> constexpr auto is_convertible_from = type_trait<typename type_trait_partial_first<std::is_convertible, Other>::type>{};
+        template<class Other> constexpr auto is_nothrow_convertible_from = type_trait<typename type_trait_partial_first<std::is_nothrow_convertible, Other>::type>{};
+
+        template<class ...Args> constexpr auto is_constructible = type_trait<typename type_trait_partial_last<std::is_constructible, Args...>::type>{};
+        template<class ...Args> constexpr auto is_trivially_constructible = type_trait<typename type_trait_partial_last<std::is_trivially_constructible, Args...>::type>{};
+        template<class ...Args> constexpr auto is_nothrow_constructible = type_trait<typename type_trait_partial_last<std::is_nothrow_constructible, Args...>::type>{};
+        template<class ...Args> constexpr auto is_invocable = type_trait<typename type_trait_partial_last<std::is_invocable, Args...>::type>{};
+        template<class ...Args> constexpr auto is_nothrow_invocable = type_trait<typename type_trait_partial_last<std::is_nothrow_invocable, Args...>::type>{};
+
+        template<template<class ...> class Ty>
+        struct is_specialization_impl {
+            template<class T> struct type {
+                constexpr static bool value = specialization<T, Ty>;
+            };
+        };
+
+        template<template<class ...> class Ty> constexpr auto is_specialization = type_trait<typename is_specialization_impl<Ty>::type>{};
     }
-
-    /**
-     * Boolean or on 2 type traits
-     * @tparam A type trait 1
-     * @tparam B type trait 2
-     * @return type trait that matches if either matches
-     */
-    template<template<class ...> class A, template<class ...> class B>
-    consteval auto operator or(type_trait<A>, type_trait<B>) {
-        return type_trait<typename type_trait_or<A, B>::type>{};
-    }
-
-    /**
-     * Boolean not on a type trait
-     * @tparam A type trait
-     * @return type trait that matches if A doesn't match
-     */
-    template<template<class ...> class A>
-    consteval auto operator not(type_trait<A>) {
-        return type_trait<typename type_trait_not<A>::type>{};
-    }
-
-    constexpr auto is_void = type_trait<std::is_void>{};
-    constexpr auto is_null_pointer = type_trait<std::is_null_pointer>{};
-    constexpr auto is_integral = type_trait<std::is_integral>{};
-    constexpr auto is_floating_point = type_trait<std::is_floating_point>{};
-    constexpr auto is_array = type_trait<std::is_array>{};
-    constexpr auto is_enum = type_trait<std::is_enum>{};
-    constexpr auto is_union = type_trait<std::is_union>{};
-    constexpr auto is_class = type_trait<std::is_class>{};
-    constexpr auto is_function = type_trait<std::is_function>{};
-    constexpr auto is_pointer = type_trait<std::is_pointer>{};
-    constexpr auto is_lvalue_reference = type_trait<std::is_lvalue_reference>{};
-    constexpr auto is_rvalue_reference = type_trait<std::is_rvalue_reference>{};
-    constexpr auto is_member_object_pointer = type_trait<std::is_member_object_pointer>{};
-    constexpr auto is_member_function_pointer = type_trait<std::is_member_function_pointer>{};
-    constexpr auto is_fundamental = type_trait<std::is_fundamental>{};
-    constexpr auto is_arithmetic = type_trait<std::is_arithmetic>{};
-    constexpr auto is_scalar = type_trait<std::is_scalar>{};
-    constexpr auto is_object = type_trait<std::is_object>{};
-    constexpr auto is_compound = type_trait<std::is_compound>{};
-    constexpr auto is_reference = type_trait<std::is_reference>{};
-    constexpr auto is_member_pointer = type_trait<std::is_member_pointer>{};
-    constexpr auto is_const = type_trait<std::is_const>{};
-    constexpr auto is_volatile = type_trait<std::is_volatile>{};
-    constexpr auto is_trivial = type_trait<std::is_trivial>{};
-    constexpr auto is_trivially_copyable = type_trait<std::is_trivially_copyable>{};
-    constexpr auto is_standard_layout = type_trait<std::is_standard_layout>{};
-    constexpr auto is_empty = type_trait<std::is_empty>{};
-    constexpr auto is_polymorphic = type_trait<std::is_polymorphic>{};
-    constexpr auto is_abstract = type_trait<std::is_abstract>{};
-    constexpr auto is_final = type_trait<std::is_final>{};
-    constexpr auto is_aggregate = type_trait<std::is_aggregate>{};
-    constexpr auto is_signed = type_trait<std::is_signed>{};
-    constexpr auto is_unsigned = type_trait<std::is_unsigned>{};
-    constexpr auto is_bounded_array = type_trait<std::is_bounded_array>{};
-    constexpr auto is_unbounded_array = type_trait<std::is_unbounded_array>{};
-    constexpr auto is_default_constructible = type_trait<std::is_default_constructible>{};
-    constexpr auto is_trivially_default_constructible = type_trait<std::is_trivially_default_constructible>{};
-    constexpr auto is_nothrow_default_constructible = type_trait<std::is_nothrow_default_constructible>{};
-    constexpr auto is_copy_constructible = type_trait<std::is_copy_constructible>{};
-    constexpr auto is_trivially_copy_constructible = type_trait<std::is_trivially_copy_constructible>{};
-    constexpr auto is_nothrow_copy_constructible = type_trait<std::is_nothrow_copy_constructible>{};
-    constexpr auto is_move_constructible = type_trait<std::is_move_constructible>{};
-    constexpr auto is_trivially_move_constructible = type_trait<std::is_trivially_move_constructible>{};
-    constexpr auto is_nothrow_move_constructible = type_trait<std::is_nothrow_move_constructible>{};
-    constexpr auto is_copy_assignable = type_trait<std::is_copy_assignable>{};
-    constexpr auto is_trivially_copy_assignable = type_trait<std::is_trivially_copy_assignable>{};
-    constexpr auto is_nothrow_copy_assignable = type_trait<std::is_nothrow_copy_assignable>{};
-    constexpr auto is_move_assignable = type_trait<std::is_move_assignable>{};
-    constexpr auto is_trivially_move_assignable = type_trait<std::is_trivially_move_assignable>{};
-    constexpr auto is_nothrow_move_assignable = type_trait<std::is_nothrow_move_assignable>{};
-    constexpr auto is_destructible = type_trait<std::is_destructible>{};
-    constexpr auto is_trivially_destructible = type_trait<std::is_trivially_destructible>{};
-    constexpr auto is_nothrow_destructible = type_trait<std::is_nothrow_destructible>{};
-    constexpr auto is_swappable = type_trait<std::is_swappable>{};
-    constexpr auto is_nothrow_swappable = type_trait<std::is_nothrow_swappable>{};
-
-    constexpr auto has_unique_object_representations = type_trait<std::has_unique_object_representations>{};
-    constexpr auto has_virtual_destructor = type_trait<std::has_virtual_destructor>{};
-
-    template<class Other> constexpr auto is_assignable = type_trait<typename type_trait_partial_last<std::is_assignable, Other>::type>{};
-    template<class Other> constexpr auto is_trivially_assignable = type_trait<typename type_trait_partial_last<std::is_trivially_assignable, Other>::type>{};
-    template<class Other> constexpr auto is_nothrow_assignable = type_trait<typename type_trait_partial_last<std::is_nothrow_assignable, Other>::type>{};
-    template<class Other> constexpr auto is_assignable_to = type_trait<typename type_trait_partial_first<std::is_assignable, Other>::type>{};
-    template<class Other> constexpr auto is_trivially_assignable_to = type_trait<typename type_trait_partial_first<std::is_trivially_assignable, Other>::type>{};
-    template<class Other> constexpr auto is_nothrow_assignable_to = type_trait<typename type_trait_partial_first<std::is_nothrow_assignable, Other>::type>{};
-    template<class Other> constexpr auto is_swappable_with = type_trait<typename type_trait_partial_last<std::is_swappable_with, Other>::type>{};
-    template<class Other> constexpr auto is_nothrow_swappable_with = type_trait<typename type_trait_partial_last<std::is_nothrow_swappable_with, Other>::type>{};
-
-    template<class Other> constexpr auto is_same = type_trait<typename type_trait_partial_last<std::is_same, Other>::type>{};
-    template<class Other> constexpr auto is_base_of = type_trait<typename type_trait_partial_last<std::is_base_of, Other>::type>{};
-    template<class Other> constexpr auto is_derived_of = type_trait<typename type_trait_partial_first<std::is_base_of, Other>::type>{};
-    template<class Other> constexpr auto is_convertible_to = type_trait<typename type_trait_partial_last<std::is_convertible, Other>::type>{};
-    template<class Other> constexpr auto is_nothrow_convertible_to = type_trait<typename type_trait_partial_last<std::is_nothrow_convertible, Other>::type>{};
-    template<class Other> constexpr auto is_convertible_from = type_trait<typename type_trait_partial_first<std::is_convertible, Other>::type>{};
-    template<class Other> constexpr auto is_nothrow_convertible_from = type_trait<typename type_trait_partial_first<std::is_nothrow_convertible, Other>::type>{};
-
-    template<class ...Args> constexpr auto is_constructible = type_trait<typename type_trait_partial_last<std::is_constructible, Args...>::type>{};
-    template<class ...Args> constexpr auto is_trivially_constructible = type_trait<typename type_trait_partial_last<std::is_trivially_constructible, Args...>::type>{};
-    template<class ...Args> constexpr auto is_nothrow_constructible = type_trait<typename type_trait_partial_last<std::is_nothrow_constructible, Args...>::type>{};
-    template<class ...Args> constexpr auto is_invocable = type_trait<typename type_trait_partial_last<std::is_invocable, Args...>::type>{};
-    template<class ...Args> constexpr auto is_nothrow_invocable = type_trait<typename type_trait_partial_last<std::is_nothrow_invocable, Args...>::type>{};
-
-    template<template<class ...> class Ty>
-    struct is_specialization_impl {
-        template<class T> struct type {
-            constexpr static bool value = specialization<T, Ty>;
-        };
-    };
-
-    template<template<class ...> class Ty> constexpr auto is_specialization = type_trait<typename is_specialization_impl<Ty>::type>{};
-
     /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
      *                                                                                                         *
      *                                                                                                         *
@@ -2974,24 +2976,8 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
      *                                                                                                         *
      * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-    constexpr auto _0 = value_t<0ull>{};
-    constexpr auto _1 = value_t<1ull>{};
-    constexpr auto _2 = value_t<2ull>{};
-    constexpr auto _3 = value_t<3ull>{};
-    constexpr auto _4 = value_t<4ull>{};
-    constexpr auto _5 = value_t<5ull>{};
-    constexpr auto _6 = value_t<6ull>{};
-    constexpr auto _7 = value_t<7ull>{};
-    constexpr auto _8 = value_t<8ull>{};
-    constexpr auto _9 = value_t<9ull>{};
-
     template<class Ty, class Tuple>
     concept is_tuple_modifier = std::invocable<decay_t<Ty>, Tuple>;
-
-    template<class T, is_tuple_modifier<T> Ty>
-    constexpr decltype(auto) operator|(T&& tuple, Ty&& val) {
-        return std::forward<Ty>(val)(std::forward<T>(tuple));
-    }
 
     template<std::size_t I> struct get_v_impl {
         template<class ...Tys> 
@@ -3006,14 +2992,21 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         }
     };
 
-    template<std::size_t I> constexpr auto get_v = get_v_impl<I>{};
+    namespace tuples {
+        template<std::size_t I> constexpr auto get = get_v_impl<I>{};
+    
+        template<class T, is_tuple_modifier<T> Ty>
+        constexpr decltype(auto) operator|(T&& tuple, Ty&& val) {
+            return std::forward<Ty>(val)(std::forward<T>(tuple));
+        }
+    }
 
     template<std::size_t I> struct take_v_impl {
         template<class ...Tys, class Type
             = typename info<Tys...>::template take<I>::template as<std::tuple>>
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
             return sequence<I>([&]<std::size_t ...Is>{
-                return Type{ (tuple | get_v<Is>)... };
+                return Type{ (tuples::get<Is>(tuple))... };
             });
         }
     };
@@ -3023,16 +3016,21 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             = typename info<Tys...>::template drop<I>::template as<std::tuple>>
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
             return sequence<I, info<Tys...>::size>([&]<std::size_t ...Is>{
-                return Type{ (tuple | get_v<Is>)... };
+                return Type{ (tuples::get<Is>(tuple))... };
             });
         }
     };
+
+    namespace tuples {
+        template<std::size_t I> constexpr auto take = take_v_impl<I>{};
+        template<std::size_t I> constexpr auto drop = drop_v_impl<I>{};
+    }
 
     template<std::size_t I> struct last_v_impl {
         template<class ...Tys, class Type
             = typename info<Tys...>::template drop<info<Tys...>::size - I>::template as<std::tuple>>
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
-            return tuple | drop_v<info<Tys...>::size - I>;
+            return tuples::drop<info<Tys...>::size - I>(tuple);
         }
     };
 
@@ -3040,7 +3038,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         template<class ...Tys, class Type
             = typename info<Tys...>::template drop_last<I>::template as<std::tuple>>
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
-            return tuple | take_v<info<Tys...>::size - I>;
+            return tuples::take<info<Tys...>::size - I>(tuple);
         }
     };
 
@@ -3049,7 +3047,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             = typename info<Tys...>::template erase<I>::template as<std::tuple>>
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
             return iterate<generate_indices_v<0, info<Tys...>::size, I>>([&]<std::size_t ...Is>{
-                return Type{ (tuple | get_v<Is>)... };
+                return Type{ (tuples::get<Is>(tuple))... };
             });
         }
     };
@@ -3063,7 +3061,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             constexpr Type operator()(const std::tuple<Tys...>& tuple) const {
                 return[&]<std::size_t ...Is, std::size_t ...Ns, std::size_t ...Qs>
                     (std::index_sequence<Is...>, std::index_sequence<Ns...>, std::index_sequence<Qs...>) {
-                    return Type{ (tuple | get_v<Is>)..., (_data | get_v<Qs>)..., (tuple | get_v<I + Ns>)...};
+                    return Type{ (tuples::get<Is>(tuple))..., (tuples::get<Qs>(_data))..., (tuples::get<I + Ns>(tuple))...};
                 }(std::make_index_sequence<I>{}, std::make_index_sequence<info<Tys...>::size - I>{},
                     std::index_sequence_for<Args...>{});
             }
@@ -3075,13 +3073,18 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         }
     };
 
+    namespace tuples {
+        template<std::size_t I> constexpr auto erase = erase_v_impl<I>{};
+        template<std::size_t I> constexpr auto insert = insert_v_impl<I>{};
+    }
+
     template<std::size_t I> struct swap_v_impl {
         template<class Ty> struct result {
             Ty&& _data;
             template<class ...Tys, class Type
                 = typename info<Tys...>::template swap<I, decay_t<Ty>>::template as<std::tuple>>
             constexpr Type operator()(const std::tuple<Tys...>& tuple) const {
-                return tuple | erase_v<I> | insert_v<I>(std::forward<Ty>(_data));
+                return tuples::erase<I>(tuple) | tuples::insert<I>(std::forward<Ty>(_data));
             }
         };
 
@@ -3096,7 +3099,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             = typename info<Tys...>::template sub<A, B>::template as<std::tuple>>
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
             return iterate<generate_indices_v<A, B>>([&]<std::size_t ...Is>{
-                return Type{ (tuple | get_v<Is>)... };
+                return Type{ (tuples::get<Is>(tuple))... };
             });
         }
     };
@@ -3106,7 +3109,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             class Type = typename keep_indices_t<Indices, info<Tys...>>::template as<std::tuple>>
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
             return iterate<Indices>([&]<std::size_t ...Is>{
-                return Type{ (tuple | get_v<Is>)... };
+                return Type{ (tuples::get<Is>(tuple))... };
             });
         }
     };
@@ -3132,7 +3135,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             class Type = typename keep_indices_t<Indices, info<Tys...>>::template as<std::tuple>>
             constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
             return iterate<Indices>([&]<std::size_t ...Is>{
-                return Type{ (tuple | get_v<Is>)... };
+                return Type{ (tuples::get<Is>(tuple))... };
             });
         }
     };
@@ -3142,7 +3145,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             class Type = typename keep_indices_t<Indices, info<Tys...>>::template as<std::tuple>>
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
             return iterate<Indices>([&]<std::size_t ...Is>{
-                return Type{ (tuple | get_v<Is>)... };
+                return Type{ (tuples::get<Is>(tuple))... };
             });
         }
     };
@@ -3151,7 +3154,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         template<class ...Tys, class Type = std::tuple<typename info<Tys...>
             ::template element<Is>::type...>>
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
-            return Type{ (tuple | get_v<Is>)... };
+            return Type{ (tuples::get<Is>(tuple))... };
         }
     };
 
@@ -3160,7 +3163,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             class Type = typename keep_indices_t<Indices, info<Tys...>>::template as<std::tuple>>
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
             return iterate<Indices>([&]<std::size_t ...Is>{
-                return Type{ (tuple | get_v<Is>)... };
+                return Type{ (tuples::get<Is>(tuple))... };
             });
         }
     };
@@ -3174,7 +3177,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             constexpr Type operator()(const std::tuple<Tys...>& tuple) const {
                 return[&]<std::size_t ...Is, std::size_t ...Ns>
                     (std::index_sequence<Is...>, std::index_sequence<Ns...>) {
-                    return Type{ (tuple | get_v<Is>)..., (_data | get_v<Ns>)... };
+                    return Type{ (tuples::get<Is>(tuple))..., (tuples::get<Ns>(_data))... };
                 }(std::make_index_sequence<info<Tys...>::size>{},
                     std::index_sequence_for<Args...>{});
             }
@@ -3195,7 +3198,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
                 constexpr Type operator()(const std::tuple<Tys...>& tuple) const {
                 return[&]<std::size_t ...Is, std::size_t ...Ns>
                     (std::index_sequence<Is...>, std::index_sequence<Ns...>) {
-                    return Type{ (_data | get_v<Ns>)..., (tuple | get_v<Is>)... };
+                    return Type{ (tuples::get<Ns>(_data))..., (tuples::get<Is>(tuple))... };
                 }(std::make_index_sequence<info<Tys...>::size>{},
                     std::index_sequence_for<Args...>{});
             }
@@ -3212,7 +3215,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             first_indices_v<typename info<Tys...>::decay>, info<Tys...>>::template as<std::tuple>>
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
             return iterate<first_indices_v<typename info<Tys...>::decay>>([&]<std::size_t ...Is>{
-                return Type{ (tuple | get_v<Is>)... };
+                return Type{ (tuples::get<Is>(tuple))... };
             });
         }
     };
@@ -3222,7 +3225,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
             return sequence<0, info<Tys...>::size>([&]<std::size_t ...Is>{
                 constexpr std::size_t size = info<Tys...>::size;
-                return Type{ (tuple | get_v<size - Is - 1>)... };
+                return Type{ (tuples::get<size - Is - 1>(tuple))... };
             });
         }
     };
@@ -3231,7 +3234,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         template<class ...Tys>
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const {
             return iterate<info<Tys...>::decay::template indices_filter<Filter>>([&]<std::size_t ...Is>{
-                return std::tuple{ (tuple | get_v<Is>)... };
+                return std::tuple{ (tuples::get<Is>(tuple))... };
             });
         }
     };
@@ -3242,7 +3245,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             template<class ...Tys>
             constexpr decltype(auto) operator()(const std::tuple<Tys...>& tuple) const {
                 return sequence<0, info<Tys...>::size>([&]<std::size_t ...Is>() -> decltype(auto) {
-                    return std::forward<Functor>(_functor)((tuple | get_v<Is>)...);
+                    return std::forward<Functor>(_functor)((tuples::get<Is>(tuple))...);
                 });
             }
         };
@@ -3253,25 +3256,23 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         }
     };
 
-    template<std::size_t I> constexpr auto take_v = take_v_impl<I>{};
-    template<std::size_t I> constexpr auto drop_v = drop_v_impl<I>{};
-    template<std::size_t I> constexpr auto last_v = last_v_impl<I>{};
-    template<std::size_t I> constexpr auto drop_last_v = drop_last_v_impl<I>{};
-    template<std::size_t I> constexpr auto erase_v = erase_v_impl<I>{};
-    template<std::size_t I> constexpr auto insert_v = insert_v_impl<I>{};
-    template<std::size_t I> constexpr auto swap_v = swap_v_impl<I>{};
-    template<std::size_t A, std::size_t B> constexpr auto sub_v = sub_v_impl<A, B>{};
-    template<class ...Tys> constexpr auto remove_v = remove_v_impl<Tys...>{};
-    template<class ...Tys> constexpr auto remove_raw_v = remove_raw_v_impl<Tys...>{};
-    template<class ...Tys> constexpr auto keep_v = keep_v_impl<Tys...>{};
-    template<class ...Tys> constexpr auto keep_raw_v = keep_raw_v_impl<Tys...>{};
-    template<std::size_t ...Is> constexpr auto keep_indices_v = keep_indices_v_impl<Is...>{};
-    constexpr auto append_v = append_v_impl{};
-    constexpr auto prepend_v = prepend_v_impl{};
-    constexpr auto unique_v = unique_v_impl{};
-    constexpr auto reverse_v = reverse_v_impl{};
-    template<auto Filter> constexpr auto filter_v = filter_v_impl<Filter>{};
-    constexpr auto call_v = call_v_impl{};
+    namespace tuples {
+        template<std::size_t I> constexpr auto drop_last = drop_last_v_impl<I>{};
+        template<std::size_t I> constexpr auto last = last_v_impl<I>{};
+        template<std::size_t I> constexpr auto swap = swap_v_impl<I>{};
+        template<std::size_t A, std::size_t B> constexpr auto sub = sub_v_impl<A, B>{};
+        template<class ...Tys> constexpr auto remove = remove_v_impl<Tys...>{};
+        template<class ...Tys> constexpr auto remove_raw = remove_raw_v_impl<Tys...>{};
+        template<class ...Tys> constexpr auto keep = keep_v_impl<Tys...>{};
+        template<class ...Tys> constexpr auto keep_raw = keep_raw_v_impl<Tys...>{};
+        template<std::size_t ...Is> constexpr auto keep_indices = keep_indices_v_impl<Is...>{};
+        constexpr auto append = append_v_impl{};
+        constexpr auto prepend = prepend_v_impl{};
+        constexpr auto unique = unique_v_impl{};
+        constexpr auto reverse = reverse_v_impl{};
+        template<auto Filter> constexpr auto filter = filter_v_impl<Filter>{};
+        constexpr auto call = call_v_impl{};
+    }
 
     /**
      * Helper for dealing with the actual values in a template pack.
