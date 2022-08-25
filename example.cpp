@@ -25,9 +25,16 @@ int main() {
 
     auto v = lc[(x, y, z) | x <- a, x % 2 == 0, y <- b, x > y, z <- c, z == x + y];
 
+    auto aeoinf = lc[(x, y) | x <- a, y <- b, brk <<= y == 4];
+
+    auto nae = *aeoinf.begin();
+
+    for (auto [a, b] : aeoinf) {
+        std::cout << a << ", " << b << "\n";
+    }
+
     for (auto [a, b, c] : v) {
         std::cout << a << ", " << b << ", " << c << "\n";
-        a = 1;
     }
 
     return 0;

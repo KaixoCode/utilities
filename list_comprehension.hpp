@@ -178,11 +178,11 @@ constexpr auto operator OP(A&& a) {                                             
     constexpr auto op_lambda = []<class Q> (Q&& q) -> decltype(auto) { return OP std::forward<Q>(q); }; \
     return combine_parts_t<op_lambda, A>{ std::forward<A>(a) };                                         \
 }
-    KAIXO_EOP(+); KAIXO_EOP(<= ); KAIXO_EOP(|| ); KAIXO_EOP(|= );  KAIXO_EOP(/ ); KAIXO_EOP(^);
-    KAIXO_EOP(-); KAIXO_EOP(<< ); KAIXO_EOP(+= ); KAIXO_EOP(&= );  KAIXO_EOP(< ); KAIXO_EOP(->*);
-    KAIXO_EOP(*); KAIXO_EOP(>> ); KAIXO_EOP(-= ); KAIXO_EOP(^= );  KAIXO_EOP(> ); KAIXO_EOP(!= );
-    KAIXO_EOP(%); KAIXO_EOP(>= ); KAIXO_EOP(*= ); KAIXO_EOP(%= );  KAIXO_EOP(| ); KAIXO_EOP(>>= );
-    KAIXO_EOP(&); KAIXO_EOP(== ); KAIXO_EOP(/= ); KAIXO_EOP(<<= ); KAIXO_EOP(&&); KAIXO_EOP(<=> );
+    KAIXO_EOP(+); KAIXO_EOP(<= ); KAIXO_EOP(|| ); KAIXO_EOP(/ ); 
+    KAIXO_EOP(-); KAIXO_EOP(<< ); KAIXO_EOP(< );  KAIXO_EOP(->*);
+    KAIXO_EOP(*); KAIXO_EOP(>> ); KAIXO_EOP(> );  KAIXO_EOP(!= );
+    KAIXO_EOP(%); KAIXO_EOP(| );  KAIXO_EOP(^);
+    KAIXO_EOP(&); KAIXO_EOP(== ); KAIXO_EOP(&&); KAIXO_EOP(<=> );
     KAIXO_UOP(-); KAIXO_UOP(+); KAIXO_UOP(--); KAIXO_UOP(++); KAIXO_UOP(~); KAIXO_UOP(!); KAIXO_UOP(*);
 #undef KAIXO_EOP
 #undef KAIXO_UOP
@@ -396,6 +396,84 @@ constexpr auto operator OP(A&& a) {                                             
                         = get_recursive<Is, size>(val)...);
                 });
             }), lc.defined_vars // Copy over the vars
+        };
+    }
+
+    /**
+     * Expression that's linked to a variable.
+     * @tparam A variable
+     * @tparam B expression
+     */
+    template<is_var A, is_expression B>
+    struct named_expression : B {
+        using disable_expression = void;
+        using var = A;
+    };
+    template<class A> concept is_named_expression = specialization<A, named_expression>;
+
+    template<is_var A, is_expression B>
+    constexpr auto operator<<=(const A&, B&& expr) {
+        return named_expression<A, B>{ std::forward<B>(expr) };
+    }
+
+    template<is_var A, is_var B>
+    constexpr auto operator<<=(const A&, const B&) {
+        return named_expression<A, expression<B>>{ expression<B>{} };
+    }
+
+    /**
+     * Add an alias to a comprehension construct.
+     * @param lc the comprehension construct
+     * @param alias expression linked to a var
+     * @return comprehension construct with named expression
+     */
+    template<is_comprehension L, is_named_expression B>
+    constexpr auto operator,(L&& lc, B&& alias) {
+        return _comprehension_construct{
+            std::move(lc.transform), // Just move the final transform
+            std::views::transform(std::move(lc.range),
+            [alias = alias]<class Ty>(Ty && val) {
+                constexpr std::size_t size = L::vars::size;
+                // Loop over the vars in the construct
+                return std::tuple(std::forward<Ty>(val), sequence<size>([&]<std::size_t ...Is>{
+                    return alias(typename L::vars::template element<Is>::type{}
+                        = get_recursive<Is, size>(val)...);
+                }));
+            }),
+            // Also append the range's linked variable.
+            typename L::vars::template append<decay_t<typename B::var>>{}
+        };
+    }
+
+    constexpr struct break_struct {} brk;
+    template<is_expression A>
+    struct breaking_condition : A {};
+    template<class A> concept is_breaking_condition = specialization<A, breaking_condition>;
+
+    template<is_expression B>
+    constexpr auto operator<<=(const break_struct&, B&& expr) {
+        return breaking_condition<B>{ std::forward<B>(expr) };
+    }
+
+    /**
+     * Add a breaking condition
+     * @param lc the comprehension construct
+     * @param b breaking condition
+     * @return comprehension construct with breaking condition
+     */
+    template<is_comprehension L, is_breaking_condition B>
+    constexpr auto operator,(L&& lc, B&& b) {
+        return _comprehension_construct{
+            std::move(lc.transform), // Just move the final transform
+            std::views::take_while(std::move(lc.range),
+            [condition = b]<class Ty>(Ty && val) -> bool {
+                constexpr std::size_t size = L::vars::size;
+                // Loop over the vars in the construct
+                return !sequence<size>([&]<std::size_t ...Is>{
+                    return condition(typename L::vars::template element<Is>::type{}
+                        = get_recursive<Is, size>(val)...);
+                });
+            }), lc.defined_vars
         };
     }
 
