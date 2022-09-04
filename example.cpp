@@ -9,32 +9,28 @@
 
 #include <functional>
 
-#include "list_comprehension.hpp"
+#include "type_utils.hpp"
 
-using namespace kaixo;
+template<class Tpl, class Lmb>
+constexpr auto visit(std::size_t index, Tpl&& tuple, Lmb&& lambda) {
+    using namespace kaixo;
+    return generate_template_switch<as_info<decay_t<Tpl>>::size>([&]<std::size_t I>{
+        return std::forward<Lmb>(lambda)(std::get<I>(std::forward<Tpl>(tuple)));
+    })(index);
+}
+
 
 int main() {
 
-    std::vector<int> a{ 1, 2, 3, 4, 5, 6 };
-    std::vector<int> b{ 1, 2, 3, 4, 5, 6 };
-    std::vector<int> c{ 1, 2, 3, 4, 5, 6 };
+    std::tuple<int, double, char> vals{ 1, 2, 3 };
 
-    constexpr var<"x"> x;
-    constexpr var<"y"> y;
-    constexpr var<"z"> z;
+    while (true) {
+        int index = 0;
+        std::cin >> index;
 
-    auto v = lc[(x, y, z) | x <- a, x % 2 == 0, y <- b, x > y, z <- c, z == x + y];
-
-    auto aeoinf = lc[(x, y) | x <- a, y <- b, brk <<= y == 4];
-
-    auto nae = *aeoinf.begin();
-
-    for (auto [a, b] : aeoinf) {
-        std::cout << a << ", " << b << "\n";
-    }
-
-    for (auto [a, b, c] : v) {
-        std::cout << a << ", " << b << ", " << c << "\n";
+        visit(index, vals, [](auto v) {
+            std::cout << "type: " << typeid(v).name() << "\n";
+        });
     }
 
     return 0;
