@@ -8,9 +8,9 @@ function(make_includable name input_file output_file)
         COMMAND "${utilities_SOURCE_DIR}/json_to_hpp.exe" ${name} ${input_file} ${output_file}
         WORKING_DIRECTORY "${utilities_SOURCE_DIR}"
     )
-endfunction(make_includable) 
+endfunction(make_includable)
 
-make_includable("Data" "${utilities_SOURCE_DIR}/assets/data.json" "${CMAKE_CURRENT_BINARY_DIR}/data.json")
+make_includable("Data" "${utilities_SOURCE_DIR}/assets/data.json" "${utilities_SOURCE_DIR}/generated/data.json")
 
 include_directories(
   "${utilities_SOURCE_DIR}/libs"
@@ -52,7 +52,7 @@ set_target_properties(utilities PROPERTIES LINKER_LANGUAGE CXX)
 
 add_executable(utilities_example
   "${utilities_SOURCE_DIR}/example.cpp"
-  "${CMAKE_CURRENT_BINARY_DIR}/data.json"
+  "${utilities_SOURCE_DIR}/generated/data.json"
 )
 
 target_link_libraries(utilities_example

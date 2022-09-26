@@ -420,28 +420,32 @@ std::string jsonToCode(const std::string& name, const Json& json, int indent = 0
 #include <fstream>
 #include <filesystem>
 
-#include "bin/data.json"
+#include "generated/data.json"
 
-int main(int argc, char* argv[]) {
-    if (argc != 4) return -1;
-
-    std::string name = argv[1];
-    std::filesystem::path input = argv[2];
-    std::filesystem::path output = argv[3];
-    
-    input = std::filesystem::absolute(input);
-    output = std::filesystem::absolute(output);
-
-    std::ifstream _in{ input };
-    std::ofstream _out{ output };
-
-    std::string _json{ std::istreambuf_iterator<char>{ _in }, std::istreambuf_iterator<char>{} };
-
-    auto _res = parseJson(_json);
-    if (_res) {
-        std::string _str = jsonToCode(name, _res.value());
-        _out << _str;
-    }
-
-    return 0;
+int main() {
+    Data.name;
 }
+
+//int main(int argc, char* argv[]) {
+//    if (argc != 4) return -1;
+//
+//    std::string name = argv[1];
+//    std::filesystem::path input = argv[2];
+//    std::filesystem::path output = argv[3];
+//    
+//    input = std::filesystem::absolute(input);
+//    output = std::filesystem::absolute(output);
+//
+//    std::ifstream _in{ input };
+//    std::ofstream _out{ output };
+//
+//    std::string _json{ std::istreambuf_iterator<char>{ _in }, std::istreambuf_iterator<char>{} };
+//
+//    auto _res = parseJson(_json);
+//    if (_res) {
+//        std::string _str = jsonToCode(name, _res.value());
+//        _out << _str;
+//    }
+//
+//    return 0;
+//}
