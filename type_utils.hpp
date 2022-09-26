@@ -1632,8 +1632,7 @@ namespace kaixo {
 
     template<class L>
     struct wrap_filter_object { using type = filter_object_wrapper<L>; };
-    template<class L> requires
-        requires (L) { { L::template value<int> } -> convertible_to<bool>; }
+    template<class L> requires is_type_trait<L>
     struct wrap_filter_object<L> { using type = L; };
 
 
@@ -1904,42 +1903,227 @@ namespace kaixo {
     using conditional_transform_t = typename conditional_transform<Filter, T, Ty>::type;
 
     /**
+     * Allows for a transform inside a filter. Used like:
+     *   with<transform>(filter)
+     */
+    template<template<class...> class Ty> struct with_impl {
+        template<class Trait> struct trait {
+            template<class...Tys> struct type {
+                constexpr static bool value = filter_object{ Trait{} }.template call<0, Ty<Tys...>>();
+            };
+        };
+
+        template<class Ty> constexpr auto operator()(Ty) const 
+            -> kaixo::type_trait<typename trait<Ty>::type> { return {}; }
+    };
+
+    template<template<class...> class Ty>
+    constexpr auto with = with_impl<Ty>{};
+
+    // Test if has certain static member
+    namespace has {
+        template<class Ty> concept type_v = requires (Ty) { typename Ty::type; };
+        template<class Ty> concept value_v = requires (Ty) { Ty::value; };
+        template<class Ty> concept size_v = requires (Ty) { Ty::size; };
+        template<class Ty> concept off_type_v = requires (Ty) { typename Ty::off_type; };
+        template<class Ty> concept state_type_v = requires (Ty) { typename Ty::state_type; };
+        template<class Ty> concept int_type_v = requires (Ty) { typename Ty::int_type; };
+        template<class Ty> concept pos_type_v = requires (Ty) { typename Ty::pos_type; };
+        template<class Ty> concept char_type_v = requires (Ty) { typename Ty::char_type; };
+        template<class Ty> concept comparison_category_v = requires (Ty) { typename Ty::comparison_category; };
+        template<class Ty> concept traits_type_v = requires (Ty) { typename Ty::traits_type; };
+        template<class Ty> concept string_type_v = requires (Ty) { typename Ty::string_type; };
+        template<class Ty> concept format_v = requires (Ty) { typename Ty::format; };
+        template<class Ty> concept iterator_category_v = requires (Ty) { typename Ty::iterator_category; };
+        template<class Ty> concept iterator_concept_v = requires (Ty) { typename Ty::iterator_concept; };
+        template<class Ty> concept key_type_v = requires (Ty) { typename Ty::key_type; };
+        template<class Ty> concept mapped_type_v = requires (Ty) { typename Ty::mapped_type; };
+        template<class Ty> concept key_compare_v = requires (Ty) { typename Ty::key_compare; };
+        template<class Ty> concept value_compare_v = requires (Ty) { typename Ty::value_compare; };
+        template<class Ty> concept node_type_v = requires (Ty) { typename Ty::node_type; };
+        template<class Ty> concept insert_return_type_v = requires (Ty) { typename Ty::insert_return_type; };
+        template<class Ty> concept value_type_v = requires (Ty) { typename Ty::value_type; };
+        template<class Ty> concept allocator_type_v = requires (Ty) { typename Ty::allocator_type; };
+        template<class Ty> concept size_type_v = requires (Ty) { typename Ty::size_type; };
+        template<class Ty> concept difference_type_v = requires (Ty) { typename Ty::difference_type; };
+        template<class Ty> concept reference_v = requires (Ty) { typename Ty::reference; };
+        template<class Ty> concept const_reference_v = requires (Ty) { typename Ty::const_reference; };
+        template<class Ty> concept pointer_v = requires (Ty) { typename Ty::pointer; };
+        template<class Ty> concept const_pointer_v = requires (Ty) { typename Ty::const_pointer; };
+        template<class Ty> concept iterator_v = requires (Ty) { typename Ty::iterator; };
+        template<class Ty> concept const_iterator_v = requires (Ty) { typename Ty::const_iterator; };
+        template<class Ty> concept reverse_iterator_v = requires (Ty) { typename Ty::reverse_iterator; };
+        template<class Ty> concept const_reverse_iterator_v = requires (Ty) { typename Ty::const_reverse_iterator; };
+
+        template<class Ty> struct type_impl : std::bool_constant<type_v<Ty>> {};
+        template<class Ty> struct value_impl : std::bool_constant<value_v<Ty>> {};
+        template<class Ty> struct size_impl : std::bool_constant<size_v<Ty>> {};
+        template<class Ty> struct off_type_impl : std::bool_constant<off_type_v<Ty>> {};
+        template<class Ty> struct state_type_impl : std::bool_constant<state_type_v<Ty>> {};
+        template<class Ty> struct int_type_impl : std::bool_constant<int_type_v<Ty>> {};
+        template<class Ty> struct pos_type_impl : std::bool_constant<pos_type_v<Ty>> {};
+        template<class Ty> struct char_type_impl : std::bool_constant<char_type_v<Ty>> {};
+        template<class Ty> struct comparison_category_impl : std::bool_constant<comparison_category_v<Ty>> {};
+        template<class Ty> struct traits_type_impl : std::bool_constant<traits_type_v<Ty>> {};
+        template<class Ty> struct string_type_impl : std::bool_constant<string_type_v<Ty>> {};
+        template<class Ty> struct format_impl : std::bool_constant<format_v<Ty>> {};
+        template<class Ty> struct iterator_category_impl : std::bool_constant<iterator_category_v<Ty>> {};
+        template<class Ty> struct iterator_concept_impl : std::bool_constant<iterator_concept_v<Ty>> {};
+        template<class Ty> struct key_type_impl : std::bool_constant<key_type_v<Ty>> {};
+        template<class Ty> struct mapped_type_impl : std::bool_constant<mapped_type_v<Ty>> {};
+        template<class Ty> struct key_compare_impl : std::bool_constant<key_compare_v<Ty>> {};
+        template<class Ty> struct value_compare_impl : std::bool_constant<value_compare_v<Ty>> {};
+        template<class Ty> struct node_type_impl : std::bool_constant<node_type_v<Ty>> {};
+        template<class Ty> struct insert_return_type_impl : std::bool_constant<insert_return_type_v<Ty>> {};
+        template<class Ty> struct value_type_impl : std::bool_constant<value_type_v<Ty>> {};
+        template<class Ty> struct allocator_type_impl : std::bool_constant<allocator_type_v<Ty>> {};
+        template<class Ty> struct size_type_impl : std::bool_constant<size_type_v<Ty>> {};
+        template<class Ty> struct difference_type_impl : std::bool_constant<difference_type_v<Ty>> {};
+        template<class Ty> struct reference_impl : std::bool_constant<reference_v<Ty>> {};
+        template<class Ty> struct const_reference_impl : std::bool_constant<const_reference_v<Ty>> {};
+        template<class Ty> struct pointer_impl : std::bool_constant<pointer_v<Ty>> {};
+        template<class Ty> struct const_pointer_impl : std::bool_constant<const_pointer_v<Ty>> {};
+        template<class Ty> struct iterator_impl : std::bool_constant<iterator_v<Ty>> {};
+        template<class Ty> struct const_iterator_impl : std::bool_constant<const_iterator_v<Ty>> {};
+        template<class Ty> struct reverse_iterator_impl : std::bool_constant<reverse_iterator_v<Ty>> {};
+        template<class Ty> struct const_reverse_iterator_impl : std::bool_constant<const_reverse_iterator_v<Ty>> {};
+
+        constexpr auto type = type_trait<type_impl>{};
+        constexpr auto value = type_trait<value_impl>{};
+        constexpr auto size = type_trait<size_impl>{};
+        constexpr auto off_type = type_trait<off_type_impl>{};
+        constexpr auto state_type = type_trait<state_type_impl>{};
+        constexpr auto int_type = type_trait<int_type_impl>{};
+        constexpr auto pos_type = type_trait<pos_type_impl>{};
+        constexpr auto char_type = type_trait<char_type_impl>{};
+        constexpr auto comparison_category = type_trait<comparison_category_impl>{};
+        constexpr auto traits_type = type_trait<traits_type_impl>{};
+        constexpr auto string_type = type_trait<string_type_impl>{};
+        constexpr auto format = type_trait<format_impl>{};
+        constexpr auto iterator_category = type_trait<iterator_category_impl>{};
+        constexpr auto iterator_concept = type_trait<iterator_concept_impl>{};
+        constexpr auto key_type = type_trait<key_type_impl>{};
+        constexpr auto mapped_type = type_trait<mapped_type_impl>{};
+        constexpr auto key_compare = type_trait<key_compare_impl>{};
+        constexpr auto value_compare = type_trait<value_compare_impl>{};
+        constexpr auto node_type = type_trait<node_type_impl>{};
+        constexpr auto insert_return_type = type_trait<insert_return_type_impl>{};
+        constexpr auto value_type = type_trait<value_type_impl>{};
+        constexpr auto allocator_type = type_trait<allocator_type_impl>{};
+        constexpr auto size_type = type_trait<size_type_impl>{};
+        constexpr auto difference_type = type_trait<difference_type_impl>{};
+        constexpr auto reference = type_trait<reference_impl>{};
+        constexpr auto const_reference = type_trait<const_reference_impl>{};
+        constexpr auto pointer = type_trait<pointer_impl>{};
+        constexpr auto const_pointer = type_trait<const_pointer_impl>{};
+        constexpr auto iterator = type_trait<iterator_impl>{};
+        constexpr auto const_iterator = type_trait<const_iterator_impl>{};
+        constexpr auto reverse_iterator = type_trait<reverse_iterator_impl>{};
+        constexpr auto const_reverse_iterator = type_trait<const_reverse_iterator_impl>{};
+    }
+
+    /**
      * Grab a certain member in a transform operation.
      * Most member types in the standard are here.
      */
     namespace grab {
-        template<class Ty> using type = typename Ty::type;
-        template<class Ty> using value = value_t<Ty::value>;
-        template<class Ty> using size = value_t<Ty::size>;
-        template<class Ty> using off_type = typename Ty::off_type;
-        template<class Ty> using state_type = typename Ty::state_type;
-        template<class Ty> using int_type = typename Ty::int_type;
-        template<class Ty> using pos_type = typename Ty::pos_type;
-        template<class Ty> using char_type = typename Ty::char_type;
-        template<class Ty> using comparison_category = typename Ty::comparison_category;
-        template<class Ty> using traits_type = typename Ty::traits_type;
-        template<class Ty> using string_type = typename Ty::string_type;
-        template<class Ty> using format = typename Ty::format;
-        template<class Ty> using iterator_category = typename Ty::iterator_category;
-        template<class Ty> using iterator_concept = typename Ty::iterator_concept;
-        template<class Ty> using key_type = typename Ty::key_type;
-        template<class Ty> using mapped_type = typename Ty::mapped_type;
-        template<class Ty> using key_compare = typename Ty::key_compare;
-        template<class Ty> using value_compare = typename Ty::value_compare;
-        template<class Ty> using node_type = typename Ty::node_type;
-        template<class Ty> using insert_return_type = typename Ty::insert_return_type;
-        template<class Ty> using value_type = typename Ty::value_type;
-        template<class Ty> using allocator_type = typename Ty::allocator_type;
-        template<class Ty> using size_type = typename Ty::size_type;
-        template<class Ty> using difference_type = typename Ty::difference_type;
-        template<class Ty> using reference = typename Ty::reference;
-        template<class Ty> using const_reference = typename Ty::const_reference;
-        template<class Ty> using pointer = typename Ty::pointer;
-        template<class Ty> using const_pointer = typename Ty::const_pointer;
-        template<class Ty> using iterator = typename Ty::iterator;
-        template<class Ty> using const_iterator = typename Ty::const_iterator;
-        template<class Ty> using reverse_iterator = typename Ty::reverse_iterator;
-        template<class Ty> using const_reverse_iterator = typename Ty::const_reverse_iterator;
+        template<class Ty> struct type_impl { using type = Ty; }; 
+        template<has::type_v Ty> struct type_impl<Ty> { using type = typename Ty::type; };
+        template<class Ty> struct value_impl { using type = Ty; }; 
+        template<has::value_v Ty> struct value_impl<Ty> { using type = value_t<Ty::value>; };
+        template<class Ty> struct size_impl { using type = Ty; }; 
+        template<has::size_v Ty> struct size_impl<Ty> { using type = value_t<Ty::size>; };
+        template<class Ty> struct off_type_impl { using type = Ty; }; 
+        template<has::off_type_v Ty> struct off_type_impl<Ty> { using type = typename Ty::off_type; };
+        template<class Ty> struct state_type_impl { using type = Ty; }; 
+        template<has::state_type_v Ty> struct state_type_impl<Ty> { using type = typename Ty::state_type; };
+        template<class Ty> struct int_type_impl { using type = Ty; }; 
+        template<has::int_type_v Ty> struct int_type_impl<Ty> { using type = typename Ty::int_type; };
+        template<class Ty> struct pos_type_impl { using type = Ty; }; 
+        template<has::pos_type_v Ty> struct pos_type_impl<Ty> { using type = typename Ty::pos_type; };
+        template<class Ty> struct char_type_impl { using type = Ty; }; 
+        template<has::char_type_v Ty> struct char_type_impl<Ty> { using type = typename Ty::char_type; };
+        template<class Ty> struct comparison_category_impl { using type = Ty; }; 
+        template<has::comparison_category_v Ty> struct comparison_category_impl<Ty> { using type = typename Ty::comparison_category; };
+        template<class Ty> struct traits_type_impl { using type = Ty; }; 
+        template<has::traits_type_v Ty> struct traits_type_impl<Ty> { using type = typename Ty::traits_type; };
+        template<class Ty> struct string_type_impl { using type = Ty; }; 
+        template<has::string_type_v Ty> struct string_type_impl<Ty> { using type = typename Ty::string_type; };
+        template<class Ty> struct format_impl { using type = Ty; }; 
+        template<has::format_v Ty> struct format_impl<Ty> { using type = typename Ty::format; };
+        template<class Ty> struct iterator_category_impl { using type = Ty; }; 
+        template<has::iterator_category_v Ty> struct iterator_category_impl<Ty> { using type = typename Ty::iterator_category; };
+        template<class Ty> struct iterator_concept_impl { using type = Ty; }; 
+        template<has::iterator_concept_v Ty> struct iterator_concept_impl<Ty> { using type = typename Ty::iterator_concept; };
+        template<class Ty> struct key_type_impl { using type = Ty; }; 
+        template<has::key_type_v Ty> struct key_type_impl<Ty> { using type = typename Ty::key_type; };
+        template<class Ty> struct mapped_type_impl { using type = Ty; }; 
+        template<has::mapped_type_v Ty> struct mapped_type_impl<Ty> { using type = typename Ty::mapped_type; };
+        template<class Ty> struct key_compare_impl { using type = Ty; }; 
+        template<has::key_compare_v Ty> struct key_compare_impl<Ty> { using type = typename Ty::key_compare; };
+        template<class Ty> struct value_compare_impl { using type = Ty; }; 
+        template<has::value_compare_v Ty> struct value_compare_impl<Ty> { using type = typename Ty::value_compare; };
+        template<class Ty> struct node_type_impl { using type = Ty; }; 
+        template<has::node_type_v Ty> struct node_type_impl<Ty> { using type = typename Ty::node_type; };
+        template<class Ty> struct insert_return_type_impl { using type = Ty; }; 
+        template<has::insert_return_type_v Ty> struct insert_return_type_impl<Ty> { using type = typename Ty::insert_return_type; };
+        template<class Ty> struct value_type_impl { using type = Ty; }; 
+        template<has::value_type_v Ty> struct value_type_impl<Ty> { using type = typename Ty::value_type; };
+        template<class Ty> struct allocator_type_impl { using type = Ty; }; 
+        template<has::allocator_type_v Ty> struct allocator_type_impl<Ty> { using type = typename Ty::allocator_type; };
+        template<class Ty> struct size_type_impl { using type = Ty; }; 
+        template<has::size_type_v Ty> struct size_type_impl<Ty> { using type = typename Ty::size_type; };
+        template<class Ty> struct difference_type_impl { using type = Ty; }; 
+        template<has::difference_type_v Ty> struct difference_type_impl<Ty> { using type = typename Ty::difference_type; };
+        template<class Ty> struct reference_impl { using type = Ty; }; 
+        template<has::reference_v Ty> struct reference_impl<Ty> { using type = typename Ty::reference; };
+        template<class Ty> struct const_reference_impl { using type = Ty; }; 
+        template<has::const_reference_v Ty> struct const_reference_impl<Ty> { using type = typename Ty::const_reference; };
+        template<class Ty> struct pointer_impl { using type = Ty; }; 
+        template<has::pointer_v Ty> struct pointer_impl<Ty> { using type = typename Ty::pointer; };
+        template<class Ty> struct const_pointer_impl { using type = Ty; }; 
+        template<has::const_pointer_v Ty> struct const_pointer_impl<Ty> { using type = typename Ty::const_pointer; };
+        template<class Ty> struct iterator_impl { using type = Ty; }; 
+        template<has::iterator_v Ty> struct iterator_impl<Ty> { using type = typename Ty::iterator; };
+        template<class Ty> struct const_iterator_impl { using type = Ty; }; 
+        template<has::const_iterator_v Ty> struct const_iterator_impl<Ty> { using type = typename Ty::const_iterator; };
+        template<class Ty> struct reverse_iterator_impl { using type = Ty; }; 
+        template<has::reverse_iterator_v Ty> struct reverse_iterator_impl<Ty> { using type = typename Ty::reverse_iterator; };
+        template<class Ty> struct const_reverse_iterator_impl { using type = Ty; }; 
+        template<has::const_reverse_iterator_v Ty> struct const_reverse_iterator_impl<Ty> { using type = typename Ty::const_reverse_iterator; };
+
+        template<class Ty> using type = type_impl<Ty>::type;
+        template<class Ty> using value = value_impl<Ty>::type;
+        template<class Ty> using size = size_impl<Ty>::type;
+        template<class Ty> using off_type = off_type_impl<Ty>::type;
+        template<class Ty> using state_type = state_type_impl<Ty>::type;
+        template<class Ty> using int_type = int_type_impl<Ty>::type;
+        template<class Ty> using pos_type = pos_type_impl<Ty>::type;
+        template<class Ty> using char_type = char_type_impl<Ty>::type;
+        template<class Ty> using comparison_category = comparison_category_impl<Ty>::type;
+        template<class Ty> using traits_type = traits_type_impl<Ty>::type;
+        template<class Ty> using string_type = string_type_impl<Ty>::type;
+        template<class Ty> using format = format_impl<Ty>::type;
+        template<class Ty> using iterator_category = iterator_category_impl<Ty>::type;
+        template<class Ty> using iterator_concept = iterator_concept_impl<Ty>::type;
+        template<class Ty> using key_type = key_type_impl<Ty>::type;
+        template<class Ty> using mapped_type = mapped_type_impl<Ty>::type;
+        template<class Ty> using key_compare = key_compare_impl<Ty>::type;
+        template<class Ty> using value_compare = value_compare_impl<Ty>::type;
+        template<class Ty> using node_type = node_type_impl<Ty>::type;
+        template<class Ty> using insert_return_type = insert_return_type_impl<Ty>::type;
+        template<class Ty> using value_type = value_type_impl<Ty>::type;
+        template<class Ty> using allocator_type = allocator_type_impl<Ty>::type;
+        template<class Ty> using size_type = size_type_impl<Ty>::type;
+        template<class Ty> using difference_type = difference_type_impl<Ty>::type;
+        template<class Ty> using reference = reference_impl<Ty>::type;
+        template<class Ty> using const_reference = const_reference_impl<Ty>::type;
+        template<class Ty> using pointer = pointer_impl<Ty>::type;
+        template<class Ty> using const_pointer = const_pointer_impl<Ty>::type;
+        template<class Ty> using iterator = iterator_impl<Ty>::type;
+        template<class Ty> using const_iterator = const_iterator_impl<Ty>::type;
+        template<class Ty> using reverse_iterator = reverse_iterator_impl<Ty>::type;
+        template<class Ty> using const_reverse_iterator = const_reverse_iterator_impl<Ty>::type;
     }
 
     /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
@@ -2104,6 +2288,11 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             ((sequence<Ns>(try_one) ? (res = Ns, true) : false) || ...);
             return res;
         });
+    };
+
+    template<class Ty, std::size_t N>
+    struct struct_size<std::array<Ty, N>> {
+        constexpr static std::size_t value = N;
     };
 
     /**
@@ -2789,7 +2978,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             return lambda.operator()<Tys...>();
         };
 
-        template<auto Filter> struct iff {
+        template<auto Filter> struct when {
             template<template<class...> class T> 
             using transform = conditional_transform_t<Filter, T, info>;
         };
@@ -2994,11 +3183,11 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
 
     namespace tuples {
         template<std::size_t I> constexpr auto get = get_v_impl<I>{};
-    
-        template<class T, is_tuple_modifier<T> Ty>
-        constexpr decltype(auto) operator|(T&& tuple, Ty&& val) {
-            return std::forward<Ty>(val)(std::forward<T>(tuple));
-        }
+    }
+
+    template<class T, is_tuple_modifier<T> Ty>
+    constexpr decltype(auto) operator|(T&& tuple, Ty&& val) {
+        return std::forward<Ty>(val)(std::forward<T>(tuple));
     }
 
     template<std::size_t I> struct take_v_impl {
