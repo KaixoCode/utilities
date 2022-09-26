@@ -3,14 +3,23 @@ project (utilities)
 
 set (CMAKE_CXX_STANDARD 23)
 
-function(make_includable name input_file output_file)
+function(watch)
+    set_property(
+            DIRECTORY
+            APPEND
+            PROPERTY CMAKE_CONFIGURE_DEPENDS ${ARGV}
+    )
+endfunction()
+
+function(json_to_cpp name input_file output_file)
     execute_process(
         COMMAND "${utilities_SOURCE_DIR}/json_to_hpp.exe" ${name} ${input_file} ${output_file}
         WORKING_DIRECTORY "${utilities_SOURCE_DIR}"
     )
-endfunction(make_includable)
+    watch(${input_file})
+endfunction(json_to_cpp)
 
-make_includable("Data" "${utilities_SOURCE_DIR}/assets/data.json" "${utilities_SOURCE_DIR}/generated/data.json")
+json_to_cpp("Data" "${utilities_SOURCE_DIR}/assets/data.json" "${utilities_SOURCE_DIR}/generated/data.json")
 
 include_directories(
   "${utilities_SOURCE_DIR}/libs"
@@ -49,10 +58,13 @@ add_library(utilities STATIC
 
 set_target_properties(utilities PROPERTIES LINKER_LANGUAGE CXX)
 
-
 add_executable(utilities_example
   "${utilities_SOURCE_DIR}/example.cpp"
-  "${utilities_SOURCE_DIR}/generated/data.json"
+  "${utilities_SOURCE_DIR}/assets/data.json"
+)
+
+target_include_directories(utilities_example PUBLIC
+  "${utilities_SOURCE_DIR}/generated"
 )
 
 target_link_libraries(utilities_example

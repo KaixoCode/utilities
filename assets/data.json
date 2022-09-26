@@ -1,4 +1,11 @@
 {
   "age": 23,
-  "name": "John"
+  "name": "John",
+  "data": {
+    "number": -13.42e19,
+    "array": [ 1, 2, 3, 4, 5 ],
+    "boolean": true
+  },
+  "test": "value",
+  "carrot" : 1.42e4
 }

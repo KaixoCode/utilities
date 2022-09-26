@@ -61,9 +61,22 @@ private:
     using JsonValue = std::variant<Floating, Integral, Unsigned, String, Boolean, Array, Object, Null>;
     JsonValue m_Value;
 
+    template<class> struct ToType {};
+    template<> struct ToType<Floating> { constexpr static Type type = Type::Floating; };
+    template<> struct ToType<Integral> { constexpr static Type type = Type::Integral; };
+    template<> struct ToType<Unsigned> { constexpr static Type type = Type::Unsigned; };
+    template<> struct ToType<String> { constexpr static Type type = Type::String; };
+    template<> struct ToType<Boolean> { constexpr static Type type = Type::Boolean; };
+    template<> struct ToType<Array> { constexpr static Type type = Type::Array; };
+    template<> struct ToType<Object> { constexpr static Type type = Type::Object; };
+    template<> struct ToType<Null> { constexpr static Type type = Type::Null; };
+
     template<class Ty> struct Alias { using Type = Ty; };
-    template<> struct Alias<std::string_view> { using Type = String; };
+    template<> struct Alias<double> { using Type = Floating; };
+    template<> struct Alias<float> { using Type = Floating; };
     template<> struct Alias<bool> { using Type = Boolean; };
+    template<> struct Alias<std::string> { using Type = String; };
+    template<> struct Alias<std::string_view> { using Type = String; };
     template<std::size_t N> struct Alias<char[N]> { using Type = String; };
     template<std::signed_integral Ty> struct Alias<Ty> { using Type = Integral; };
     template<std::unsigned_integral Ty> struct Alias<Ty> { using Type = Unsigned; };
@@ -72,16 +85,24 @@ public:
     template<class Ty = Null>
     Json(const Ty& ty = {}) : m_Value(static_cast<Alias<Ty>::Type>(ty)) {}
 
-    template<class Ty> Ty get() const { return static_cast<Ty>(std::get<Alias<Ty>::Type>(m_Value)); }
-    template<class Ty> Ty& ref() { return std::get<Ty>(m_Value); }
-    template<class Ty> const Ty& ref() const { return std::get<Ty>(m_Value); }
+    template<class Ty> Ty& as() { return std::get<Ty>(m_Value); }
+    template<class Ty> const Ty& as() const { return std::get<Ty>(m_Value); }
+    template<class Ty> bool is() const { return ToType<Ty>::type == type(); }
+    bool is(Type t) const { return t == type(); }
     Type type() const { return static_cast<Type>(m_Value.index()); }
+
+    bool has(std::string_view index) const {
+        if (m_Value.index() == Type::Null) return false;
+        else if (m_Value.index() != Type::Object) throw std::exception("Not an object.");
+        auto _it = as<Object>().find(index);
+        return _it != as<Object>().end();
+    }
 
     Json& operator[](std::string_view index) {
         if (m_Value.index() == Type::Null) m_Value = Object{};
         else if (m_Value.index() != Type::Object) throw std::exception("Not an object.");
-        auto _it = ref<Object>().find(index);
-        if (_it == ref<Object>().end()) return ref<Object>()[std::string{ index }];
+        auto _it = as<Object>().find(index);
+        if (_it == as<Object>().end()) return as<Object>()[std::string{ index }];
         else return _it->second;
     }
 
@@ -90,254 +111,149 @@ public:
         else if (m_Value.index() != Type::Array) throw std::exception("Not an array.");
         std::get<Array>(m_Value).push_back(json);
     }
-};
 
-std::optional<Json> parseJsonObject(std::string_view& json);
-std::optional<Json> parseJsonValue(std::string_view& json);
-std::optional<Json> parseJsonArray(std::string_view& json);
-std::optional<Json> parseJsonString(std::string_view& json);
-std::optional<Json> parseJsonBool(std::string_view& json);
-std::optional<Json> parseJsonNull(std::string_view& json);
-std::optional<Json> parseJsonNumber(std::string_view& json);
+private:
+    static std::string removeDoubleEscapes(std::string_view str) {
+        std::string _str{ str };
+        for (auto _i = _str.begin(); _i != _str.end();)
+            if (*_i == '\\') _i = _str.erase(_i); else ++_i;
+        return _str;
+    }
 
-std::optional<Json> parseJsonString(std::string_view& json) {
-    auto _json = trim(json);
+    static bool checkFront(std::string_view& json, char c, bool empty = false) {
+        if ((json = trim(json)).empty()) return false;
+        if (json.front() != c) return false;
+        return !(json = trim(json.substr(1))).empty() || empty;
+    }
 
-    // Find first "
-    if (_json.size() == 0) return {};
-    if (_json[0] != '"') return {};
-    _json = _json.substr(1); // remove "
+    static bool parseWord(std::string_view& json, std::string_view word) {
+        return json.starts_with(word) ? json = json.substr(word.size()), true : false;
+    }
 
-    // Find closing "
-    auto _offset = 0ull;
-    auto _result = _json;
-    while (true) {
-        auto _index = _json.find_first_of('"');
-        // If no more " in string, can't parse pair
-        if (_index == std::string_view::npos) return {};
-        // If at index 0, means we have empty string
-        if (_index == 0) {
-            _result = "";
-            _json = _json.substr(1);
-            break;
+    static std::optional<Json> parseJsonBool(std::string_view& json) {
+        if (parseWord(json, "true")) return true;
+        if (parseWord(json, "false")) return false;
+        return {};
+    }
+
+    static std::optional<Json> parseJsonNull(std::string_view& json) {
+        if (parseWord(json, "null")) return nullptr;
+        return {};
+    }
+
+    static std::optional<Json> parseJsonNumber(std::string_view& json) {
+        auto _json = json;
+        auto _size = 0ull;
+        bool _floating = false;
+        bool _signed = false;
+
+        auto _isDigit = [&] { return oneOf(_json.front(), "0123456789"); };
+        auto _consumeOne = [&] { return ++_size, !(_json = _json.substr(1)).empty(); };
+        auto _consumeDigits = [&] {
+            if (!_isDigit()) return false;
+            while (_isDigit()) if (!_consumeOne()) return false;
+            return true;
+        };
+        
+        if (_json.front() == '-') {
+            _signed = true; 
+            if (!_consumeOne()) return {}; 
+        } 
+
+        if (_json.front() == '0') {
+            if (!_consumeOne()) return {};
+            if (_isDigit()) return {};
+        } else if (!_consumeDigits()) return {};
+
+        if (_json.front() == '.') {
+            _floating = true;
+            if (!_consumeOne()) return {};
+            if (!_consumeDigits()) return {};
         }
-        // If \ appears before it, it's not valid end
-        if (_json[_index - 1] == '\\') {
-            _json = _json.substr(_index + 1); // Remove from view
-            _offset += _index + 1; // And add offset
-        } else {
-            // Otherwise it's the end of the key
-            _result = _result.substr(0, _offset + _index);
-            _json = _json.substr(_index + 1);
-            break;
+
+        if (oneOf(_json.front(), "eE")) {
+            if (!_consumeOne()) return {};
+            if (oneOf(_json.front(), "-+") && !_consumeOne()) return {};
+            if (!_consumeDigits()) return {};
         }
+
+        _json = json.substr(0, _size);
+        auto _parse = [&]<class Ty>(Ty val) {
+            std::from_chars(_json.data(), _json.data() + _json.size(), val);
+            return val;
+        };
+        json = json.substr(_size);
+        return _floating ? _parse(0.0) : _signed ? _parse(0ll) : _parse(0ull);
     }
 
-    json = _json;
-    std::string _s{ _result };
-    for (auto _i = _s.begin(); _i != _s.end();) {
-        if (*_i == '\\') _s.erase(_i);
-        else ++_i;
-    }
-
-    return _s;
-}
-
-std::optional<Json> parseJsonArray(std::string_view& json) {
-    std::optional<Json> _result = Json::Array{};
-    auto _json = trim(json);
-    // Start object with {
-    if (_json.size() == 0) return {};
-    if (_json[0] != '[') return {};
-    _json = trim(_json.substr(1));
-
-    // Parse key value pairs
-    std::optional<Json> _value = {};
-    while (_value = parseJsonValue(_json)) {
-        _result.value().push_back(_value.value());
-        // If next character is comma, end of pairs
-        _json = trim(_json);
-        if (_json.size() == 0) return {};
-        if (_json[0] != ',') break;
-        _json = _json.substr(1);
-    }
-
-    // End object with "}"
-    _json = trim(_json);
-    if (_json[0] != ']') return {};
-    _json = _json.substr(1);
-
-    json = _json;
-    return _result;
-}
-
-std::optional<Json> parseJsonBool(std::string_view& json) {
-    auto _json = trim(json);
-    if (_json.starts_with("true")) {
-        json = _json.substr(4);
-        return true;
-    }
-    if (_json.starts_with("false")) {
-        json = _json.substr(5);
-        return false;
-    }
-    return {};
-}
-
-std::optional<Json> parseJsonNull(std::string_view& json) {
-    auto _json = trim(json);
-    if (_json.starts_with("null")) {
-        json = _json.substr(4);
-        return nullptr;
-    }
-    return {};
-}
-
-std::optional<Json> parseJsonNumber(std::string_view& json) {
-    auto _json = trim(json);
-    auto _number = _json;
-    auto _size = 0ull;
-    bool _floating = false;
-    bool _signed = false;
-    if (_json.size() == 0) return {};
-    if (_json[0] == '-') _json = _json.substr(1), ++_size, _signed = true;
-    if (_json.size() == 0) return {};
-
-    // If number has leading 0
-    if (_json[0] == '0') {
-        _json = _json.substr(1), ++_size;
-        if (_json.size() == 0) return {};
-        // It can't have another digit following
-        if (oneOf(_json[0], "0123456789")) return {};
-    }
-    // Otherwise keep parsing digits
-    else if (oneOf(_json[0], "0123456789")) {
-        while (oneOf(_json[0], "0123456789")) {
-            _json = _json.substr(1), ++_size;
-            if (_json.size() == 0) return {};
-        }
-    }
-    // Otherwise not valid digit
-    else return {};
-
-    // Floating point number
-    if (_json[0] == '.') {
-        _floating = true;
-        _json = _json.substr(1), ++_size;
-        if (_json.size() == 0) return {};
-
-        // Parse digits after the dot
-        if (oneOf(_json[0], "0123456789")) {
-            while (oneOf(_json[0], "0123456789")) {
-                _json = _json.substr(1), ++_size;
-                if (_json.size() == 0) return {};
+    static std::optional<Json> parseJsonString(std::string_view& json) {
+        auto _json = json;
+        if (!checkFront(_json, '"')) return {};
+        if (checkFront(_json, '"')) return json = _json, "";
+        auto _offset = 0ull;
+        auto _result = _json;
+        while (true) {
+            auto _index = _json.find_first_of('"');
+            if (_index == std::string_view::npos) return {};
+            if (_result[_offset + _index - 1] == '\\') // Escaped "
+                _json = _result.substr(_offset += _index + 1);
+            else {
+                json = _result.substr(_offset + _index + 1);
+                return removeDoubleEscapes(_result.substr(0, _offset + _index));
             }
         }
-        // must have at least 1 digit after dot
-        else return {};
     }
 
-    // Exponent
-    if (_json[0] == 'e' || _json[0] == 'E') {
-        _json = _json.substr(1), ++_size;
-        if (_json.size() == 0) return {};
-
-        // Sign of exponent
-        if (_json[0] == '-' || _json[0] == '+') _json = _json.substr(1), ++_size;
-        if (_json.size() == 0) return {};
-
-        // Parse digits in exponent
-        if (oneOf(_json[0], "0123456789")) {
-            while (oneOf(_json[0], "0123456789")) {
-                _json = _json.substr(1), ++_size;
-                if (_json.size() == 0) return {};
-            }
+    static std::optional<Json> parseJsonArray(std::string_view& json) {
+        auto _json = json;
+        if (!checkFront(_json, '[')) return {};
+        std::optional<Json> _result = Json::Array{};
+        std::optional<Json> _value = {};
+        while (_value = parseJsonValue(_json)) {
+            _result.value().push_back(_value.value());
+            if (!checkFront(_json, ',')) break;
         }
-        // Must have at least 1 digit after exponent
-        else return {};
-    }
-
-    _number = _number.substr(0, _size);
-    json = _json;
-
-    if (_floating) {
-        double _asNum;
-        std::from_chars(_number.data(), _number.data() + _number.size(), _asNum);
-        return _asNum;
-    } else if (_signed) {
-        std::int64_t _asNum;
-        std::from_chars(_number.data(), _number.data() + _number.size(), _asNum);
-        return _asNum;
-    } else {
-        std::uint64_t _asNum;
-        std::from_chars(_number.data(), _number.data() + _number.size(), _asNum);
-        return _asNum;
-    }
-}
-
-std::optional<Json> parseJsonValue(std::string_view& json) {
-    std::optional<Json> _result = {};
-    auto _json = trim(json);
-
-    if ((_result = parseJsonString(_json))
-        || (_result = parseJsonObject(_json))
-        || (_result = parseJsonArray(_json))
-        || (_result = parseJsonBool(_json))
-        || (_result = parseJsonNull(_json))
-        || (_result = parseJsonNumber(_json))) {
+        if (!checkFront(_json, ']', true)) return {};
         json = _json;
         return _result;
     }
-    return {};
-}
 
-std::optional<Json> parseJsonObject(std::string_view& json) {
-    std::optional<Json> _result = Json::Object{};
-    auto _json = trim(json);
-    // Start object with {
-    if (_json.size() == 0) return {};
-    if (_json[0] != '{') return {};
-    _json = trim(_json.substr(1));
-
-    // Parse key value pairs
-    while (true) {
-        std::optional<Json> _this = {};
-        auto _backup = trim(_json);
-
-        // Start with key of the pair
-        if (!(_this = parseJsonString(_backup))) break;
-        auto _key = _this.value().get<Json::String>();
-
-        // Make sure there's a :
-        _backup = trim(_backup);
-        if (_backup.size() == 0) break;
-        if (_backup[0] != ':') break;
-        _backup = _backup.substr(1);
-
-        // Then parse value
-        if (!(_this = parseJsonValue(_backup))) break;
-
-        _result.value()[_key] = _this.value();
-
-        // If next character is comma, end of pairs
-        _json = trim(_backup);
-        if (_json.size() == 0) return {};
-        if (_json[0] != ',') break;
-        _json = _json.substr(1);
+    static std::optional<Json> parseJsonObject(std::string_view& json) {
+        auto _json = json;
+        if (!checkFront(_json, '{')) return {};
+        std::optional<Json> _result = Json::Object{};
+        std::optional<Json> _value = {};
+        while (_value = parseJsonString(_json)) {
+            auto _key = _value.value().as<Json::String>();
+            if (!checkFront(_json, ':')) break;
+            if (!(_value = parseJsonValue(_json))) break;
+            _result.value()[_key] = _value.value();
+            if (!checkFront(_json, ',')) break;
+        }
+        if (!checkFront(_json, '}', true)) return {};
+        json = _json;
+        return _result;
     }
 
-    // End object with "}"
-    _json = trim(_json);
-    if (_json[0] != '}') return {};
-    _json = _json.substr(1);
+    static std::optional<Json> parseJsonValue(std::string_view& json) {
+        std::optional<Json> _result = {};
+        if ((_result = parseJsonString(json)) || (_result = parseJsonObject(json))
+            || (_result = parseJsonBool(json)) || (_result = parseJsonArray(json))
+            || (_result = parseJsonNull(json)) || (_result = parseJsonNumber(json))) {
+            return _result;
+        }
+        return {};
+    }
 
-    json = _json;
-    return _result;
-}
-
-std::optional<Json> parseJson(std::string_view json) {
-    return parseJsonObject(json);
-}
+public:
+    static std::optional<Json> parse(std::string_view json) {
+        if ((json = trim(json)).empty()) return {};
+        std::optional<Json> _result = {};
+        if ((_result = parseJsonObject(json)) && trim(json).empty()) return _result;
+        if ((_result = parseJsonArray(json)) && trim(json).empty()) return _result;
+        return {};
+    }
+};
 
 std::string escapeString(std::string str) {
     for (auto _i = str.begin(); _i != str.end(); ++_i)
@@ -350,18 +266,18 @@ std::string jsonToCode(const std::string& name, const Json& json, int indent = 0
     if (ce) result += "constexpr ";
     result += "struct " + name + "_t {\n";
 
-    for (auto& [key, val] : json.ref<Json::Object>()) {
+    for (auto& [key, val] : json.as<Json::Object>()) {
         using enum Json::Type;
         for (int i = 0; i < indent + 1; ++i) result += "    ";
         switch (val.type()) {
-        case Floating: result += "double " + std::string{ key } + " = " + std::to_string(val.ref<Json::Floating>()) + ";\n"; break;
-        case Integral: result += "std::int64_t " + std::string{ key } + " = " + std::to_string(val.ref<Json::Integral>()) + ";\n"; break;
-        case Unsigned: result += "std::uint64_t " + std::string{ key } + " = " + std::to_string(val.ref<Json::Unsigned>()) + ";\n"; break;
-        case String:   result += "std::string_view " + std::string{ key } + " = \"" + escapeString(val.ref<Json::String>()) + "\";\n"; break;
-        case Boolean:  result += "bool " + std::string{ key } + " = " + (val.ref<Json::Boolean>() ? "true" : "false") + ";\n"; break;
+        case Floating: result += "double " + std::string{ key } + " = " + std::to_string(val.as<Json::Floating>()) + ";\n"; break;
+        case Integral: result += "std::int64_t " + std::string{ key } + " = " + std::to_string(val.as<Json::Integral>()) + ";\n"; break;
+        case Unsigned: result += "std::uint64_t " + std::string{ key } + " = " + std::to_string(val.as<Json::Unsigned>()) + ";\n"; break;
+        case String:   result += "std::string_view " + std::string{ key } + " = \"" + escapeString(val.as<Json::String>()) + "\";\n"; break;
+        case Boolean:  result += "bool " + std::string{ key } + " = " + (val.as<Json::Boolean>() ? "true" : "false") + ";\n"; break;
         case Null:     result += "std::nullptr_t " + std::string{ key } + " = nullptr;\n"; break;
         case Array: {
-            auto& _arr = val.ref<Json::Array>();
+            auto& _arr = val.as<Json::Array>();
             if (_arr.size() == 0) {
                 result += "std::array<int, 0> " + std::string{ key } + "{};\n";
                 break;
@@ -389,11 +305,11 @@ std::string jsonToCode(const std::string& name, const Json& json, int indent = 0
                 }
                 for (auto& elem : _arr) {
                     switch (elem.type()) {
-                    case Floating: result += std::to_string(elem.ref<Json::Floating>()) + ", "; break;
-                    case Integral: result += std::to_string(elem.ref<Json::Integral>()) + ", "; break;
-                    case Unsigned: result += std::to_string(elem.ref<Json::Unsigned>()) + ", "; break;
-                    case String:   result += "\"" + escapeString(elem.ref<Json::String>()) + "\", "; break;
-                    case Boolean:  result += (elem.ref<Json::Boolean>() ? "true, " : "false, "); break;
+                    case Floating: result += std::to_string(elem.as<Json::Floating>()) + ", "; break;
+                    case Integral: result += std::to_string(elem.as<Json::Integral>()) + ", "; break;
+                    case Unsigned: result += std::to_string(elem.as<Json::Unsigned>()) + ", "; break;
+                    case String:   result += "\"" + escapeString(elem.as<Json::String>()) + "\", "; break;
+                    case Boolean:  result += (elem.as<Json::Boolean>() ? "true, " : "false, "); break;
                     case Null:     result += "nullptr, "; break;
                     }
                 }
@@ -420,10 +336,36 @@ std::string jsonToCode(const std::string& name, const Json& json, int indent = 0
 #include <fstream>
 #include <filesystem>
 
-#include "generated/data.json"
+#include "data.json"
+
+constexpr auto json = R"(
+{
+  "str1": "",
+  "str2": "\"",
+  "age": 23,
+  "name": "John",
+  "data": {
+    "number": -13.42e19,
+    "array": [ 1, 2, 3, 4, 5 ],
+    "boolean": true
+  },
+  "aawa": {  },
+  "test": "value",
+  "carrot" : 1.42e4
+}
+
+)";
 
 int main() {
-    Data.name;
+    auto data = Json::parse(json);
+    if (data) {
+        Json json = data.value();
+        if (json.has("name") && json["name"].is<Json::String>()) {
+            auto& str1 = json["name"].as<Json::String>();
+            std::cout << str1 << "\n";
+        }
+    }
+    return 0;
 }
 
 //int main(int argc, char* argv[]) {
