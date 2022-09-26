@@ -1848,44 +1848,44 @@ private:
 template<class Ty, class ...Tys>
 concept OneOf = (std::same_as<Ty, Tys> || ...);
 
-class Json
-{
-public:
-    using Floating = double;
-    using Integral = int64_t;
-    using Unsigned = uint64_t;
-    using String = std::string;
-    using Boolean = bool;
-    using Array = std::vector<Json>;
-    using Object = std::map<String, Json, std::less<void>>;
-    using Null = std::nullptr_t;
-
-private:
-    using JsonValue = std::variant<Floating, Integral, Unsigned, String, Boolean, Array, Object, Null>;
-    struct Type { enum { Floating, Integral, Unsigned, String, Boolean, Array, Object, Null }; };
-    JsonValue m_Value;
-
-    template<class Ty> struct Alias { using Type = Ty; };
-    template<std::signed_integral Ty> struct Alias<Ty> { using Type = Integral; };
-    template<std::unsigned_integral Ty> struct Alias<Ty> { using Type = Unsigned; };
-
-public:
-    template<class Ty = Null>
-    Json(const Ty& ty = {}) : m_Value(static_cast<Alias<Ty>::Type>(ty)) {}
-
-    template<class Ty> Ty get() const { return static_cast<Ty>(std::get<Alias<Ty>::Type>(m_Value)); }
-    template<class Ty> Ty& ref() { return std::get<Ty>(m_Value); }
-    template<class Ty> const Ty& ref() const { return std::get<Ty>(m_Value); }
-
-    Json& operator[](std::string_view index)
-    {
-        if (m_Value.index() == Type::Null) m_Value = Object{};
-        else if (m_Value.index() != Type::Object) throw std::exception("Not an object.");
-        auto _it = ref<Object>().find(index);
-        if (_it == ref<Object>().end()) return ref<Object>()[std::string{ index }];
-        else return _it->second;
-    }
-};
+//class Json
+//{
+//public:
+//    using Floating = double;
+//    using Integral = int64_t;
+//    using Unsigned = uint64_t;
+//    using String = std::string;
+//    using Boolean = bool;
+//    using Array = std::vector<Json>;
+//    using Object = std::map<String, Json, std::less<void>>;
+//    using Null = std::nullptr_t;
+//
+//    enum class Type { Floating, Integral, Unsigned, String, Boolean, Array, Object, Null };
+//private:
+//    using JsonValue = std::variant<Floating, Integral, Unsigned, String, Boolean, Array, Object, Null>;
+//    JsonValue m_Value;
+//
+//    template<class Ty> struct Alias { using Type = Ty; };
+//    template<std::signed_integral Ty> struct Alias<Ty> { using Type = Integral; };
+//    template<std::unsigned_integral Ty> struct Alias<Ty> { using Type = Unsigned; };
+//
+//public:
+//    template<class Ty = Null>
+//    Json(const Ty& ty = {}) : m_Value(static_cast<Alias<Ty>::Type>(ty)) {}
+//
+//    template<class Ty> Ty get() const { return static_cast<Ty>(std::get<Alias<Ty>::Type>(m_Value)); }
+//    template<class Ty> Ty& ref() { return std::get<Ty>(m_Value); }
+//    template<class Ty> const Ty& ref() const { return std::get<Ty>(m_Value); }
+//
+//    Json& operator[](std::string_view index)
+//    {
+//        if (m_Value.index() == Type::Null) m_Value = Object{};
+//        else if (m_Value.index() != Type::Object) throw std::exception("Not an object.");
+//        auto _it = ref<Object>().find(index);
+//        if (_it == ref<Object>().end()) return ref<Object>()[std::string{ index }];
+//        else return _it->second;
+//    }
+//};
 
 #include <bit>
 

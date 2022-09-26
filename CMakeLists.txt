@@ -3,14 +3,14 @@ project (utilities)
 
 set (CMAKE_CXX_STANDARD 23)
 
-function(make_includable input_file output_file)
-    file(READ ${input_file} content)
-    set(delim "for_c++_include")
-    set(content "R\"${delim}(\n${content})${delim}\"")
-    file(WRITE ${output_file} "${content}")
-endfunction(make_includable)
+function(make_includable name input_file output_file)
+    execute_process(
+        COMMAND "${utilities_SOURCE_DIR}/json_to_hpp.exe" ${name} ${input_file} ${output_file}
+        WORKING_DIRECTORY "${utilities_SOURCE_DIR}"
+    )
+endfunction(make_includable) 
 
-make_includable("${utilities_SOURCE_DIR}/assets/data.json" "${CMAKE_CURRENT_BINARY_DIR}/data.json")
+make_includable("Data" "${utilities_SOURCE_DIR}/assets/data.json" "${CMAKE_CURRENT_BINARY_DIR}/data.json")
 
 include_directories(
   "${utilities_SOURCE_DIR}/libs"
