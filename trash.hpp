@@ -7449,3 +7449,105 @@ struct Thing : object {
         }
     }
 };
+
+
+constexpr std::vector<std::string_view> split(const std::string_view str, const char delim = ',') {
+    std::vector<std::string_view> result;
+    int indexCommaToLeftOfColumn = 0;
+    int indexCommaToRightOfColumn = -1;
+    for (int i = 0; i < static_cast<int>(str.size()); i++) {
+        if (str[i] == delim) {
+            indexCommaToLeftOfColumn = indexCommaToRightOfColumn;
+            indexCommaToRightOfColumn = i;
+            int index = indexCommaToLeftOfColumn + 1;
+            int length = indexCommaToRightOfColumn - index;
+            std::string_view column(str.data() + index, length);
+            result.push_back(column);
+        }
+    }
+    const std::string_view finalColumn(str.data() + indexCommaToRightOfColumn + 1, str.size() - indexCommaToRightOfColumn - 1);
+    result.push_back(finalColumn);
+    return result;
+}
+
+
+
+
+std::string escapeString(std::string str) {
+    for (auto _i = str.begin(); _i != str.end(); ++_i)
+        if (oneOf(*_i, "\"\\\/\b\f\n\r\t")) str.insert(_i, '\\'), ++_i;
+    return str;
+}
+
+std::string jsonToCode(const std::string& name, const Json& json, int indent = 0, bool nested = false, bool ce = true) {
+    std::string result = "";
+    if (ce) result += "constexpr ";
+    result += "struct " + name + "_t {\n";
+
+    for (auto& [key, val] : json.as<Json::Object>()) {
+        using enum Json::Type;
+        for (int i = 0; i < indent + 1; ++i) result += "    ";
+        switch (val.type()) {
+        case Floating: result += "double " + std::string{ key } + " = " + std::to_string(val.as<Json::Floating>()) + ";\n"; break;
+        case Integral: result += "std::int64_t " + std::string{ key } + " = " + std::to_string(val.as<Json::Integral>()) + ";\n"; break;
+        case Unsigned: result += "std::uint64_t " + std::string{ key } + " = " + std::to_string(val.as<Json::Unsigned>()) + ";\n"; break;
+        case String:   result += "std::string_view " + std::string{ key } + " = \"" + escapeString(val.as<Json::String>()) + "\";\n"; break;
+        case Boolean:  result += "bool " + std::string{ key } + " = " + (val.as<Json::Boolean>() ? "true" : "false") + ";\n"; break;
+        case Null:     result += "std::nullptr_t " + std::string{ key } + " = nullptr;\n"; break;
+        case Array: {
+            auto& _arr = val.as<Json::Array>();
+            if (_arr.size() == 0) {
+                result += "std::array<int, 0> " + std::string{ key } + "{};\n";
+                break;
+            }
+            Json::Type _type = _arr[0].type();
+            bool _sameTypes = _type != Array && _type != Object;
+            for (auto& elem : _arr) {
+                if (!_sameTypes) break;
+                bool _number = _type == Unsigned || _type == Integral || _type == Floating;
+
+                if (_number && elem.type() == Integral) _type = _type == Floating ? Floating : Integral;
+                else if (_number && elem.type() == Unsigned);
+                else if (_number && elem.type() == Floating) _type = Floating;
+                else if (_type != elem.type()) _sameTypes = false;
+            }
+
+            if (_sameTypes) {
+                switch (_type) {
+                case Floating: result += "std::array<float, " + std::to_string(_arr.size()) + "> " + std::string{ key } + "{ "; break;
+                case Integral: result += "std::array<std::int64_t, " + std::to_string(_arr.size()) + "> " + std::string{ key } + "{ "; break;
+                case Unsigned: result += "std::array<std::uint64_t, " + std::to_string(_arr.size()) + "> " + std::string{ key } + "{ "; break;
+                case String:   result += "std::array<std::string_view, " + std::to_string(_arr.size()) + "> " + std::string{ key } + "{ "; break;
+                case Boolean:  result += "std::array<bool, " + std::to_string(_arr.size()) + "> " + std::string{ key } + "{ "; break;
+                case Null:     result += "std::array<std::nullptr_t, " + std::to_string(_arr.size()) + "> " + std::string{ key } + "{ "; break;
+                }
+                for (auto& elem : _arr) {
+                    switch (elem.type()) {
+                    case Floating: result += std::to_string(elem.as<Json::Floating>()) + ", "; break;
+                    case Integral: result += std::to_string(elem.as<Json::Integral>()) + ", "; break;
+                    case Unsigned: result += std::to_string(elem.as<Json::Unsigned>()) + ", "; break;
+                    case String:   result += "\"" + escapeString(elem.as<Json::String>()) + "\", "; break;
+                    case Boolean:  result += (elem.as<Json::Boolean>() ? "true, " : "false, "); break;
+                    case Null:     result += "nullptr, "; break;
+                    }
+                }
+                result += "};\n";
+            }
+            else {
+                result += "\n";
+            }
+
+            break;
+        }
+        case Object: {
+            result += jsonToCode(key, val, indent + 1, false, false);
+            break;
+        }
+        }
+    }
+
+    for (int i = 0; i < indent; ++i) result += "    ";
+    if (!nested) result += "} " + name + "{};\n";
+    else result += "};";
+    return result;
+}
