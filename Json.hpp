@@ -139,7 +139,7 @@ namespace kaixo {
             _json = val.substr(0, _size);
             auto _parse = [&]<class Ty>(Ty val) {
                 std::from_chars(_json.data(), _json.data() + _json.size(), val);
-                return val;
+                return json{ val };
             };
             val = val.substr(_size);
             return _floating ? _parse(0.0) : _signed ? _parse(0ll) : _parse(0ull);
@@ -149,7 +149,7 @@ namespace kaixo {
             std::string_view _json = val, _result = _json;
             if (!consume(_json, '"')) return {};                 // parse '"'
             if (consume(_json, '"')) return val = _json, "";     // empty string if parse '"'
-            for (std::size_t _offset = 0ull;;) {                 //
+            for (std::size_t _offset = 1ull;;) {                 //
                 std::size_t _index = _json.find_first_of('"');   // find next '"'
                 if (_index == std::string_view::npos) return {}; // if not exist, invalid string
                 if (_result[_offset + _index - 1] == '\\') {     // if escaped
@@ -157,7 +157,7 @@ namespace kaixo {
                     _json = _result.substr(_offset);             //   remove suffix from search
                 } else {                                         // else not escaped
                     val = _result.substr(_offset + _index + 1);  //   remove from remainder
-                    return removeDoubleEscapes(_result.substr(0, _offset + _index));
+                    return removeDoubleEscapes(_result.substr(1, _offset + _index - 1));
                 }
             }
         }
@@ -165,7 +165,7 @@ namespace kaixo {
         static std::optional<json> parseJsonArray(std::string_view& val) {
             std::string_view _json = val;
             if (!consume(_json, '[')) return {};                      // parse '['
-            std::optional<json> _result = array{}, _value = {}; // 
+            std::optional<json> _result = array{}, _value = {};       // 
             while (_value = parseJsonValue(_json)) {                  // try parse value
                 _result.value().emplace(_value.value());              // add value to result
                 if (!consume(_json, ',')) break;                      // if no comma, break
@@ -177,9 +177,9 @@ namespace kaixo {
         static std::optional<json> parseJsonObject(std::string_view& val) {
             std::string_view _json = val;
             if (!consume(_json, '{')) return {};                       // parse '{'
-            std::optional<json> _result = object{}, _value = {}; //
+            std::optional<json> _result = object{}, _value = {};       //
             while (_value = parseJsonString(_json)) {                  // parse key
-                auto& _key = _value.value().as<string>();              // 
+                std::string _key = _value.value().as<string>();        // 
                 if (!consume(_json, ':')) return {};                   // parse ':'
                 if (!(_value = parseJsonValue(_json))) return {};      // parse value
                 _result.value()[_key] = _value.value();                // add to object
