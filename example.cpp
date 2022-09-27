@@ -47,8 +47,6 @@ int main() {
     }
     json _val = json::object{};
 
-    json::A_t;
-
     _val["1"] = json::array{ 1, 2, 3, 4 };
 
     _val["1"].as<json::array>()[0].as<json::integral>();
