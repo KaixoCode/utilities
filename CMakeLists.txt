@@ -3,25 +3,9 @@ project (utilities)
 
 set (CMAKE_CXX_STANDARD 23)
 
-function(watch)
-    set_property(
-            DIRECTORY
-            APPEND
-            PROPERTY CMAKE_CONFIGURE_DEPENDS ${ARGV}
-    )
-endfunction()
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules/")
 
-function(json_to_cpp name input_file output_file)
-    execute_process(
-        COMMAND "${utilities_SOURCE_DIR}/json_to_hpp.exe" ${name} ${input_file} ${output_file}
-        WORKING_DIRECTORY "${utilities_SOURCE_DIR}"
-    )
-    watch(${input_file})
-endfunction(json_to_cpp)
-
-json_to_cpp("Data" "${utilities_SOURCE_DIR}/assets/data.json" "${utilities_SOURCE_DIR}/generated/data.json")
-
-include_directories(
+include_directories( 
   "${utilities_SOURCE_DIR}/libs"
 )
 
@@ -62,6 +46,14 @@ set_target_properties(utilities PROPERTIES LINKER_LANGUAGE CXX)
 add_executable(utilities_example
   "${utilities_SOURCE_DIR}/example.cpp"
   "${utilities_SOURCE_DIR}/assets/data.json"
+)
+
+include(json2hpp)
+
+json2hpp(utilities_example 
+	"data" 
+	"${utilities_SOURCE_DIR}/assets/data.json" 
+	"${utilities_SOURCE_DIR}/generated/data.json"
 )
 
 target_include_directories(utilities_example PUBLIC

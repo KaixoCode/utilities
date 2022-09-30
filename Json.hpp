@@ -2,7 +2,7 @@
 #include <string_view>
 #include <vector>
 #include <charconv>
-#include <unordered_map>
+#include <map>
 #include <variant>
 #include <optional>
 #include <string>
@@ -19,14 +19,14 @@ namespace kaixo {
     class json {
         struct object_hash : std::hash<std::string_view> { using is_transparent = std::true_type; };
     public:
-        enum { Floating, Integral, Unsigned, String, Boolean, Array, Object, Null };
+        enum value_type { Floating, Integral, Unsigned, String, Boolean, Array, Object, Null };
         using floating = double;
         using integral = std::int64_t;
         using unsigned_integral = std::uint64_t;
         using string = std::string;
         using boolean = bool;
         using array = std::vector<json>;
-        using object = std::unordered_map<std::string, json, object_hash, std::equal_to<void>>;
+        using object = std::map<std::string, json, std::less<void>>;
         using null = std::nullptr_t;
     private:
         using value = std::variant<floating, integral, unsigned_integral, string, boolean, array, object, null>;
@@ -40,7 +40,14 @@ namespace kaixo {
         value _value;
     public:
         template<class Ty = null>
+            requires (!std::same_as<std::decay_t<Ty>, json>)
         json(const Ty& ty = {}) : _value(static_cast<typename type_alias<Ty>::type>(ty)) {}
+
+        json(const json& other) : _value(other._value) {}
+        json(json&& other) : _value(std::move(other._value)) {}
+
+        json& operator=(const json& other) { _value = other._value; return *this; }
+        json& operator=(json&& other) { _value = std::move(other._value); return *this; }
 
         template<class Ty> Ty& as() { return std::get<Ty>(_value); }
         template<class Ty> const Ty& as() const { return std::get<Ty>(_value); }
@@ -59,6 +66,13 @@ namespace kaixo {
             auto _it = as<object>().find(index);
             if (_it == as<object>().end()) return as<object>()[std::string{ index }];
             else return _it->second;
+        }
+        
+        json& operator[](std::size_t index) {
+            if (is(Null)) _value = array{};
+            else if (!is(Array)) throw std::exception("Not an array.");
+            if (as<array>().size() <= index) as<array>().resize(index + 1);
+            return as<array>()[index];
         }
 
         template<class Ty> json& emplace(const Ty& val) {
@@ -195,6 +209,271 @@ namespace kaixo {
                 || (_result = parseJsonObject(val)) || (_result = parseJsonBool(val))
                 || (_result = parseJsonNumber(val)) || (_result = parseJsonNull(val))
                 ? _result : std::optional<json>{};
+        }
+    };
+
+    /**
+     * Converts json to C++ code.
+     */
+    struct json2hpp {
+        using enum kaixo::json::value_type;
+
+        // 2D mapping to find common type given 2 json types
+        constexpr static int common[8][8]{
+            /*               floating  integral  unsigned  string   boolean  array  object      null */
+            /* floating */ { Floating, Floating, Floating,     -1, Floating,    -1,     -1, Floating },
+            /* integral */ { Floating, Integral, Integral,     -1, Integral,    -1,     -1, Integral },
+            /* unsigned */ { Floating, Integral, Unsigned,     -1, Unsigned,    -1,     -1, Unsigned },
+            /*   string */ {       -1,       -1,       -1, String,       -1,    -1,     -1,   String },
+            /*  boolean */ { Floating, Integral, Unsigned,     -1,  Boolean,    -1,     -1,  Boolean },
+            /*    array */ {       -1,       -1,       -1,     -1,       -1,    -1,     -1,       -1 },
+            /*   object */ {       -1,       -1,       -1,     -1,       -1,    -1, Object,   Object },
+            /*     null */ { Floating, Integral, Unsigned, String,  Boolean,    -1, Object,     Null }
+        }; // Array is always ignored as common type because of size difference ^^
+
+        // Mapping from json type to C++ type name
+        constexpr static const char* type_name[8]{
+            "double", "std::int64_t", "std::uint64_t", "std::string_view", "bool", "", "", "std::nullptr_t"
+        };
+
+        /**
+         * Converts a json string to a valid C++ identifier.
+         * @param name json string
+         * @return valid C++ identifier
+         */
+        static std::string filterName(std::string name) {
+            if (oneOf(name[0], "0123456789")) name = "_" + name;
+            for (auto i = name.begin(); i != name.end();) {
+                if (*i == '-') *i = '_';
+                if (!oneOf(*i, "_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+                    name.erase(i);
+                else ++i;
+            }
+            return name;
+        }
+
+        struct object {
+            struct member {
+                std::string type; // Type of member
+                std::string name; // Name of member
+            };
+
+            std::string type;             // Type of object
+            std::string name;             // Name of object
+            bool needs_generating = true; // When false, it uses a standard container
+            std::list<member> members;    // List of members in this object
+
+            /**
+             * Convert this object to C++ code.
+             * @return C++ code
+             */
+            std::string to_string() {
+                if (!needs_generating) return "";
+                std::string str = "struct " + filterName(type) + " {\n";
+                for (auto& member : members)
+                    str += "    " + member.type + " " + filterName(member.name) + ";\n";
+                return str + "};\n\n";
+            }
+        };
+
+        std::list<object> objects;
+        std::size_t counter = 0;
+
+        /**
+         * Generates a unique id.
+         * @return unique id as string
+         */
+        std::string id() { return std::to_string(counter++); }
+
+        /**
+         * Converts a name to a unique type name.
+         * @param name name
+         * @return unique type name
+         */
+        std::string name2type(const std::string& name) { return name + "_" + id() + "_t"; }
+
+        /**
+         * Generate C++ object from json.
+         * @param name name to use for the outer most object
+         * @param data json to convert to a C++ object
+         * @return C++ code
+         */
+        static std::string generate(const std::string& name, json data) {
+            json2hpp converter;
+            if (data.is(Object)) converter.generate_object(name, data.as<json::object>());
+            else if (data.is(Array)) converter.generate_array(name, data.as<json::array>());
+
+            std::string result = "";
+            for (auto& elem : converter.objects) result = elem.to_string() + result;
+            return result + "constexpr " + filterName(converter.objects.front().type)
+                + " " + filterName(name) + " = " + generate_constructor(data) + ";\n";
+        }
+
+        /**
+         * Add indent to a string.
+         * @param str string
+         * @param indent amount of tabs (4 spaces)
+         * @param before when true, adds before string, otherwise after
+         * @return string with the added indenting
+         */
+        static std::string add_indent(const std::string& str, int indent, bool before = true) {
+            std::string res = str;
+            if (before) for (int i = 0; i < indent; ++i) res = "    " + res;
+            else for (int i = 0; i < indent; ++i) res += "    ";
+            return res;
+        }
+
+        /**
+         * Recursively generates the constructor for the generated C++ object.
+         * @param data json
+         * @param indent indent, used for formatting
+         * @return string containing C++ code that constructs the generated C++ object
+         */
+        static std::string generate_constructor(json& data, int indent = 0) {
+            switch (data.type()) {
+            case Object: {
+                if (data.size() == 0) return "{}";
+                std::string construct = "{\n";
+                for (auto& [key, value] : data.as<json::object>())
+                    construct += add_indent("." + filterName(key) + " = " + generate_constructor(value, indent + 1) + ", \n", indent + 1);
+                return construct + add_indent("}", indent);
+            }
+            case Array: {
+                if (data.size() == 0) return "{}";
+                std::string construct = "{\n";
+                for (auto& value : data.as<json::array>())
+                    construct += add_indent(generate_constructor(value, indent + 1) + ", \n", indent + 1);
+                return construct + add_indent("}", indent);
+            }
+            case Boolean: return data.as<json::boolean>() ? "true" : "false";
+            case Floating: return std::to_string(data.as<json::floating>());
+            case Unsigned: return std::to_string(data.as<json::unsigned_integral>());
+            case Integral: return std::to_string(data.as<json::integral>());
+            case String: return "R\"(" + data.as<json::string>() + ")\"";
+            case Null: return "{}";
+            }
+        }
+
+        /**
+         * Add a json value to an object as a member with a given name.
+         * @param object object to add to
+         * @param name name of the member in the object
+         * @param value json value to add as member
+         */
+        void add_to_object(object& object, const std::string& name, json& value) {
+            switch (value.type()) {
+            case Object: {
+                auto& obj = generate_object(name, value.as<json::object>());
+                object.members.emplace_back(obj.type, obj.name);
+                break;
+            }
+            case Array: {
+                auto& obj = generate_array(name, value.as<json::array>());
+                object.members.emplace_back(obj.type, obj.name);
+                break;
+            }
+            default: object.members.emplace_back(type_name[value.type()], name);
+            }
+        }
+
+        /**
+         * Recursively generates objects for a json object
+         * @param name name of the object
+         * @param obj json object
+         * @return reference to the generated object
+         */
+        object& generate_object(const std::string& name, json::object& obj) {
+            if (obj.size() == 0) return objects.emplace_back("std::tuple<>", name, false);
+            auto& object = objects.emplace_back(name2type(name), name);
+            for (auto& [elem_name, elem] : obj)
+                add_to_object(object, elem_name, elem);
+            return object;
+        }
+
+        /**
+         * Find the common type among all the element in a json array
+         * @param arr json array
+         * @return -3 if empty, -1 if no common type, type index if common type
+         */
+        static int find_common_type(json::array& arr) {
+            int common_type = -3;
+            for (auto& elem : arr)
+                if (common_type == -3) common_type = elem.type();
+                else if ((common_type = common[common_type][elem.type()]) == -1) return -1;
+            return common_type;
+        }
+
+        /**
+         * Combine the json fields of both json objects.
+         * @param a first json object
+         * @param b second json object
+         * @return false if failed to combine (type mismatch)
+         */
+        static bool combine_json_objects(json& a, const json& b) {
+            if (b.type() == Null) return true;
+            if (b.type() != Object) return b.type() == a.type() || a.type() == Null ? a = b, true : false;
+
+            auto& _obj = b.as<json::object>();
+            for (auto& [key, value] : _obj) {
+                // No matching type, means not able to combine
+                if (a[key].type() != Null && a[key].type() != value.type())
+                    return false;
+                // Both an object, simply combine objects
+                if (a[key].type() == Object) {
+                    if (!combine_json_objects(a[key], value)) return false;
+                }
+                // Both an array, combine into first index, and fill up to size
+                else if ((a[key].type() == Array
+                    || a[key].type() == Null)
+                    && value.type() == Array) {
+                    for (auto& m : value.as<json::array>())
+                        if (!combine_json_objects(a[key][0], m)) return false;
+                    for (std::size_t i = a[key].size(); i < value.size(); ++i)
+                        a[key].emplace(a[key][0]); // Fill up to size with copies
+                }
+                else a[key] = value;
+            }
+            return true;
+        }
+
+        /**
+         * Recursively generates objects for a json array
+         * @param name name of the array
+         * @param arr json array
+         * @return reference to generated object
+         */
+        object& generate_array(const std::string& name, json::array& arr) {
+            using namespace std::string_literals;
+            int common_type = find_common_type(arr);
+            // If common type is object, we try to combine all objects
+            if (common_type == Object) {
+                json all = json::object{};
+                bool works = true;
+                for (auto& elem : arr) if (!combine_json_objects(all, elem)) {
+                    works = false;
+                    break;
+                }
+
+                if (works) {
+                    auto& obj = generate_object(name, all.as<kaixo::json::object>());
+                    return objects.emplace_back("std::array<"s + obj.type
+                        + ", " + std::to_string(arr.size()) + ">", name, false);
+                }
+            }
+
+            // Empty array
+            if (common_type == -3)
+                return objects.emplace_back("std::array<int, 0>", name, false);
+            // No common type in array
+            else if (common_type == -1) {
+                auto& object = objects.emplace_back(name2type(name), name);
+                for (std::size_t index = 0; auto & elem : arr)
+                    add_to_object(object, name + std::to_string(index++), elem);
+                return object;
+            }
+            // Common type, so just use std::array
+            else return objects.emplace_back("std::array<"s + type_name[common_type]
+                + ", " + std::to_string(arr.size()) + ">", name, false);
         }
     };
 }

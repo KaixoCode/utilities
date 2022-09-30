@@ -1,11 +1,22 @@
 {
-  "age": 23,
-  "name": "John",
-  "data": {
-    "number": -13.42e19,
-    "array": [ 1, 2, 3, 4, 5 ],
-    "boolean": true
-  },
-  "test": "value",
-  "carrot" : 1.42e4
+  "menu": {
+    "id": "file",
+    "value": "File",
+    "popup": {
+      "menuitem": [
+        {
+          "value": "New",
+          "onclick": "CreateNewDoc()"
+        },
+        {
+          "value": "Open",
+          "onclick": "OpenDoc()"
+        },
+        {
+          "value": "Close",
+          "onclick": "CloseDoc()"
+        }
+      ]
+    }
+  }
 }

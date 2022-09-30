@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <array>
+#include <list>
 
 
 #include "Json.hpp"
@@ -38,14 +39,14 @@ constexpr auto test = R"(
 
 struct JsonToCode {
     constexpr static int common[8][8]{
-        { kaixo::json::Floating, kaixo::json::Floating, kaixo::json::Floating,                  -1, kaixo::json::Floating, -1, -1, kaixo::json::Floating },
-        { kaixo::json::Floating, kaixo::json::Integral, kaixo::json::Integral,                  -1, kaixo::json::Integral, -1, -1, kaixo::json::Integral },
-        { kaixo::json::Floating, kaixo::json::Integral, kaixo::json::Unsigned,                  -1, kaixo::json::Unsigned, -1, -1, kaixo::json::Unsigned },
-        {                    -1,                    -1,                    -1, kaixo::json::String,                    -1, -1, -1,   kaixo::json::String },
-        { kaixo::json::Floating, kaixo::json::Integral, kaixo::json::Unsigned,                  -1,  kaixo::json::Boolean, -1, -1,  kaixo::json::Boolean },
-        {                    -1,                    -1,                    -1,                  -1,                    -1, -2, -1,                    -1 },
-        {                    -1,                    -1,                    -1,                  -1,                    -1, -1, -2,                    -1 },
-        { kaixo::json::Floating, kaixo::json::Integral, kaixo::json::Unsigned, kaixo::json::String,  kaixo::json::Boolean, -1, -1,     kaixo::json::Null }
+        { kaixo::json::Floating, kaixo::json::Floating, kaixo::json::Floating,                  -1, kaixo::json::Floating, -1,                  -1, kaixo::json::Floating },
+        { kaixo::json::Floating, kaixo::json::Integral, kaixo::json::Integral,                  -1, kaixo::json::Integral, -1,                  -1, kaixo::json::Integral },
+        { kaixo::json::Floating, kaixo::json::Integral, kaixo::json::Unsigned,                  -1, kaixo::json::Unsigned, -1,                  -1, kaixo::json::Unsigned },
+        {                    -1,                    -1,                    -1, kaixo::json::String,                    -1, -1,                  -1,   kaixo::json::String },
+        { kaixo::json::Floating, kaixo::json::Integral, kaixo::json::Unsigned,                  -1,  kaixo::json::Boolean, -1,                  -1,  kaixo::json::Boolean },
+        {                    -1,                    -1,                    -1,                  -1,                    -1, -1,                  -1,                    -1 },
+        {                    -1,                    -1,                    -1,                  -1,                    -1, -1, kaixo::json::Object,   kaixo::json::Object },
+        { kaixo::json::Floating, kaixo::json::Integral, kaixo::json::Unsigned, kaixo::json::String,  kaixo::json::Boolean, -1, kaixo::json::Object,     kaixo::json::Null }
     };
     constexpr static std::string_view names[8]{
         "double", "std::int64_t", "std::uint64_t", "std::string_view", "bool", "", "", "std::nullptr_t"
@@ -76,54 +77,56 @@ struct JsonToCode {
         return name;
     }
 
-    std::string generate_single(const kaixo::json& json, const std::string& n) {
+    std::string generate_single(const kaixo::json& json, const std::string& n, bool def = true, bool out = true) {
         std::string name = filterName(n);
         switch (json.type()) {
         case kaixo::json::Null:
-            output += "nullptr";
-            return "std::nullptr_t " + name + ";";
+            if (out) output += "nullptr";
+            return "std::nullptr_t " + name + "{};";
         case kaixo::json::Boolean:
-            output += json.as<bool>() ? "true" : "false";
-            return "bool " + name + ";";
+            if (out) output += json.as<bool>() ? "true" : "false";
+            return "bool " + name + "{};";
         case kaixo::json::Floating:
-            output += std::to_string(json.as<kaixo::json::floating>());
-            return "double " + name + ";";
+            if (out) output += std::to_string(json.as<kaixo::json::floating>());
+            return "double " + name + "{};";
         case kaixo::json::Integral:
-            output += std::to_string(json.as<kaixo::json::integral>());
-            return "std::int64_t " + name + ";";
+            if (out) output += std::to_string(json.as<kaixo::json::integral>());
+            return "std::int64_t " + name + "{};";
         case kaixo::json::Unsigned:
-            output += std::to_string(json.as<kaixo::json::unsigned_integral>());
-            return "std::uint64_t " + name + ";";
+            if (out) output += std::to_string(json.as<kaixo::json::unsigned_integral>());
+            return "std::uint64_t " + name + "{};";
         case kaixo::json::String:
-            output += "R\"(" + json.as<kaixo::json::string>() + ")\"";
-            return "std::string_view " + name + ";";
+            if (out) output += "R\"(" + json.as<kaixo::json::string>() + ")\"";
+            return "std::string_view " + name + "{};";
         case kaixo::json::Object: {
             std::string _name = name + "_" + std::to_string(index++);
-            generate(json, name, _name);
-            return _name + "_t " + name + ";";
+            generate(json, name, _name, def, out);
+            return _name + "_t " + name + "{};";
         }
         case kaixo::json::Array: {
             std::string _name = name + "_" + std::to_string(index++);
-            generate(json, name, _name);
-            return _name + "_t " + name + ";";
+            generate(json, name, _name, def, out);
+            return _name + "_t " + name + "{};";
         }
         }
     }
 
-    void generate(const kaixo::json& json, const std::string& name, const std::string& type) {
+    void generate(const kaixo::json& json, const std::string& n, const std::string& type, bool def = true, bool out = true) {
         using namespace std::string_literals;
+        std::string name = filterName(n);
         std::string definition = "struct " + type + "_t {\n";
-        output += type + "_t {\n";
+        if (out) output += "{\n";
         indent++;
         if (json.is(kaixo::json::Object)) {
             auto& obj = json.as<kaixo::json::object>();
 
             for (auto& [key, value] : obj) {
                 definition += "    ";
-                for (int i = 0; i < indent; ++i) output += "    ";
-                definition += generate_single(value, key);
+                if (out) for (int i = 0; i < indent; ++i) output += "    ";
+                if (out) output += "." + filterName(key) + " = ";
+                definition += generate_single(value, key, def, out);
                 definition += "\n";
-                output += ",\n";
+                if (out) output += ",\n";
             }
         } else if (json.is(kaixo::json::Array)) {
             auto& arr = json.as<kaixo::json::array>();
@@ -136,13 +139,104 @@ struct JsonToCode {
                 if (common_type < 0 && common_type != -3);
                 else if (common_type != -3) common_type = common[common_type][value.type()];
                 else common_type = value.type();
+            }
 
-                auto istr = std::to_string(index);
-                for (int i = 0; i < indent; ++i) output += "    ";
-                definition += "    " + generate_single(value, name + "_" + istr) + "\n";
-                accessor += "        case " + istr + ": return static_cast<type>(" + name + "_" + istr + ");\n";
-                output += ",\n";
-                index++;
+            // If array of objects
+            bool _works = true;
+            if (common_type == kaixo::json::Object) {
+                // Collect all different keys used
+                constexpr auto combine_objects = [](auto& self, kaixo::json& a, const kaixo::json& b) -> bool {
+                    if (b.type() == kaixo::json::Null) return true;
+                    if (b.type() != kaixo::json::Object) {
+                        if (b.type() == a.type() || a.type() == kaixo::json::Null) return a = b, true;
+                        else return false;
+                    }
+                    auto& _obj = b.as<kaixo::json::object>();
+                    for (auto& [key, value] : _obj) {
+                        // If clashing names and types, it won't work
+                        if (a[key].type() == kaixo::json::Null || a[key].type() == value.type()) {
+                            if (a[key].type() == kaixo::json::Object) {
+                                if (!self(self, a[key], value)) return false;
+                            } else if (a[key].type() == kaixo::json::Array) {
+                                for (auto& m : value.as<kaixo::json::array>()) {
+                                    if (!self(self, a[key][0], m)) return false;
+                                }
+                                for (std::size_t i = a[key].size(); i < value.size(); ++i)
+                                    a[key].emplace(a[key][0]);
+                            } else if (value.type() == kaixo::json::Array) {
+                                a[key] = kaixo::json::array{};
+                                for (auto& m : value.as<kaixo::json::array>()) {
+                                    if (!self(self, a[key][0], m)) return false;
+                                }
+                                for (std::size_t i = a[key].size(); i < value.size(); ++i)
+                                    a[key].emplace(a[key][0]);
+                            } else a[key] = value;
+                        } else {
+                            return false;
+                            break;
+                        }
+                    }
+                    return true;
+                };
+                kaixo::json _all = kaixo::json::object{};
+                for (auto& value : arr) {
+                    if (!combine_objects(combine_objects, _all, value)) {
+                        _works = false;
+                        break;
+                    }
+                }
+
+                if (_works) { // If no clashing names/types
+                    std::string common_object = "struct " + type + "_mems_t {\n";
+                    for (auto& [key, value] : _all.as<kaixo::json::object>()) {
+                        common_object += "    ";
+                        common_object += generate_single(value, key, def, false);
+                        common_object += "\n";
+                    }
+                    common_object += "};\n\n";
+                    if (def) definitions += common_object;
+
+                    for (auto& value : arr) {
+                        auto istr = std::to_string(index);
+                        if (out) for (int i = 0; i < indent; ++i) output += "    ";
+                        generate(value, name + "_" + istr, type + "_mems", false, out);
+                        definition += "    " + type + "_mems_t " + name + "_" + istr + ";" + "\n";
+                        accessor += "        case " + istr + ": return static_cast<type>(" + name + "_" + istr + ");\n";
+                        if (out) output += ",\n";
+                        index++;
+                    }
+
+                    definition += "\n"
+                        "    constexpr auto operator[](std::size_t index) const {\n"
+                        "        using type = " + type + "_mems_t" + ";\n"
+                        "        switch(index) {\n" + accessor +
+                        "        }\n"
+                        "    }\n"
+                        "    \n"
+                        "    struct iterator {\n"
+                        "        std::size_t index = 0;\n"
+                        "        const " + type + "_t* me = nullptr;\n"
+                        "        \n"
+                        "        constexpr auto operator*() { return (*me)[index]; }\n"
+                        "        constexpr iterator& operator++() { ++index; return *this; }\n"
+                        "        constexpr bool operator==(const iterator& o) const { return index == o.index; }\n"
+                        "    };\n"
+                        "    \n"
+                        "    constexpr std::size_t size() const { return " + std::to_string(arr.size()) + "; }\n"
+                        "    constexpr iterator begin() const { return iterator{ 0, this }; }\n"
+                        "    constexpr iterator end() const { return iterator{ size(), this }; }\n";
+                }
+            } 
+            
+            if (common_type != kaixo::json::Object || !_works) {
+                for (auto& value : arr) {
+                    auto istr = std::to_string(index);
+                    if (out) for (int i = 0; i < indent; ++i) output += "    ";
+                    definition += "    " + generate_single(value, name + "_" + istr, def, out) + "\n";
+                    accessor += "        case " + istr + ": return static_cast<type>(" + name + "_" + istr + ");\n";
+                    if (out) output += ",\n";
+                    index++;
+                }
             }
 
             if (common_type >= 0 && common_type != kaixo::json::Array && common_type != kaixo::json::Object) {
@@ -170,25 +264,39 @@ struct JsonToCode {
 
         indent--;
         definition += "};\n\n";
-        definitions += definition;
-        for (int i = 0; i < indent; ++i) output += "    ";
-        output += "}";
+        if (def) definitions += definition;
+        if (out) for (int i = 0; i < indent; ++i) output += "    ";
+        if (out) output += "}";
     }
-};
+}; 
 
-constexpr auto roinrs = R"(
 
-)";
+
+
+
+constexpr auto roinrs = R"json(
+{
+    "integer" : 1,
+    "uinteger" : -1,
+    "floating" : -0.31314e+10,
+    "boolean" : false,
+    "object" : {},
+    "array1" : [ 
+        { "name" : "test" },
+        { "name" : "test", "id" : 10 }
+    ],
+    "array2" : [],
+    "array3" : [1, 2, 3, 4],
+    "array4" : ["a", 1, true]
+}
+)json";
 
 int main() {
     using namespace kaixo;
-
     auto aeoa = json::parse(roinrs);
     if (aeoa.has_value()) {
-        JsonToCode aefa{ aeoa.value() };
-        aefa.generate("data");
-
-        std::cout << aefa.definitions;
+        auto res = json2hpp::generate("data", aeoa.value());
+        std::cout << res;
 
         return 0;
     }
@@ -196,6 +304,9 @@ int main() {
     return 0;
 }
 
+//#include <filesystem>
+//#include <fstream>
+//
 //int main(int argc, char* argv[]) {
 //    if (argc != 4) return -1;
 //
@@ -211,10 +322,11 @@ int main() {
 //
 //    std::string _json{ std::istreambuf_iterator<char>{ _in }, std::istreambuf_iterator<char>{} };
 //
-//    auto _res = parseJson(_json);
+//    auto _res = kaixo::json::parse(_json);
 //    if (_res) {
-//        std::string _str = jsonToCode(name, _res.value());
-//        _out << _str;
+//        JsonToCode _toCode{ _res.value() };
+//        _toCode.generate(name);
+//        _out << _toCode.definitions;
 //    }
 //
 //    return 0;
