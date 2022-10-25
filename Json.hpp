@@ -7,9 +7,24 @@
 #include <optional>
 #include <string>
 #include <array>
+#include <stack>
 
 namespace kaixo {
+
+    /**
+     * Check if c is one of the characters in cs.
+     * @param c character to check
+     * @param cs string view of characters to check against
+     * @return true if c is in cs
+     */
     constexpr bool oneOf(char c, std::string_view cs) { return cs.find(c) != std::string_view::npos; }
+
+    /**
+     * Trim the ends of a string view, trims all characters in t
+     * @param view view to trimg
+     * @param t literal that contains the characters to trim
+     * @return trimmed view
+     */
     constexpr std::string_view trim(std::string_view view, const char* t = " \t\n\r\f\v") {
         if (auto i = view.find_first_not_of(t); i != std::string_view::npos) view = view.substr(i);
         if (auto i = view.find_last_not_of(t); i != std::string_view::npos) view = view.substr(0, i + 1);
@@ -43,23 +58,27 @@ namespace kaixo {
             requires (!std::same_as<std::decay_t<Ty>, json>)
         json(const Ty& ty = {}) : _value(static_cast<typename type_alias<Ty>::type>(ty)) {}
 
-        json(const json& other) : _value(other._value) {}
-        json(json&& other) : _value(std::move(other._value)) {}
-
-        json& operator=(const json& other) { _value = other._value; return *this; }
-        json& operator=(json&& other) { _value = std::move(other._value); return *this; }
-
         template<class Ty> Ty& as() { return std::get<Ty>(_value); }
         template<class Ty> const Ty& as() const { return std::get<Ty>(_value); }
-        auto type() const { return static_cast<decltype(Floating)>(_value.index()); }
-        bool is(decltype(Floating) t) const { return t == type(); }
+        auto type() const { return static_cast<value_type>(_value.index()); }
+        bool is(value_type t) const { return t == type(); }
 
+        /**
+         * Check if object contains key.
+         * @param index json key
+         * @return true if found, false if not object
+         */
         bool contains(std::string_view index) const {
-            if (is(Null) || !is(Object)) return false;
+            if (!is(Object)) return false;
             auto _it = as<object>().find(index);
             return _it != as<object>().end();
         }
 
+        /**
+         * Accessor for object. Becomes object if it's null. Throws if not object.
+         * @param index name of json key
+         * @return reference to json value at that key
+         */
         json& operator[](std::string_view index) {
             if (is(Null)) _value = object{};
             else if (!is(Object)) throw std::exception("Not an object.");
@@ -67,7 +86,13 @@ namespace kaixo {
             if (_it == as<object>().end()) return as<object>()[std::string{ index }];
             else return _it->second;
         }
-        
+
+        /**
+         * Accessor for array. Becomes array if it's null. Throws if not array.
+         * If index > size, it resizes the array.
+         * @param index index in array
+         * @return reference to json value at that index
+         */
         json& operator[](std::size_t index) {
             if (is(Null)) _value = array{};
             else if (!is(Array)) throw std::exception("Not an array.");
@@ -75,16 +100,29 @@ namespace kaixo {
             return as<array>()[index];
         }
 
+        /**
+         * Emplace value to array, becomes array if null, throws if not array.
+         * @param val value to emplace
+         * @return reference to emplaced json value
+         */
         template<class Ty> json& emplace(const Ty& val) {
             if (is(Null)) _value = array{};
             else if (!is(Array)) throw std::exception("Not an array.");
             return std::get<array>(_value).emplace_back(val);
         }
 
+        /**
+         * @return size of either object or array, or 0 of it's neither
+         */
         std::size_t size() const {
             return is(Array) ? as<array>().size() : is(Object) ? as<object>().size() : 0ull;
         }
 
+        /**
+         * Parse json from a string.
+         * @param val json string
+         * @return optional, value if correct json
+         */
         static std::optional<json> parse(std::string_view val) {
             if ((val = trim(val)).empty()) return {};
             std::optional<json> _result = {};
@@ -97,7 +135,7 @@ namespace kaixo {
         static std::string removeDoubleEscapes(std::string_view str) {
             std::string _str{ str };
             for (auto _i = _str.begin(); _i != _str.end();)
-                if (*_i == '\\') _i = _str.erase(_i); else ++_i;
+                if (*_i == '\\') ++(_i = _str.erase(_i)); else ++_i;
             return _str;
         }
 
@@ -111,7 +149,7 @@ namespace kaixo {
         }
 
         static std::optional<json> parseJsonBool(std::string_view& val) {
-            return consume(val, "true") ? true 
+            return consume(val, "true") ? true
                 : consume(val, "false") ? false : std::optional<json>{};
         }
 
@@ -122,7 +160,7 @@ namespace kaixo {
         static std::optional<json> parseJsonNumber(std::string_view& val) {
             std::string_view _json = val;
             std::size_t _size = 0ull;
-            bool _floating = false,  _signed = false;
+            bool _floating = false, _signed = false;
             auto _isDigit = [&] { return oneOf(_json.front(), "0123456789"); };
             auto _consume = [&] { return ++_size, !(_json = _json.substr(1)).empty(); };
             auto _consumeDigits = [&] {
@@ -133,17 +171,18 @@ namespace kaixo {
 
             if (_signed = _json.starts_with('-'))
                 if (!_consume()) return {};
- 
+
             if (_json.starts_with('0')) {      // when leading 0
                 if (!_consume()) return {}; // 
                 if (_isDigit()) return {};     // can't be followed by digit
-            } else if (!_consumeDigits()) return {};
- 
+            }
+            else if (!_consumeDigits()) return {};
+
             if (_floating = _json.starts_with('.')) {
                 if (!_consume()) return {};
                 if (!_consumeDigits()) return {};
             }
- 
+
             if (oneOf(_json.front(), "eE")) {
                 if (!_consume()) return {};
                 if (oneOf(_json.front(), "-+") && !_consume()) return {};
@@ -166,10 +205,22 @@ namespace kaixo {
             for (std::size_t _offset = 1ull;;) {                 //
                 std::size_t _index = _json.find_first_of('"');   // find next '"'
                 if (_index == std::string_view::npos) return {}; // if not exist, invalid string
-                if (_result[_offset + _index - 1] == '\\') {     // if escaped
-                    _offset += _index + 1;                       //   add offset
-                    _json = _result.substr(_offset);             //   remove suffix from search
-                } else {                                         // else not escaped
+                if (_result[_offset + _index - 1] == '\\') {     // if we find a '\'
+                    std::size_t _check = _offset + _index - 1;   //
+                    std::size_t _count = 0;                      //
+                    while (_result[_check] == '\\') {            // count how many there are
+                        ++_count;                                //
+                        if (_check-- == 0) break;                //
+                    }                                            // if even amount, the '\'
+                    if (_count % 2 == 0) {                       // itself is escaped, so this is the end
+                        val = _result.substr(_offset + _index + 1);  //   remove from remainder
+                        return removeDoubleEscapes(_result.substr(1, _offset + _index - 1));
+                    } else {
+                        _offset += _index + 1;                       //   add offset
+                        _json = _result.substr(_offset);             //   remove suffix from search
+                    }
+                }
+                else {                                         // else not escaped
                     val = _result.substr(_offset + _index + 1);  //   remove from remainder
                     return removeDoubleEscapes(_result.substr(1, _offset + _index - 1));
                 }
@@ -218,6 +269,8 @@ namespace kaixo {
     struct json2hpp {
         using enum kaixo::json::value_type;
 
+        constexpr static auto tab = "  ";
+
         // 2D mapping to find common type given 2 json types
         constexpr static int common[8][8]{
             /*               floating  integral  unsigned  string   boolean  array  object      null */
@@ -236,16 +289,49 @@ namespace kaixo {
             "double", "std::int64_t", "std::uint64_t", "std::string_view", "bool", "", "", "std::nullptr_t"
         };
 
+        // List of reserved words for C++
+        constexpr static const char* reserved_words[]{
+            "alignas", "alignof", "and", "and_eq", "asm", "atomic_cancel", "atomic_commit",
+            "atomic_noexcept", "auto", "bitand", "bitor", "bool", "break", "case", "catch",
+            "char", "char8_t", "char16_t", "char32_t", "class", "compl", "concept", "const",
+            "consteval", "constexpr", "constinit", "const_cast", "continue", "co_await",
+            "co_return", "co_yield", "decltype", "default", "delete", "do", "double",
+            "dynamic_cast", "else", "enum", "explicit", "export", "extern", "false", "float",
+            "for", "friend", "goto", "if", "inline", "int", "long", "mutable", "namespace",
+            "new", "noexcept", "not", "not_eq", "nullptr", "operator", "or", "or_eq", "private",
+            "protected", "public", "reflexpr", "register", "reinterpret_cast", "requires",
+            "return", "short", "signed", "sizeof", "static", "static_assert", "static_cast",
+            "struct", "switch", "synchronized", "template", "this", "thread_local", "throw",
+            "true", "try", "typedef", "typeid", "typename", "union", "unsigned", "using",
+            "virtual", "void", "volatile", "wchar_t", "while", "xor", "xor_eq",
+        };
+
+        // List of valid identifier characters in C++
+        constexpr static auto valid_identifier_characters =
+            "_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+        // List of characters that should be substituted with another character
+        constexpr static std::pair<char, char> substitute_character[]{
+            { '-', '_' }, { ' ', '_' },
+        };
+
         /**
          * Converts a json string to a valid C++ identifier.
          * @param name json string
          * @return valid C++ identifier
          */
         static std::string filterName(std::string name) {
+            if (name.size() == 0) return "_";
+            // Make sure string doesn't start with digit
             if (oneOf(name[0], "0123456789")) name = "_" + name;
+            // If string is reserved word, add "_" at end
+            for (auto& reserved : reserved_words)
+                if (name == reserved) return name + "_";
+            // Substitute any characters, and remove invalid ones
             for (auto i = name.begin(); i != name.end();) {
-                if (*i == '-') *i = '_';
-                if (!oneOf(*i, "_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+                for (auto& s : substitute_character)
+                    if (*i == s.first) *i = s.second;
+                if (!oneOf(*i, valid_identifier_characters))
                     name.erase(i);
                 else ++i;
             }
@@ -271,7 +357,7 @@ namespace kaixo {
                 if (!needs_generating) return "";
                 std::string str = "struct " + filterName(type) + " {\n";
                 for (auto& member : members)
-                    str += "    " + member.type + " " + filterName(member.name) + ";\n";
+                    str += tab + member.type + " " + filterName(member.name) + ";\n";
                 return str + "};\n\n";
             }
         };
@@ -290,7 +376,9 @@ namespace kaixo {
          * @param name name
          * @return unique type name
          */
-        std::string name2type(const std::string& name) { return name + "_" + id() + "_t"; }
+        std::string name2type(const std::string& name) {
+            return filterName(name) + "_" + id() + "_t";
+        }
 
         /**
          * Generate C++ object from json.
@@ -300,13 +388,20 @@ namespace kaixo {
          */
         static std::string generate(const std::string& name, json data) {
             json2hpp converter;
-            if (data.is(Object)) converter.generate_object(name, data.as<json::object>());
-            else if (data.is(Array)) converter.generate_array(name, data.as<json::array>());
-
-            std::string result = "";
-            for (auto& elem : converter.objects) result = elem.to_string() + result;
-            return result + "constexpr " + filterName(converter.objects.front().type)
-                + " " + filterName(name) + " = " + generate_constructor(data) + ";\n";
+            if (data.is(Object)) {
+                auto& obj = converter.generate_object(name, data.as<json::object>());
+                std::string result = "";
+                for (auto& elem : converter.objects) result = elem.to_string() + result;
+                return result + "constexpr " + obj.type + " " + filterName(name) 
+                    + " = " + generate_constructor(data) + ";\n";
+            } else if (data.is(Array)) {
+                auto& obj = converter.generate_array(name, data.as<json::array>());
+                std::string result = "";
+                for (auto& elem : converter.objects) result = elem.to_string() + result;
+                return result + "constexpr " + obj.type + " " + filterName(name) 
+                    + " = " + generate_constructor(data) + ";\n";
+            }
+            return "";
         }
 
         /**
@@ -318,8 +413,8 @@ namespace kaixo {
          */
         static std::string add_indent(const std::string& str, int indent, bool before = true) {
             std::string res = str;
-            if (before) for (int i = 0; i < indent; ++i) res = "    " + res;
-            else for (int i = 0; i < indent; ++i) res += "    ";
+            if (before) for (int i = 0; i < indent; ++i) res = tab + res;
+            else for (int i = 0; i < indent; ++i) res += tab;
             return res;
         }
 
@@ -340,16 +435,18 @@ namespace kaixo {
             }
             case Array: {
                 if (data.size() == 0) return "{}";
-                std::string construct = "{\n";
+                json all = json::object{};
+                bool extra = combine_json_objects(all, data.as<json::array>());
+                std::string construct = extra ? "{{\n" : "{\n";
                 for (auto& value : data.as<json::array>())
                     construct += add_indent(generate_constructor(value, indent + 1) + ", \n", indent + 1);
-                return construct + add_indent("}", indent);
+                return construct + add_indent(extra ? "}}" : "}", indent);
             }
             case Boolean: return data.as<json::boolean>() ? "true" : "false";
             case Floating: return std::to_string(data.as<json::floating>());
             case Unsigned: return std::to_string(data.as<json::unsigned_integral>());
             case Integral: return std::to_string(data.as<json::integral>());
-            case String: return "R\"(" + data.as<json::string>() + ")\"";
+            case String: return "R\"##(" + data.as<json::string>() + ")##\"";
             case Null: return "{}";
             }
         }
@@ -403,6 +500,18 @@ namespace kaixo {
             return common_type;
         }
 
+        static bool combine_to_common_type(json& a, const json& b) {
+            int common_type = common[b.type()][a.type()];
+            switch (common_type) {
+            case Floating: a = json::floating{}; return true;
+            case Integral: a = json::integral{}; return true;
+            case Unsigned: a = json::unsigned_integral{}; return true;
+            case String: a = json::string{}; return true;
+            case Boolean: a = json::boolean{}; return true;
+            default: return false;
+            }
+        }
+
         /**
          * Combine the json fields of both json objects.
          * @param a first json object
@@ -411,13 +520,12 @@ namespace kaixo {
          */
         static bool combine_json_objects(json& a, const json& b) {
             if (b.type() == Null) return true;
-            if (b.type() != Object) return b.type() == a.type() || a.type() == Null ? a = b, true : false;
-
+            if (b.type() != Object) return combine_to_common_type(a, b);
             auto& _obj = b.as<json::object>();
             for (auto& [key, value] : _obj) {
                 // No matching type, means not able to combine
                 if (a[key].type() != Null && a[key].type() != value.type())
-                    return false;
+                    return combine_to_common_type(a[key], value);
                 // Both an object, simply combine objects
                 if (a[key].type() == Object) {
                     if (!combine_json_objects(a[key], value)) return false;
@@ -437,6 +545,17 @@ namespace kaixo {
         }
 
         /**
+         * Combine all the json fields in arr into all
+         * @param all combine into
+         * @param arr fields to combine into all
+         * @return true if possible
+         */
+        static bool combine_json_objects(json& all, json::array& arr) {
+            for (auto& elem : arr) if (!combine_json_objects(all, elem)) return false;
+            return true;
+        }
+
+        /**
          * Recursively generates objects for a json array
          * @param name name of the array
          * @param arr json array
@@ -447,14 +566,7 @@ namespace kaixo {
             int common_type = find_common_type(arr);
             // If common type is object, we try to combine all objects
             if (common_type == Object) {
-                json all = json::object{};
-                bool works = true;
-                for (auto& elem : arr) if (!combine_json_objects(all, elem)) {
-                    works = false;
-                    break;
-                }
-
-                if (works) {
+                if (json all = json::object{}; combine_json_objects(all, arr)) {
                     auto& obj = generate_object(name, all.as<kaixo::json::object>());
                     return objects.emplace_back("std::array<"s + obj.type
                         + ", " + std::to_string(arr.size()) + ">", name, false);
@@ -464,16 +576,126 @@ namespace kaixo {
             // Empty array
             if (common_type == -3)
                 return objects.emplace_back("std::array<int, 0>", name, false);
-            // No common type in array
-            else if (common_type == -1) {
+            // No common type in array, or the Object one didn't work
+            else if (common_type == Object || common_type == -1) {
                 auto& object = objects.emplace_back(name2type(name), name);
                 for (std::size_t index = 0; auto & elem : arr)
-                    add_to_object(object, name + std::to_string(index++), elem);
+                    add_to_object(object, "_" + std::to_string(index++), elem);
                 return object;
             }
             // Common type, so just use std::array
             else return objects.emplace_back("std::array<"s + type_name[common_type]
                 + ", " + std::to_string(arr.size()) + ">", name, false);
+        }
+    };
+
+    template<class Ty> constexpr std::size_t json_size = 0;
+    template<class Ty, std::size_t I> constexpr auto json_member{};
+
+    struct json2cpp {
+        template<class C, class T> static T _memptr_t_impl(T C::*);
+        template<class C, class T, class Arg> static Arg _memptr_t_impl(T(C::*)(Arg));
+        template<auto M> using _memptr_t = decltype(_memptr_t_impl(M));
+
+        template<class Ty>
+        static Ty&& array_from_json(json& val, Ty&& result = {}) {
+            using decayed = std::decay_t<Ty>;
+            using type = decayed::value_type;
+            using type_decayed = std::decay_t<type>;
+
+            auto with = [&]<class T>(T & e) {
+                if constexpr (!std::convertible_to<T, type>) throw std::bad_cast{};
+                else result.insert(result.end(), static_cast<type>(e));
+            };
+
+            for (auto& e : val.as<json::array>()) {
+                switch (e.type()) {
+                case json::Unsigned: with(e.as<json::unsigned_integral>()); break;
+                case json::Integral: with(e.as<json::integral>()); break;
+                case json::Floating: with(e.as<json::floating>()); break;
+                case json::Boolean:  with(e.as<json::boolean>()); break;
+                case json::Null:     with(e.as<json::null>()); break;
+                case json::String:   with(e.as<json::string>()); break;
+                case json::Object: result.insert(result.end(), object_from_json<type>(e)); break;
+                case json::Array: {
+                    if constexpr (requires (type_decayed container) {
+                        typename type_decayed::value_type;
+                        { container.insert(container.end(), {}) };
+                    }) {
+                        result.insert(result.end(), array_from_json<type_decayed>(e));
+                    }
+                    break;
+                }
+                }
+            }
+            return std::forward<Ty>(result);
+        }
+
+        template<class Ty>
+        static Ty&& object_from_json(json& val, Ty&& result = {}) {
+            using decayed = std::decay_t<Ty>;
+            constexpr std::size_t size = json_size<decayed>;
+            auto set = [&]<std::size_t I>() {
+                constexpr std::string_view name = json_member<decayed, I>.second;
+                auto access = json_member<decayed, I>.first;
+                using type = _memptr_t<json_member<decayed, I>.first>;
+                using type_decayed = std::decay_t<type>;
+
+                if (!val.contains(name)) return;
+
+                auto& v = val[name];
+                auto with = [&]<class T>(T & v) {
+                    if constexpr (!std::convertible_to<T, type>) throw std::bad_cast{};
+                    else if constexpr (std::is_member_object_pointer_v<decltype(access)>)
+                        result.*access = static_cast<type>(v);
+                    else if constexpr (std::is_member_function_pointer_v<decltype(access)>)
+                        (result.*access)(static_cast<type>(v));
+                };
+                switch (v.type()) {
+                case json::Unsigned: with(v.as<json::unsigned_integral>()); break;
+                case json::Integral: with(v.as<json::integral>()); break;
+                case json::Floating: with(v.as<json::floating>()); break;
+                case json::Boolean:  with(v.as<json::boolean>()); break;
+                case json::Null:     with(v.as<json::null>()); break;
+                case json::String:   with(v.as<json::string>()); break;
+                case json::Object:
+                    if constexpr (std::is_member_object_pointer_v<decltype(access)>)
+                        object_from_json(v, result.*access);
+                    else if constexpr (std::is_member_function_pointer_v<decltype(access)>)
+                        (result.*access)(object_from_json<type_decayed>(v));
+                    break;
+                case json::Array: {
+                    if constexpr (requires (type container) {
+                        typename type::value_type;
+                        { container.insert(container.end(), {}) };
+                    }) {
+                        if constexpr (std::is_member_object_pointer_v<decltype(access)>)
+                            array_from_json(v, result.*access);
+                        else if constexpr (std::is_member_function_pointer_v<decltype(access)>)
+                            (result.*access)(array_from_json<type_decayed>(v));
+                    }
+                    else if constexpr (std::is_member_function_pointer_v<decltype(access)>) {
+                        for (auto& e : v.as<json::array>()) {
+                            switch (e.type()) {
+                            case json::Unsigned: with(e.as<json::unsigned_integral>()); break;
+                            case json::Integral: with(e.as<json::integral>()); break;
+                            case json::Floating: with(e.as<json::floating>()); break;
+                            case json::Boolean:  with(e.as<json::boolean>()); break;
+                            case json::Null:     with(e.as<json::null>()); break;
+                            case json::String:   with(e.as<json::string>()); break;
+                            case json::Object: (result.*access)(object_from_json<type_decayed>(e)); break;
+                            case json::Array: throw std::bad_cast{};
+                            }
+                        }
+                    }
+                    break;
+                }
+                }
+            };
+            [&] <std::size_t ...Is>(std::index_sequence<Is...>) {
+                (set.operator() < Is > (), ...);
+            }(std::make_index_sequence<size>{});
+            return std::forward<Ty>(result);
         }
     };
 }
