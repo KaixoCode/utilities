@@ -1151,11 +1151,15 @@ namespace kaixo {
     using element_t = typename element<I, Args...>::type;
 
     template<class Ty, class ...Args>
-    struct index : std::integral_constant < std::size_t, [] {
-        std::size_t index = 0;
-        ((++index, std::is_same_v<Ty, Args>) || ...);
-        return index - 1;
-    }() > {};
+    struct index {
+        constexpr static std::size_t _get() {
+            std::size_t index = 0;
+            ((++index, std::is_same_v<Ty, Args>) || ...);
+            return index - 1;
+        }
+
+        constexpr static std::size_t value = _get();
+    };
 
     template<class Ty, class ...Args>
     struct index<Ty, info<Args...>> : index<Ty, Args...> {};
@@ -1169,12 +1173,16 @@ namespace kaixo {
     constexpr std::size_t index_v = index<Ty, Args...>::value;
 
     template<class Ty, class ...Args>
-    struct last_index : std::integral_constant < std::size_t, [] {
-        std::size_t _fromEnd = 0; // increment, but reset on match
-        ((std::is_same_v<Ty, Args> ? _fromEnd = 0 : ++_fromEnd), ...);
-        std::size_t _index = sizeof...(Args) - _fromEnd - 1;
-        return _fromEnd == sizeof...(Args) ? npos : _index;
-    }() > {};
+    struct last_index {
+        constexpr static std::size_t _get() {
+            std::size_t _fromEnd = 0; // increment, but reset on match
+            ((std::is_same_v<Ty, Args> ? _fromEnd = 0 : ++_fromEnd), ...);
+            std::size_t _index = sizeof...(Args) - _fromEnd - 1;
+            return _fromEnd == sizeof...(Args) ? npos : _index;
+        }
+
+        constexpr static std::size_t value = _get();
+    };
 
     template<class Ty, class ...Args>
     struct last_index<Ty, info<Args...>> : last_index<Ty, Args...> {};
@@ -1332,11 +1340,15 @@ namespace kaixo {
     using reverse_t = typename reverse<Ty>::type;
 
     template<class ...Args>
-    struct unique_count : std::integral_constant < std::size_t, [] {
-        std::size_t _index = 0, _match = 0;
-        ((_match += index_v<Args, Args...> == _index++), ...);
-        return _match;
-    }() > {};
+    struct unique_count {
+        constexpr static std::size_t _get() {
+            std::size_t _index = 0, _match = 0;
+            ((_match += index_v<Args, Args...> == _index++), ...);
+            return _match;
+        }
+
+        constexpr static std::size_t value = _get();
+    };
 
     template<class ...Args>
     struct unique_count<info<Args...>> : unique_count<Args...> {};
@@ -1899,8 +1911,35 @@ namespace kaixo {
         using type = info<typename conditional_transform<Filter, T, As>::type...>;
     };
 
+    /**
+     * Conditionally transform Ty using T if matched Filter
+     * @tparam Filter filter
+     * @tparam T transform
+     * @tparam Ty type
+     */
     template<auto Filter, template<class...> class T, class Ty>
     using conditional_transform_t = typename conditional_transform<Filter, T, Ty>::type;
+
+    template<class A, class B, class ...Args> struct replace {
+        using type = typename conditional_transform<is_same<A>, typename partial_last<change, B>::type, info<Args...>>::type;
+    };
+    template<class ...As, class B, class ...Args> 
+    struct replace<info<As...>, B, Args...> {
+        using type = typename conditional_transform<(is_same<As> || ...), typename partial_last<change, B>::type, info<Args...>>::type;
+    };
+    template<class A, class B, class ...Args>
+    struct replace<A, B, info<Args...>> {
+        using type = typename replace<A, B, Args...>::type;
+    };
+
+    /**
+     * Replace A with B in ...Args
+     * @tparam A type to replace, or info containing multiple types
+     * @tparam B type to replace with
+     * @tparam ...Args pack or single info to replace in
+     */
+    template<class A, class B, class ...Args>
+    using replace_t = typename replace<A, B, Args...>::type;
 
     /**
      * Allows for a transform inside a filter. Used like:
@@ -2827,7 +2866,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         using name = info<value_t<enum_name<Tys, Value>>...>;
 
         template<auto Value>
-        using defined = info<value_t<enum_name<Tys, Value>.size() == 0>...>;
+        using defined = info<value_t<enum_name<Tys, Value>.size() != 0>...>;
     };
 
     /**
@@ -2962,6 +3001,8 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
 
         template<class T> using append = append_t<T, info>;
         template<class T> using prepend = prepend_t<T, info>;
+
+        template<class A, class B> using replace = replace_t<A, B, info>;
 
         using unique = unique_t<info>;
         using reverse = reverse_t<info>;
@@ -3159,7 +3200,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
      *                                                                                                         *
      *                                                                                                         *
      *                                                                                                         *
-     *                                             tuple wrapper.                                              *
+     *                                             tuple helpers.                                              *
      *                                                                                                         *
      *                                                                                                         *
      *                                                                                                         *
@@ -3181,9 +3222,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         }
     };
 
-    namespace tuples {
-        template<std::size_t I> constexpr auto get = get_v_impl<I>{};
-    }
+    template<std::size_t I> constexpr auto get_v = get_v_impl<I>{};
 
     template<class T, is_tuple_modifier<T> Ty>
     constexpr decltype(auto) operator|(T&& tuple, Ty&& val) {
@@ -3195,7 +3234,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             = typename info<Tys...>::template take<I>::template as<std::tuple>>
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
             return sequence<I>([&]<std::size_t ...Is>{
-                return Type{ (tuples::get<Is>(tuple))... };
+                return Type{ (get_v<Is>(tuple))... };
             });
         }
     };
@@ -3205,21 +3244,19 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             = typename info<Tys...>::template drop<I>::template as<std::tuple>>
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
             return sequence<I, info<Tys...>::size>([&]<std::size_t ...Is>{
-                return Type{ (tuples::get<Is>(tuple))... };
+                return Type{ (get_v<Is>(tuple))... };
             });
         }
     };
 
-    namespace tuples {
-        template<std::size_t I> constexpr auto take = take_v_impl<I>{};
-        template<std::size_t I> constexpr auto drop = drop_v_impl<I>{};
-    }
+    template<std::size_t I> constexpr auto take_v = take_v_impl<I>{};
+    template<std::size_t I> constexpr auto drop_v = drop_v_impl<I>{};
 
     template<std::size_t I> struct last_v_impl {
         template<class ...Tys, class Type
             = typename info<Tys...>::template drop<info<Tys...>::size - I>::template as<std::tuple>>
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
-            return tuples::drop<info<Tys...>::size - I>(tuple);
+            return drop_v<info<Tys...>::size - I>(tuple);
         }
     };
 
@@ -3227,7 +3264,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         template<class ...Tys, class Type
             = typename info<Tys...>::template drop_last<I>::template as<std::tuple>>
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
-            return tuples::take<info<Tys...>::size - I>(tuple);
+            return take_v<info<Tys...>::size - I>(tuple);
         }
     };
 
@@ -3236,7 +3273,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             = typename info<Tys...>::template erase<I>::template as<std::tuple>>
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
             return iterate<generate_indices_v<0, info<Tys...>::size, I>>([&]<std::size_t ...Is>{
-                return Type{ (tuples::get<Is>(tuple))... };
+                return Type{ (get_v<Is>(tuple))... };
             });
         }
     };
@@ -3250,7 +3287,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             constexpr Type operator()(const std::tuple<Tys...>& tuple) const {
                 return[&]<std::size_t ...Is, std::size_t ...Ns, std::size_t ...Qs>
                     (std::index_sequence<Is...>, std::index_sequence<Ns...>, std::index_sequence<Qs...>) {
-                    return Type{ (tuples::get<Is>(tuple))..., (tuples::get<Qs>(_data))..., (tuples::get<I + Ns>(tuple))...};
+                    return Type{ (get_v<Is>(tuple))..., (get_v<Qs>(_data))..., (get_v<I + Ns>(tuple))...};
                 }(std::make_index_sequence<I>{}, std::make_index_sequence<info<Tys...>::size - I>{},
                     std::index_sequence_for<Args...>{});
             }
@@ -3262,18 +3299,16 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         }
     };
 
-    namespace tuples {
-        template<std::size_t I> constexpr auto erase = erase_v_impl<I>{};
-        template<std::size_t I> constexpr auto insert = insert_v_impl<I>{};
-    }
-
+    template<std::size_t I> constexpr auto erase_v = erase_v_impl<I>{};
+    template<std::size_t I> constexpr auto insert_v = insert_v_impl<I>{};
+    
     template<std::size_t I> struct swap_v_impl {
         template<class Ty> struct result {
             Ty&& _data;
             template<class ...Tys, class Type
                 = typename info<Tys...>::template swap<I, decay_t<Ty>>::template as<std::tuple>>
             constexpr Type operator()(const std::tuple<Tys...>& tuple) const {
-                return tuples::erase<I>(tuple) | tuples::insert<I>(std::forward<Ty>(_data));
+                return erase_v<I>(tuple) | insert_v<I>(std::forward<Ty>(_data));
             }
         };
 
@@ -3288,7 +3323,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             = typename info<Tys...>::template sub<A, B>::template as<std::tuple>>
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
             return iterate<generate_indices_v<A, B>>([&]<std::size_t ...Is>{
-                return Type{ (tuples::get<Is>(tuple))... };
+                return Type{ (get_v<Is>(tuple))... };
             });
         }
     };
@@ -3298,7 +3333,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             class Type = typename keep_indices_t<Indices, info<Tys...>>::template as<std::tuple>>
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
             return iterate<Indices>([&]<std::size_t ...Is>{
-                return Type{ (tuples::get<Is>(tuple))... };
+                return Type{ (get_v<Is>(tuple))... };
             });
         }
     };
@@ -3324,7 +3359,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             class Type = typename keep_indices_t<Indices, info<Tys...>>::template as<std::tuple>>
             constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
             return iterate<Indices>([&]<std::size_t ...Is>{
-                return Type{ (tuples::get<Is>(tuple))... };
+                return Type{ (get_v<Is>(tuple))... };
             });
         }
     };
@@ -3334,7 +3369,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             class Type = typename keep_indices_t<Indices, info<Tys...>>::template as<std::tuple>>
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
             return iterate<Indices>([&]<std::size_t ...Is>{
-                return Type{ (tuples::get<Is>(tuple))... };
+                return Type{ (get_v<Is>(tuple))... };
             });
         }
     };
@@ -3343,7 +3378,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         template<class ...Tys, class Type = std::tuple<typename info<Tys...>
             ::template element<Is>::type...>>
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
-            return Type{ (tuples::get<Is>(tuple))... };
+            return Type{ (get_v<Is>(tuple))... };
         }
     };
 
@@ -3352,7 +3387,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             class Type = typename keep_indices_t<Indices, info<Tys...>>::template as<std::tuple>>
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
             return iterate<Indices>([&]<std::size_t ...Is>{
-                return Type{ (tuples::get<Is>(tuple))... };
+                return Type{ (get_v<Is>(tuple))... };
             });
         }
     };
@@ -3366,7 +3401,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             constexpr Type operator()(const std::tuple<Tys...>& tuple) const {
                 return[&]<std::size_t ...Is, std::size_t ...Ns>
                     (std::index_sequence<Is...>, std::index_sequence<Ns...>) {
-                    return Type{ (tuples::get<Is>(tuple))..., (tuples::get<Ns>(_data))... };
+                    return Type{ (get_v<Is>(tuple))..., (get_v<Ns>(_data))... };
                 }(std::make_index_sequence<info<Tys...>::size>{},
                     std::index_sequence_for<Args...>{});
             }
@@ -3387,7 +3422,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
                 constexpr Type operator()(const std::tuple<Tys...>& tuple) const {
                 return[&]<std::size_t ...Is, std::size_t ...Ns>
                     (std::index_sequence<Is...>, std::index_sequence<Ns...>) {
-                    return Type{ (tuples::get<Ns>(_data))..., (tuples::get<Is>(tuple))... };
+                    return Type{ (get_v<Ns>(_data))..., (get_v<Is>(tuple))... };
                 }(std::make_index_sequence<info<Tys...>::size>{},
                     std::index_sequence_for<Args...>{});
             }
@@ -3404,7 +3439,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             first_indices_v<typename info<Tys...>::decay>, info<Tys...>>::template as<std::tuple>>
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
             return iterate<first_indices_v<typename info<Tys...>::decay>>([&]<std::size_t ...Is>{
-                return Type{ (tuples::get<Is>(tuple))... };
+                return Type{ (get_v<Is>(tuple))... };
             });
         }
     };
@@ -3414,7 +3449,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const -> Type {
             return sequence<0, info<Tys...>::size>([&]<std::size_t ...Is>{
                 constexpr std::size_t size = info<Tys...>::size;
-                return Type{ (tuples::get<size - Is - 1>(tuple))... };
+                return Type{ (get_v<size - Is - 1>(tuple))... };
             });
         }
     };
@@ -3423,7 +3458,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         template<class ...Tys>
         constexpr auto operator()(const std::tuple<Tys...>& tuple) const {
             return iterate<info<Tys...>::decay::template indices_filter<Filter>>([&]<std::size_t ...Is>{
-                return std::tuple{ (tuples::get<Is>(tuple))... };
+                return std::tuple{ (get_v<Is>(tuple))... };
             });
         }
     };
@@ -3434,7 +3469,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
             template<class ...Tys>
             constexpr decltype(auto) operator()(const std::tuple<Tys...>& tuple) const {
                 return sequence<0, info<Tys...>::size>([&]<std::size_t ...Is>() -> decltype(auto) {
-                    return std::forward<Functor>(_functor)((tuples::get<Is>(tuple))...);
+                    return std::forward<Functor>(_functor)((get_v<Is>(tuple))...);
                 });
             }
         };
@@ -3445,23 +3480,21 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
         }
     };
 
-    namespace tuples {
-        template<std::size_t I> constexpr auto drop_last = drop_last_v_impl<I>{};
-        template<std::size_t I> constexpr auto last = last_v_impl<I>{};
-        template<std::size_t I> constexpr auto swap = swap_v_impl<I>{};
-        template<std::size_t A, std::size_t B> constexpr auto sub = sub_v_impl<A, B>{};
-        template<class ...Tys> constexpr auto remove = remove_v_impl<Tys...>{};
-        template<class ...Tys> constexpr auto remove_raw = remove_raw_v_impl<Tys...>{};
-        template<class ...Tys> constexpr auto keep = keep_v_impl<Tys...>{};
-        template<class ...Tys> constexpr auto keep_raw = keep_raw_v_impl<Tys...>{};
-        template<std::size_t ...Is> constexpr auto keep_indices = keep_indices_v_impl<Is...>{};
-        constexpr auto append = append_v_impl{};
-        constexpr auto prepend = prepend_v_impl{};
-        constexpr auto unique = unique_v_impl{};
-        constexpr auto reverse = reverse_v_impl{};
-        template<auto Filter> constexpr auto filter = filter_v_impl<Filter>{};
-        constexpr auto call = call_v_impl{};
-    }
+    template<std::size_t I> constexpr auto drop_last_v = drop_last_v_impl<I>{};
+    template<std::size_t I> constexpr auto last_v = last_v_impl<I>{};
+    template<std::size_t I> constexpr auto swap_v = swap_v_impl<I>{};
+    template<std::size_t A, std::size_t B> constexpr auto sub_v = sub_v_impl<A, B>{};
+    template<class ...Tys> constexpr auto remove_v = remove_v_impl<Tys...>{};
+    template<class ...Tys> constexpr auto remove_raw_v = remove_raw_v_impl<Tys...>{};
+    template<class ...Tys> constexpr auto keep_v = keep_v_impl<Tys...>{};
+    template<class ...Tys> constexpr auto keep_raw_v = keep_raw_v_impl<Tys...>{};
+    template<std::size_t ...Is> constexpr auto keep_indices_v = keep_indices_v_impl<Is...>{};
+    constexpr auto append_v = append_v_impl{};
+    constexpr auto prepend_v = prepend_v_impl{};
+    constexpr auto unique_v = unique_v_impl{};
+    constexpr auto reverse_v = reverse_v_impl{};
+    template<auto Filter> constexpr auto filter_v = filter_v_impl<Filter>{};
+    constexpr auto call_v = call_v_impl{};
 
     /**
      * Helper for dealing with the actual values in a template pack.
