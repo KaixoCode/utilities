@@ -10,271 +10,236 @@
 #include <list>
 #include <thread>
 #include <future>
+#include <sstream>
+#include <numeric>
+#include <ranges>
+#include <algorithm>
 
 #include "Json.hpp"
 
 #include <windows.h>
-#include <winhttp.h>
-#include <wincrypt.h>
-#include <schannel.h>
-#pragma comment(lib, "winhttp.lib")
-#pragma comment(lib, "crypt32.lib")
-#pragma comment(lib, "schannel.lib")
+#include <wininet.h>
+#pragma comment(lib, "wininet.lib")
 
-struct Buffer {
-    template<std::size_t N>
-    Buffer(const wchar_t(&str)[N]) {
-        size = N * sizeof(wchar_t);
-        data = new std::uint8_t[size];
-        std::memcpy(data, str, size);
-    }
-    Buffer(const std::wstring& str) {
-        size = str.size() * sizeof(std::wstring::value_type);
-        data = new std::uint8_t[size];
-        std::memcpy(data, str.data(), size);
-    }
-    Buffer(const Buffer&) = delete;
-    Buffer(Buffer&& o) : data(o.data), size(o.size) { o.data = nullptr, o.size = 0; }
-    ~Buffer() { delete[] data; }
+template<class Ty> Ty operator~(std::future<Ty>& f) { return f.get(); }
+template<class Ty> Ty operator~(std::future<Ty>&& f) { return std::move(f).get(); }
 
-    std::uint8_t* data = nullptr;
-    std::size_t size = 0;
-};
+#define await ~
 
-struct FetchSettings {
-    std::wstring ua = L"C++";
-    std::wstring method = L"GET";
-    std::wstring version = L"HTTP/1.1";
-    Buffer data = L"";
-    std::vector<std::wstring> headers = {};
+std::string& to_lower(std::string& str) {
+    for (auto& c : str) c = std::tolower(c);
+    return str;
+}
+
+
+struct fetch_settings {
+    std::string ua = "C++";
+    std::string method = "GET";
+    std::string version = "HTTP/1.1";
+    std::string data = "";
+    std::vector<std::string> headers = {};
+    std::vector<std::string> accept{ "text/*" };
     INTERNET_PORT port = INTERNET_DEFAULT_HTTPS_PORT;
 };
 
-struct Response {
-    Response(bool success = false) : success(success) {}
-    bool success = false;
+struct response {
+    response(bool success = false) : ok(success) {}
 
-    operator bool() { return success; }
+    operator bool() { return ok; }
 
-    std::vector<std::wstring> headers;
-    std::wstring body;
+    bool ok = false;
+    std::string statusText{};
+    std::uint32_t status{};
+    std::map<std::string, std::string> headers{};
+    std::string body{};
 };
 
-struct Internet {
-    HINTERNET handle = nullptr;
-    operator HINTERNET() const { return handle; }
-    Internet(HINTERNET handle) : handle(handle) {}
-    Internet(const Internet&) = delete;
-    Internet(Internet&& o) : handle(o.handle) { o.handle = nullptr; }
-    ~Internet() { if (handle) WinHttpCloseHandle(handle); }
+template<class Ty, auto Deleter>
+struct handle {
+    Ty ptr = nullptr;
+    Ty operator->() const { return ptr; }
+    operator Ty() const { return ptr; }
+    handle(Ty ptr) : ptr(ptr) {}
+    handle(const handle&) = delete;
+    handle(handle&& o) : ptr(o.ptr) { o.ptr = nullptr; }
+    ~handle() { if (ptr) Deleter(ptr); }
 };
 
-template<class Ty, auto Deleter, auto ...Args>
-struct Handle {
-    Ty handle = nullptr;
-    Ty operator->() const { return handle; }
-    operator Ty() const { return handle; }
-    Handle(Ty handle) : handle(handle) {}
-    Handle(const Handle&) = delete;
-    Handle(Handle&& o) : handle(o.handle) { o.handle = nullptr; }
-    ~Handle() { if (handle) Deleter(handle, Args...); }
-};
+struct url {
+    std::string scheme{};
+    std::string domain{};
+    std::string path{};
+    std::string form{};
+    std::string resource{};
 
-struct Url {
-    std::wstring scheme{};
-    std::wstring domain{};
-    std::wstring path{};
-    std::wstring form{};
-
-    static Url parse(std::wstring_view url) {
+    static url parse(std::string_view str) {
         // Url is formatted like this:
         // <scheme>://<domain>/<path>?<form>
-        Url result{};
+        url result{};
         // Parse scheme
-        std::size_t _p1 = url.find_first_of(L':');
-        result.scheme = url.substr(0ull, _p1);
-        url = url.substr(_p1 + 3ull);
+        std::size_t _p1 = str.find_first_of(':');
+        result.scheme = str.substr(0ull, _p1);
+        str = str.substr(_p1 + 3ull);
         // Parse domain
-        std::size_t _p2 = url.find_first_of(L'/');
-        result.domain = url.substr(0ull, _p2);
+        std::size_t _p2 = str.find_first_of('/');
+        result.domain = str.substr(0ull, _p2);
         if (_p2 == std::wstring_view::npos) return result;
-        url = url.substr(_p2);
+        str = str.substr(_p2);
         // Parse path and form
-        std::size_t _p3 = url.find_first_of(L'?');
-        result.path = url.substr(0ull, _p3);
+        std::size_t _p3 = str.find_first_of('?');
+        result.path = str.substr(0ull, _p3);
         if (_p3 == std::wstring_view::npos) return result;
-        result.form = url.substr(_p3 + 1ull);
+        result.form = str.substr(_p3 + 1ull);
+        result.resource = result.path + "?" + result.form;
         return result;
     }
 };
 
-std::future<Response> fetch(const std::wstring& url, FetchSettings&& settings = {}) {
-    std::promise<Response> _promise;
-    std::future<Response> _future = _promise.get_future();
-    std::thread{ [url, settings = std::move(settings), promise = std::move(_promise)]() mutable {
-        Url _url = Url::parse(url);
-        bool _ssl = _url.scheme == L"https";
+std::future<response> fetch(const std::string& uri, fetch_settings&& settings = {}) {
+    std::promise<response> _promise;
+    std::future<response> _future = _promise.get_future();
+    std::thread{ [uri, settings = std::move(settings), promise = std::move(_promise)]() mutable {
+        url _url = url::parse(uri);
+        bool _ssl = _url.scheme == "https";
 
         auto _fail = [&]() {
             auto _error = GetLastError();
-            return promise.set_value(Response{});
+            return promise.set_value(response{});
         };
-        using Internet = Handle<HINTERNET, WinHttpCloseHandle>;
+        using internet = handle<HINTERNET, InternetCloseHandle>;
 
-        Internet _opened = WinHttpOpen(
+        // See if internet is available
+        if (InternetAttemptConnect(0) != ERROR_SUCCESS) return _fail();
+
+        // Open internet
+        internet _opened = InternetOpen(
             /* user agent   */ settings.ua.c_str(),
-            /* access type  */ WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
-            /* proxy name   */ WINHTTP_NO_PROXY_NAME,
-            /* proxy bypass */ WINHTTP_NO_PROXY_BYPASS,
-            /* flags        */ WINHTTP_FLAG_ASYNC
+            /* access type  */ INTERNET_OPEN_TYPE_PRECONFIG,
+            /* proxy name   */ nullptr,
+            /* proxy bypass */ nullptr,
+            /* flags        */ 0 // Async not necessary
         );
+
         if (!_opened) return _fail();
 
-        Internet _connected = WinHttpConnect(_opened,
+        internet _connected = InternetConnect(_opened,
             /* host name    */ _url.domain.c_str(),
-            /* port         */ settings.port,
-            /* reserved     */ 0
-        );
-        if (!_connected) return _fail();
-
-        Internet _request = WinHttpOpenRequest(_connected,
-            /* method       */ settings.method.c_str(),
-            /* resource     */ _url.path.c_str(),
-            /* http version */ settings.version.c_str(),
-            /* referrer     */ WINHTTP_NO_REFERER,
-            /* accept types */ WINHTTP_DEFAULT_ACCEPT_TYPES,
-            /* flags        */ 0
-        );
-        if (!_request) return _fail();
-
-        std::wstring _headers = L"";
-        for (auto& _header : settings.headers)
-            _headers += _header + L"\r\n";
-        std::size_t _headerLength = _headers.size() * sizeof(std::wstring::value_type);
-
-        bool _result = WinHttpSendRequest(_request,
-            /* headers      */ _headers.c_str(),
-            /* length       */ _headerLength,
-            /* post data    */ settings.data.data,
-            /* data length  */ settings.data.size,
-            /* total size   */ settings.data.size + _headerLength,
+            /* port         */ INTERNET_DEFAULT_HTTPS_PORT,
+            /* username     */ nullptr,
+            /* password     */ nullptr,
+            /* service      */ INTERNET_SERVICE_HTTP,
+            /* flags        */ 0,
             /* context      */ 0
         );
-        if (!_result) return _fail();
 
-        // This awaits the request
-        _result = WinHttpReceiveResponse(_request, 0);
+        if (!_connected) return _fail();
 
-        // If request requires an SSL certificate
-        if (_ssl) {
-            using CertStore = Handle<HCERTSTORE, CertCloseStore, 0>;
-            using IssuerList = Handle<SecPkgContext_IssuerListInfoEx*, GlobalFree>;
-            using CertChain = Handle<PCCERT_CHAIN_CONTEXT, CertFreeCertificateChain>;
-            using Cert = Handle<PCERT_CONTEXT, CertFreeCertificateContext>;
+        // Construct a headers string from the vector of headers
+        std::string _headers = "";
+        for (auto& _header : settings.headers)
+            _headers += _header + '\n';
+        std::size_t _headerLength = _headers.size() * sizeof(std::string::value_type);
 
-            // Open the certificate store
-            CertStore _store = CertOpenSystemStore(0, TEXT("MY"));
-            if (!_store) return _fail();
+        // Create the null terminated array of strings of accepted types
+        auto _acceptTypes = std::make_unique<const char*[]>(settings.accept.size() + 1);
+        for (std::size_t i = 0ull; i < settings.accept.size(); ++i)
+            _acceptTypes[i] = settings.accept[i].c_str();
+        _acceptTypes[settings.accept.size()] = nullptr;
 
-            // Query the request for the certificate issuer list
-            IssuerList _issuerList = nullptr;
-            DWORD _size = sizeof(SecPkgContext_IssuerListInfoEx*);
-            if (!WinHttpQueryOption(_request,
-                /* option       */ WINHTTP_OPTION_CLIENT_CERT_ISSUER_LIST,
-                /* buffer       */ &_issuerList.handle,
-                /* size         */ &_size
-            )) return _fail();
-
-            // Build search criteria from the issuer list
-            CERT_CHAIN_FIND_BY_ISSUER_PARA SrchCriteria;
-            ::ZeroMemory(&SrchCriteria, sizeof(CERT_CHAIN_FIND_BY_ISSUER_PARA));
-            SrchCriteria.cbSize = sizeof(CERT_CHAIN_FIND_BY_ISSUER_PARA);
-            SrchCriteria.cIssuer = _issuerList->cIssuers;
-            SrchCriteria.rgIssuer = _issuerList->aIssuers;
-
-            // Find the certificate chain in the store using the search criteria
-            CertChain _chain = CertFindChainInStore(_store,
-                /* encoding     */ X509_ASN_ENCODING,
-                /* flags        */ CERT_CHAIN_FIND_BY_ISSUER_CACHE_ONLY_URL_FLAG |
-                /*              */ // Do not perform wire download when building chains.
-                /*              */ CERT_CHAIN_FIND_BY_ISSUER_CACHE_ONLY_FLAG,
-                /*              */ // Do not search pCacheEntry->_ClientCertStore 
-                /*              */ // for issuer certs.
-                /* type         */ CERT_CHAIN_FIND_BY_ISSUER,
-                /* criteria     */ &SrchCriteria,
-                /* context      */ nullptr
-            );
-            if (!_chain) return _fail();
-
-            // Set the certificate for the http request
-            Cert _cert = (PCERT_CONTEXT)_chain->rgpChain[0]->rgpElement[0]->pCertContext;
-            if (!WinHttpSetOption(_request,
-                /* option       */ WINHTTP_OPTION_CLIENT_CERT_CONTEXT,
-                /* buffer       */ _cert,
-                /* size         */ sizeof(CERT_CONTEXT)
-            )) return _fail();
-
-            // Resend the request
-            _result = WinHttpSendRequest(_request,
-                /* headers      */ _headers.c_str(),
-                /* length       */ _headerLength,
-                /* post data    */ settings.data.data,
-                /* data length  */ settings.data.size,
-                /* total size   */ settings.data.size + _headerLength,
-                /* context      */ 0
-            );
-            if (!_result) return _fail();
-
-            _result = WinHttpReceiveResponse(_request, 0);
-            if (!_result) return _fail();
-        }
-
-        Response _response{ true };
-
-        // Get length of headers buffer
-        DWORD _length = 0;
-        WinHttpQueryHeaders(_request, 
-            /* info level   */ WINHTTP_QUERY_RAW_HEADERS,
-            /* header name  */ WINHTTP_HEADER_NAME_BY_INDEX, 
-            /* buffer       */ WINHTTP_NO_OUTPUT_BUFFER, 
-            /* length       */ &_length, 
-            /* header index */ WINHTTP_NO_HEADER_INDEX
+        internet _request = HttpOpenRequest(_connected,
+            /* method       */ settings.method.c_str(),
+            /* resource     */ _url.resource.c_str(),
+            /* http version */ settings.version.c_str(),
+            /* referrer     */ nullptr,
+            /* accept types */ _acceptTypes.get(),
+            /* flags        */ INTERNET_FLAG_SECURE,
+            /* context      */ 0
         );
 
-        wchar_t* _buffer = new wchar_t[_length / sizeof(wchar_t)];
-        if (!WinHttpQueryHeaders(_request,
-            /* info level   */ WINHTTP_QUERY_RAW_HEADERS,
-            /* header name  */ WINHTTP_HEADER_NAME_BY_INDEX,
-            /* buffer       */ _buffer,
+        if (!HttpSendRequest(_request,
+            /* headers      */ _headers.c_str(),
+            /* length       */ _headerLength,
+            /* post data    */ settings.data.data(),
+            /* data length  */ settings.data.size() * sizeof(std::string::value_type)
+        )) return _fail();
+
+        // Get the response
+        response _response;
+
+        // Get status code
+        DWORD _statusSize = sizeof(DWORD);
+        DWORD _status{};
+        if (!HttpQueryInfo(_request,
+            /* info level   */ HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
+            /* buffer       */ &_status,
+            /* length       */ &_statusSize,
+            /* header index */ nullptr
+        )) return _fail();
+        
+        _response.status = _status;
+        _response.ok = _status >= 200 && _status < 300;
+
+        // Get status text
+        DWORD _statusTextSize = 0;
+        HttpQueryInfo(_request,
+            /* info level   */ HTTP_QUERY_STATUS_TEXT,
+            /* buffer       */ nullptr,
+            /* length       */ &_statusTextSize,
+            /* header index */ nullptr
+        );
+
+        auto _statusBuffer = std::make_unique<char[]>(_statusTextSize / sizeof(char));
+        if (!HttpQueryInfo(_request,
+            /* info level   */ HTTP_QUERY_STATUS_TEXT,
+            /* buffer       */ _statusBuffer.get(),
+            /* length       */ &_statusTextSize,
+            /* header index */ nullptr
+        )) return _fail();
+
+        _response.statusText = { _statusBuffer.get(), _statusTextSize };
+
+        // Get the length of the buffer of all headers
+        DWORD _length = 0;
+        HttpQueryInfo(_request,
+            /* info level   */ HTTP_QUERY_RAW_HEADERS,
+            /* buffer       */ nullptr,
             /* length       */ &_length,
-            /* header index */ WINHTTP_NO_HEADER_INDEX
-        )) {
-            auto _error = GetLastError();
-            return promise.set_value(Response{});
-        }
+            /* header index */ nullptr
+        );
+
+        auto _buffer = std::make_unique<char[]>(_length / sizeof(char));
+        if (!HttpQueryInfo(_request,
+            /* info level   */ HTTP_QUERY_RAW_HEADERS,
+            /* buffer       */ _buffer.get(),
+            /* length       */ &_length,
+            /* header index */ nullptr
+        )) return _fail();
 
         // Copy all retrieved headers into the response
-        wchar_t* _iter = _buffer;
+        char* _iter = _buffer.get();
         while (true) {
-            std::wstring _header{ _iter };
+            // Headers are all null terminated, so use std::string's
+            // constructor to automatically find that and use it.
+            std::string _header{ _iter };
             if (_header.size() == 0) break;
-            _iter += _header.size() + 1;
-            _response.headers.push_back(std::move(_header));
+            _iter += _header.size() + 1; // next header (+1 for null terminator)
+            std::size_t _split = _header.find_first_of(':');
+            // If no ':', can't split to key/value
+            if (_split == std::string::npos) continue;
+            std::string _key = _header.substr(0, _split);
+            std::string _value = _header.substr(_split + 1ull);
+            // Remove preceding whitespace
+            _value = _value.substr(_value.find_first_not_of(" \t\n\r\t\v"));
+            _response.headers[to_lower(_key)] = _value;
         }
-        delete[] _buffer;
 
-        // Get content size
-        DWORD _size = 0;
-        WinHttpQueryDataAvailable(_request, &_size);
-
-        char* _body = new char[_size / sizeof(char)];
-        auto _res = WinHttpReadData(_request,
-            /* buffer       */ _body,
-            /* bytes        */ _size,
-            /* bytes read   */ 0
-        );
-
-        std::string aaefa{ _body, _size };
+        // Read the result body
+        char _c[100]{};
+        DWORD _read{};
+        while (InternetReadFile(_request, &_c, 100, &_read)) {
+            if (_read == 0) break;
+            _response.body.append(_c, _read);
+        }
 
         promise.set_value(std::move(_response));
     } }.detach();
@@ -284,9 +249,11 @@ std::future<Response> fetch(const std::wstring& url, FetchSettings&& settings = 
 int main() {
     using namespace kaixo;
 
-    auto result = fetch(L"https://api.kaixo.me/releases");
+    response result = await fetch("https://api.kaixo.me/recommend?genre=electro");
 
-    auto res = result.get();
+    if (!result.ok) return -1;
+
+    json _json = json::parse(result.body);
 
     return 0;
 }
