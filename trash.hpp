@@ -7551,3 +7551,147 @@ std::string jsonToCode(const std::string& name, const Json& json, int indent = 0
     else result += "};";
     return result;
 }
+
+
+
+/**
+ * Check if c is one of the characters in cs.
+ * @param c character to check
+ * @param cs string view of characters to check against
+ * @return true if c is in cs
+ */
+constexpr bool oneOf(char c, std::string_view cs) { return cs.find(c) != std::string_view::npos; }
+
+/**
+ * Trim the ends of a string view, trims all characters in t
+ * @param view view to trimg
+ * @param t literal that contains the characters to trim
+ * @return trimmed view
+ */
+constexpr std::string_view trim(std::string_view view, const char* t = " \t\n\r\f\v") {
+    if (auto i = view.find_first_not_of(t); i != std::string_view::npos) view = view.substr(i);
+    if (auto i = view.find_last_not_of(t); i != std::string_view::npos) view = view.substr(0, i + 1);
+    return view;
+}
+
+class xml {
+public:
+    std::string name;
+    std::vector<xml> children;
+    std::map<std::string, std::string> attributes;
+
+
+    static std::optional<xml> parse(std::string_view val) {
+        return parseElement(val);
+    }
+
+private:
+    constexpr static auto valid_identifier_characters =
+        ":_-.0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    constexpr static auto valid_start_identifier_characters =
+        "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    static bool consume(std::string_view& val, char c, bool empty = false) {
+        if ((val = trim(val)).empty() || !val.starts_with(c)) return false;
+        return !(val = trim(val.substr(1))).empty() || empty;
+    }
+
+    static bool consume(std::string_view& val, std::string_view word) {
+        return val.starts_with(word) ? val = val.substr(word.size()), true : false;
+    }
+
+    static bool consumeOneOf(std::string_view& val, std::string_view word) {
+        return val.size() > 0 && oneOf(val.front(), word) ? val = val.substr(1), true : false;
+    }
+
+    static std::optional<xml> parseElement(std::string_view& val) {
+        std::string_view _xml = trim(val);
+
+        if (!consume(_xml, "<")) return {};
+        if (_xml.starts_with("xml")) return {}; // Not allowed
+        xml _result;
+        std::string_view _backup = _xml;
+        std::size_t _size = 0;
+        if (!consumeOneOf(_xml, valid_start_identifier_characters)) return {}; // Start
+        ++_size;
+        while (consumeOneOf(_xml, valid_identifier_characters)) ++_size;
+        _result.name = std::string{ _backup.substr(0, _size) };
+
+
+
+        return _result;
+    }
+
+    static bool parsePair(std::string_view& val, xml& result) {
+        std::string_view _xml = trim(val);
+
+
+
+    }
+
+
+};
+
+#include "string_literal.hpp"
+
+struct ConsumeResult {
+    ConsumeResult(std::string_view v) : value(v) {}
+    ConsumeResult() {}
+
+    std::string_view value = "";
+    constexpr operator bool() { return value.size(); }
+    constexpr operator std::string_view& () { return value; }
+};
+
+struct Consumer {
+    static bool ignoreWhitespace;
+
+    ConsumeResult operator()(std::string_view& val) {
+        std::string_view _val = val;
+        if (ignoreWhitespace) _val = trim(_val);
+        auto res = consume(_val);
+        if (res) val = _val;
+        return res;
+    }
+
+    virtual ConsumeResult consume(std::string_view& val) = 0;
+};
+bool Consumer::ignoreWhitespace = true;
+
+template<kaixo::string_literal C>
+struct SimpleConsumer : Consumer {
+    ConsumeResult consume(std::string_view& val) override {
+        if (val.starts_with(C.view())) {
+            std::string_view _result = val;
+            val = val.substr(C.size());
+            return _result.substr(0, C.size());
+        }
+    }
+};
+
+struct IdentifierConsumer : Consumer {
+    std::string_view valid_identifier_characters =
+        ":_-.0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    std::string_view valid_start_identifier_characters =
+        "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    ConsumeResult consume(std::string_view& val) override {
+        if (val.size() == 0) return {};
+        if (!oneOf(val.front(), valid_start_identifier_characters)) return {};
+        std::string_view _result = val;
+        val.remove_prefix(1);
+        std::size_t _size = 1;
+        while (val.size() > 0 && oneOf(val.front(), valid_identifier_characters)) {
+            ++_size;
+            val.remove_prefix(1);
+        }
+        return _result.substr(0, _size);
+    }
+};
+
+
+
+struct Test {
+
+
+};

@@ -66,4 +66,5 @@ target_link_libraries(utilities_example
   dwmapi
   gdiplus
   user32
+  crypt32
 )

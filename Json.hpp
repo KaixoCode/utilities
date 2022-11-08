@@ -8,6 +8,7 @@
 #include <string>
 #include <array>
 #include <stack>
+#include <list>
 
 namespace kaixo {
 
@@ -47,6 +48,7 @@ namespace kaixo {
         using value = std::variant<floating, integral, unsigned_integral, string, boolean, array, object, null>;
         template<class Ty> struct type_alias { using type = Ty; };
         template<> struct type_alias<float> { using type = floating; };
+        template<> struct type_alias<double> { using type = floating; };
         template<> struct type_alias<bool> { using type = boolean; };
         template<> struct type_alias<std::string_view> { using type = string; };
         template<std::size_t N> struct type_alias<char[N]> { using type = string; };
@@ -54,14 +56,37 @@ namespace kaixo {
         template<std::unsigned_integral Ty> struct type_alias<Ty> { using type = unsigned_integral; };
         value _value;
     public:
-        template<class Ty = null>
-            requires (!std::same_as<std::decay_t<Ty>, json>)
+        template<class Ty = null> requires (!std::same_as<std::decay_t<Ty>, json>)
         json(const Ty& ty = {}) : _value(static_cast<typename type_alias<Ty>::type>(ty)) {}
+        json(const std::optional<json>& opt) : _value(opt ? (value)opt.value() : null{}) {}
 
         template<class Ty> Ty& as() { return std::get<Ty>(_value); }
         template<class Ty> const Ty& as() const { return std::get<Ty>(_value); }
         auto type() const { return static_cast<value_type>(_value.index()); }
         bool is(value_type t) const { return t == type(); }
+        template<class Ty> Ty cast() const {
+            switch (type()) {
+                if constexpr (std::convertible_to<floating, Ty>)
+            case Floating: return static_cast<Ty>(std::get<floating>(_value));
+                if constexpr (std::convertible_to<integral, Ty>)
+            case Integral: return static_cast<Ty>(std::get<integral>(_value));
+                if constexpr (std::convertible_to<unsigned_integral, Ty>)
+            case Unsigned: return static_cast<Ty>(std::get<unsigned_integral>(_value));
+                if constexpr (std::convertible_to<string, Ty>)
+            case String: return static_cast<Ty>(std::get<string>(_value));
+                if constexpr (std::convertible_to<boolean, Ty>)
+            case Boolean: return static_cast<Ty>(std::get<boolean>(_value));
+                if constexpr (std::convertible_to<array, Ty>)
+            case Array: return static_cast<Ty>(std::get<array>(_value));
+                if constexpr (std::convertible_to<object, Ty>)
+            case Object: return static_cast<Ty>(std::get<object>(_value));
+                if constexpr (std::convertible_to<null, Ty>)
+            case Null: return static_cast<Ty>(std::get<null>(_value));
+            default: return {};
+            }
+        }
+
+        template<class Ty> operator Ty() const { return cast<Ty>(); }
 
         /**
          * Check if object contains key.
@@ -73,6 +98,9 @@ namespace kaixo {
             auto _it = as<object>().find(index);
             return _it != as<object>().end();
         }
+
+        template<std::size_t N>
+        json& operator[](const char(&index)[N]) { return operator[](std::string_view{index}); }
 
         /**
          * Accessor for object. Becomes object if it's null. Throws if not object.
