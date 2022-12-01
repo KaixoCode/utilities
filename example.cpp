@@ -100,8 +100,7 @@ std::future<response> fetch(const std::string& uri, fetch_settings&& settings = 
     std::future<response> _future = _promise.get_future();
     std::thread{ [uri, settings = std::move(settings), promise = std::move(_promise)]() mutable {
         url _url = url::parse(uri);
-        bool _ssl = _url.scheme == "https";
-
+        
         auto _fail = [&]() {
             auto _error = GetLastError();
             return promise.set_value(response{});
@@ -246,14 +245,130 @@ std::future<response> fetch(const std::string& uri, fetch_settings&& settings = 
     return _future;
 }
 
+
+template<class Base>
+struct polymorphic_vector {
+
+    struct rtti {
+        virtual ~rtti() = default;
+        virtual Base* get() = 0;
+        virtual void move(void* to) = 0;
+    };
+
+    template<std::derived_from<Base> Derived> 
+    struct rtti_impl : rtti {
+        template<class ...Args>
+        rtti_impl(Args&& ...args)
+            : value(std::forward<Args>(args)...) {}
+
+        Derived value;
+
+        virtual Base* get() override {
+            return dynamic_cast<Base*>(&value);
+        }
+
+        virtual void move(void* to) override {
+            new (to) rtti_impl<Derived>{ std::move(value) };
+        }
+    };
+
+    std::vector<std::size_t> accessors;
+    std::uint8_t* data = new std::uint8_t[sizeof(Base) * 4];
+    std::size_t bytes = sizeof(Base) * 4;
+    std::size_t used = 0;
+
+    static_assert(sizeof(rtti) == sizeof(void*));
+
+    polymorphic_vector() = default;
+    polymorphic_vector(const polymorphic_vector&) = delete;
+    polymorphic_vector(polymorphic_vector&&) = default;
+    polymorphic_vector& operator=(const polymorphic_vector&) = delete;
+    polymorphic_vector& operator=(polymorphic_vector&&) = default;
+    ~polymorphic_vector() {
+        // Call all the destructors
+        for (auto& accessor : accessors)
+            reinterpret_cast<rtti*>(data + accessor)->~rtti();
+        delete data;
+    }
+
+    std::uint8_t* allocate(std::size_t n) {
+        if (bytes - used < n) {
+            auto newSize = bytes * 2 + n;
+            auto newData = new std::uint8_t[newSize];
+            for (auto& accessor : accessors) {
+                reinterpret_cast<rtti*>(data + accessor)->move(newData + accessor);
+                reinterpret_cast<rtti*>(data + accessor)->~rtti();
+            }
+            delete data;
+            data = newData;
+            bytes = newSize;
+        }
+        std::size_t prev = used;
+        used += n;
+        return data + prev;
+    }
+
+    template<std::derived_from<Base> Derived, class ...Args>
+    Derived& emplace_back(Args&&...args) {
+        constexpr std::size_t size = sizeof(rtti_impl<Derived>);
+        // Insert enough space to construct the object instance of Derived
+        auto it = allocate(size);
+        // Get the pointer to the memory location where to construct
+        std::uint8_t* ptr = &*it;
+        // Construct the object and rtti info in place at the memory location
+        auto* obj = new (ptr) rtti_impl<Derived>{ std::forward<Args>(args)... };
+        // Dynamic cast to the base pointer to calculate offset in bytes from begin
+        std::size_t offset = ptr - data;
+        // Emplace the offset to the accessor vector
+        accessors.emplace_back(offset);
+        return obj->value;
+    }
+
+    template<std::derived_from<Base> Derived>
+    Derived* at(std::size_t index) {
+        return dynamic_cast<Derived*>(raw_access(index)->get());
+    }
+
+    rtti* raw_access(std::size_t index) {
+        return reinterpret_cast<rtti*>(data + accessors[index]);
+    }
+};
+
+#include <typeindex>
+#include "bag.hpp"
+
+using namespace kaixo;
+
+void test_bag() {
+    bag _bag{ "hello" };
+    bag _bag2{ 1, 3, std::string{ "long ass string"}};
+    std::vector _vals{ 3, 4, 7, 9 };
+
+    _bag.assign(std::string{ "carrot" }, 10.0, 100000ull, std::vector<int>{ 1, 2, 3 });
+    _bag.insert(_bag.begin(), "Hello World");
+    _bag.insert(_bag.begin() + 3, _bag2.begin(), _bag2.end());
+    _bag.shrink_to_fit();
+    _bag.insert(_bag.begin(), std::array{ 1, 3, 4, 5, 6, 7, 8 });
+    _bag.insert(_bag.begin() + 3, _vals.begin(), _vals.end());
+    _bag.erase(_bag.begin() + 5, _bag.begin() + 9);
+
+    for (auto& val : _bag) {
+        std::cout << val.type().name() << "\n";
+
+        if (auto str = val.cast<std::string>()) {
+            std::cout << *str << "\n";
+        }
+    }
+
+    return;
+}
+
+
 int main() {
     using namespace kaixo;
 
-    response result = await fetch("https://api.kaixo.me/recommend?genre=electro");
+    test_bag();
 
-    if (!result.ok) return -1;
-
-    json _json = json::parse(result.body);
 
     return 0;
 }
