@@ -348,7 +348,7 @@ void test_bag() {
     _bag.insert(_bag.begin(), "Hello World");
     _bag.insert(_bag.begin() + 3, _bag2.begin(), _bag2.end());
     _bag.shrink_to_fit();
-    _bag.insert(_bag.begin(), std::array{ 1, 3, 4, 5, 6, 7, 8 });
+    _bag.emplace<std::array<int, 5>>(_bag.begin(), 2, 5, 6, 7, 8);
     _bag.insert(_bag.begin() + 3, _vals.begin(), _vals.end());
     _bag.erase(_bag.begin() + 5, _bag.begin() + 9);
 
@@ -357,6 +357,13 @@ void test_bag() {
 
         if (auto str = val.cast<std::string>()) {
             std::cout << *str << "\n";
+        }
+
+        if (auto vec = val.cast<std::vector<int>>()) {
+            for (auto& val : *vec) {
+                std::cout << val << ", ";
+            }
+            std::cout << "\n";
         }
     }
 

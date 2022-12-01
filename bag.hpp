@@ -388,8 +388,7 @@ namespace kaixo {
                     it->_value->move_construct(to);
                     it->_value->~rtti();
                     it->_value = reinterpret_cast<rtti*>(to);
-                }
-                else { // Otherwise, first move to end of capacity, then to destination
+                } else { // Otherwise, first move to end of capacity, then to destination
                     // If not enough unused memory at end of capacity, reserve more
                     const std::size_t temp_space_needed = Backwards ? obj_size : obj_size + move_bytes;
                     if (temp_space_needed > available()) reserve(capacity() * 2 + temp_space_needed);
@@ -405,8 +404,7 @@ namespace kaixo {
             if constexpr (Backwards) {
                 _size -= move_bytes;
                 return reinterpret_cast<std::byte*>(pos->_value) - move_bytes;
-            }
-            else {
+            } else {
                 _size += move_bytes;
                 return reinterpret_cast<std::byte*>(it->_value) - move_bytes;
             }
