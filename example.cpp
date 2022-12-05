@@ -385,30 +385,41 @@ constexpr void change_impl(Ty& val, Args&&...args) {
     };
 }
 
-struct BaseTest {
-    virtual int fun(int val) = 0;
+#include <any>
+#include <functional>
+
+template<class ...Args> struct callable_a;
+struct callable {
+    virtual ~callable() = default;
+    
+    template<class ...Args>
+    std::any operator()(Args...args) {
+        if (auto c = dynamic_cast<callable_a<Args...>*>(this))
+            return (*c)(args...);
+        return nullptr;
+    }
 };
 
-struct Test : BaseTest {
-    int value = 1;
+template<class ...Args>
+struct callable_a : callable {
+    virtual std::any operator()(Args...) = 0;
+};
 
-    int fun(int val) override { return 0; };
+template<class R, class ...Args>
+struct callable_b : std::function<R(Args...)>, callable_a<Args...> {
+    using std::function<R(Args...)>::function;
+    std::any operator()(Args...args) override {
+        return std::function<R(Args...)>::operator()(args...);
+    }
 };
 
 int main() {
-    Test test;
-    BaseTest& base = static_cast<BaseTest&>(test);
+    callable_b<int, int> a{ [](int a) -> int { return a + 1; } };
+    callable& c = *dynamic_cast<callable*>(&a);
 
-    change_impl(base, [](Test& p, int a) -> int {
-        return p.value + a;
-    });
+    auto res = c(1);
 
-    auto aone = std::bit_cast<int(*)(BaseTest&, int)>(&Test::fun);
-
-    auto a = test.fun(1);
-    auto b = base.fun(1);
-    auto c = aone(base, 1);
-
+    
     return 0;
 }
 
