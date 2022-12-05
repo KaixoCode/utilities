@@ -370,12 +370,44 @@ void test_bag() {
     return;
 }
 
+template<class R, class Ty, class ...Args>
+constexpr auto to_mem_ptr(R(*impl)(Ty&, Args...)) {
+    return std::bit_cast<R(Ty::*)(Args...)>(impl);
+}
+
+template<class Ty, class ...Args>
+    requires std::is_polymorphic_v<Ty>
+constexpr void change_impl(Ty& val, Args&&...args) {
+    Ty* ptr = &val;
+    void** vtable = reinterpret_cast<void**>(ptr);
+    vtable[0] = new void* [sizeof...(Args)] {
+        reinterpret_cast<void*>(+std::forward<Args>(args))...
+    };
+}
+
+struct BaseTest {
+    virtual int fun(int val) = 0;
+};
+
+struct Test : BaseTest {
+    int value = 1;
+
+    int fun(int val) override { return 0; };
+};
 
 int main() {
-    using namespace kaixo;
+    Test test;
+    BaseTest& base = static_cast<BaseTest&>(test);
 
-    test_bag();
+    change_impl(base, [](Test& p, int a) -> int {
+        return p.value + a;
+    });
 
+    auto aone = std::bit_cast<int(*)(BaseTest&, int)>(&Test::fun);
+
+    auto a = test.fun(1);
+    auto b = base.fun(1);
+    auto c = aone(base, 1);
 
     return 0;
 }

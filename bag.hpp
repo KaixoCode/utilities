@@ -5,38 +5,39 @@
 #include <memory>
 
 namespace kaixo {
+    struct rtti {
+        virtual ~rtti() = default;
+        virtual std::size_t size() const = 0;
+        virtual const std::type_info& type() const = 0;
+        virtual void* get() const = 0;
+
+        virtual void move_assign(void* to) = 0;
+        virtual void copy_assign(void* to) const = 0;
+        virtual void move_construct(std::byte* at) = 0;
+        virtual void copy_construct(std::byte* at) const = 0;
+    };
+
+    template<class Ty>
+    struct rtti_typed : rtti {
+        Ty value;
+
+        template<class ...Args>
+        rtti_typed(Args&&... args)
+            : value(std::forward<Args>(args)...) {};
+
+        std::size_t size() const override { return sizeof(rtti_typed<Ty>); }
+        const std::type_info& type() const override { return typeid(Ty); }
+        void* get() const override { return const_cast<void*>(static_cast<const void*>(&value)); }
+
+        void move_assign(void* to) override { *static_cast<Ty*>(to) = std::move(value); }
+        void copy_assign(void* to) const override { *static_cast<Ty*>(to) = value; }
+        void move_construct(std::byte* at) override { new (at) rtti_typed<Ty>(std::move(value)); }
+        void copy_construct(std::byte* at) const override { new (at) rtti_typed<Ty>(value); }
+    };
+
     template<class Allocator = std::allocator<std::byte>>
     struct bag {
     private:
-        struct rtti {
-            virtual ~rtti() = default;
-            virtual std::size_t size() const = 0;
-            virtual const std::type_info& type() const = 0;
-            virtual void* get() const = 0;
-
-            virtual void move_assign(void* to) = 0;
-            virtual void copy_assign(void* to) const = 0;
-            virtual void move_construct(std::byte* at) = 0;
-            virtual void copy_construct(std::byte* at) const = 0;
-        };
-
-        template<class Ty>
-        struct rtti_typed : rtti {
-            Ty value;
-
-            template<class ...Args>
-            rtti_typed(Args&&... args)
-                : value(std::forward<Args>(args)...) {};
-
-            std::size_t size() const override { return sizeof(rtti_typed<Ty>); }
-            const std::type_info& type() const override { return typeid(Ty); }
-            void* get() const override { return const_cast<void*>(static_cast<const void*>(&value)); }
-
-            void move_assign(void* to) override { *static_cast<Ty*>(to) = std::move(value); }
-            void copy_assign(void* to) const override { *static_cast<Ty*>(to) = value; }
-            void move_construct(std::byte* at) override { new (at) rtti_typed<Ty>(std::move(value)); }
-            void copy_construct(std::byte* at) const override { new (at) rtti_typed<Ty>(value); }
-        };
 
     public:
         struct value_type {
