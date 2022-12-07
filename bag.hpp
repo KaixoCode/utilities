@@ -37,9 +37,6 @@ namespace kaixo {
 
     template<class Allocator = std::allocator<std::byte>>
     struct bag {
-    private:
-
-    public:
         struct value_type {
             template<class Ty> bool is() const { return typeid(Ty) == _value->type(); }
             template<class Ty> Ty* cast() { return is<Ty>() ? static_cast<Ty*>(_value->get()) : nullptr; }
