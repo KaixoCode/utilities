@@ -830,14 +830,6 @@ namespace kaixo {
      */
 
     inline namespace type_traits {
-         /**
-          * Concept to match a type_trait.
-          * @tparam Ty type
-          * @tparam V type_trait value
-          */
-        template<class Ty, auto V>
-        concept require = V.template value<Ty>;
-
         /**
          * Boolean and on 2 type_trait classes.
          * @tparam A type trait 1
@@ -945,6 +937,14 @@ namespace kaixo {
          */
         template<class Ty>
         concept is_type_trait = is_type_trait_impl<Ty>::value;
+
+        /**
+         * Concept to match a type_trait.
+         * @tparam Ty type
+         * @tparam V type_trait value
+         */
+        template<class Ty, is_type_trait auto V>
+        concept require = V.template value<Ty>;
 
         /**
          * Boolean and on 2 type traits
@@ -3648,7 +3648,7 @@ constexpr static auto handle(Args&& ...cases) {                  \
     template<auto transform = unit>
     constexpr auto generate_switch = []<class ...Functors>(Functors&& ...cases) {
         constexpr auto p2 = closest_larger_power2(sizeof...(Functors));
-        return tuple_switch_impl<p2>::template handle<transform>(std::forward<Functors>(cases)...);
+        return cases_switch_impl<p2>::template handle<transform>(std::forward<Functors>(cases)...);
     };
 
     /**

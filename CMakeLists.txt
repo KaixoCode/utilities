@@ -11,6 +11,7 @@ include_directories(
 
 add_library(utilities STATIC
   "${utilities_SOURCE_DIR}/utils.hpp"
+  "${utilities_SOURCE_DIR}/state.hpp"
   "${utilities_SOURCE_DIR}/smart_tuple.hpp"
   "${utilities_SOURCE_DIR}/pa_function.hpp"
   "${utilities_SOURCE_DIR}/function.hpp" 
