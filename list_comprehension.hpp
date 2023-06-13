@@ -147,9 +147,6 @@ namespace kaixo {
         constexpr static auto name = Name;
         using definitions = std::tuple<var_t<Name>>; // Variable defines and depends on itself
         using dependencies = std::tuple<var_t<Name>>; // Cancels out, but helpful for generalizing
-
-
-        template<class B> constexpr auto operator=(B&& b) const;
     };
     template<tag_t Name> constexpr auto var = var_t<Name>{};
 
@@ -250,10 +247,7 @@ namespace kaixo {
     template<var_type ...As> struct var_tuple_t {
         using definitions = tuple_cat_t<typename As::definitions...>;
         using dependencies = tuple_cat_t<typename As::dependencies...>;
-
-        template<class B> constexpr auto operator=(B&& b) const;
     };
-
     template<class Ty> concept var_tuple = specialization<Ty, var_tuple_t>;
 
     // Named tuple, connects types to names
@@ -859,35 +853,29 @@ std::tuple<Part>{ std::forward<Part>(part) } };
             };
         }
 
-        struct brk_t {
-            template<expression B> constexpr auto operator=(B&& b) const {
-                return break_condition_t{ std::forward<B>(b) };
-            }
-        }; constexpr brk_t brk;
-    }
-
-    template<var_type ...As>
-    template<class B>
-    constexpr auto var_tuple_t<As...>::operator=(B&& b) const {
-        if constexpr (expression<B>) {
-            return var_unpack{ std::forward<B>(b), var_tuple_t<As...>{} };
-        } else if constexpr (var_type<B>) { 
-            return var_unpack{
-                expression_t{ [](auto& vals) { return vals.get<std::decay_t<B>>(); },
-                fake<get_dependencies_t<B>>{} }, var_tuple_t{} };
+        template<var_type A, expression B> constexpr inline auto operator<<=(A&, B&& b) {
+            return var_definition{ std::forward<B>(b), A{} };
         }
-    }
 
-    template<tag_t Name>
-    template<class B>
-    constexpr auto var_t<Name>::operator=(B&& b) const {
-        if constexpr (expression<B>) {
-            return var_definition{ std::forward<B>(b), var_t{} };
-        }
-        else if constexpr (var_tuple<B>) {
+        template<var_type A, var_tuple B> constexpr inline auto operator<<=(A&, B&& b) {
             return var_definition{
                 expression_t{ [b = std::forward<B>(b)](auto& vals) { return use(vals, b); },
-                fake<get_dependencies_t<B>>{} }, var_t{} };
+                fake<get_dependencies_t<B>>{} }, A{} };
+        }
+
+        template<var_tuple A, expression B> constexpr inline auto operator<<=(A&&, B&& b) {
+            return var_unpack{ std::forward<B>(b), A{} };
+        }
+
+        template<var_tuple A, var_type B> constexpr inline auto operator<<=(A&&, B&) {
+            return var_unpack{
+                expression_t{ [](auto& vals) { return vals.get<std::decay_t<B>>(); },
+                fake<get_dependencies_t<B>>{} }, A{} };
+        }
+
+        struct brk_t {}; constexpr brk_t brk;
+        template<expression B> constexpr inline auto operator<<=(const brk_t&, B&& b) {
+            return break_condition_t{ std::forward<B>(b) };
         }
     }
 
