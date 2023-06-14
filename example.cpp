@@ -306,8 +306,11 @@ namespace kaixo {
     template<class Ty> concept is_range_kind = is_range<Ty> || is_partial_range<Ty>;
     template<class Ty> concept is_named_range = is_range_kind<Ty> && is_var<Ty>;
 
+    template<class Ty> struct is_expression_ : std::bool_constant<is_expression<Ty>> {};
+    constexpr auto is_expression_v = type_trait<is_expression_>{};
+    
     template<class ...As> concept are_valid_expression_operators
-        = (is_varexpr<decay_t<As>> || ...) && (!is_range_kind<decay_t<As>> && ...);
+        = (is_varexpr<decay_t<As>> || ...) && (!is_range_kind<decay_t<As>> && ...) && (!is_operator<decay_t<As>> && ...);
 
     template<class Ty, is_var Var>
     struct named_value {
@@ -335,12 +338,12 @@ namespace kaixo {
     template<is_named_value ...Args>
     struct named_tuple : std::tuple<typename Args::value_type...> {
         using parent = std::tuple<typename Args::value_type...>;
+        using vars = info<typename Args::var...>;
 
         constexpr named_tuple(Args&&...args) : parent(args.value...) {}
 
         template<is_var Var>
         constexpr decltype(auto) get() const {
-            using vars = info<typename Args::var...>;
             static_assert(vars::template occurs<decay_t<Var>>, "Variable is not part of tuple");
             constexpr std::size_t index = vars::template index<Var>;
             return std::get<index>(*this);
@@ -362,7 +365,6 @@ namespace kaixo {
         Part part;
     };
 
-
     template<is_varexpr R, class ...Parts>
     struct list_comprehension {
         using define = concat_t<define<Parts>...>::unique;
@@ -370,23 +372,10 @@ namespace kaixo {
 
         R result;
         std::tuple<Parts...> parts;
-    };
 
-    template<is_varexpr R, class ...Parts>
-    struct partial_list_comprehension {
-        using is_partial_range = int;
-        using define = concat_t<define<Parts>...>::unique;
-        using depend = concat_t<depend<R>, depend<Parts>...>::unique::template remove<define>;
-
-        R result;
-        std::tuple<Parts...> parts;
-
-        constexpr auto eval(auto& tuple) {
-            
+        constexpr decltype(auto) eval(auto& tuple) {
         }
     };
-    
-    template<is_varexpr R, class ...Parts> list_comprehension(R, std::tuple<Parts...>)->list_comprehension<R, Parts...>;
 
     template<class Ty> concept is_lc_construct = specialization<Ty, lc_construct>;
     template<class Ty> concept is_lc = specialization<Ty, list_comprehension>;
@@ -398,13 +387,10 @@ namespace kaixo {
     constexpr auto operator<(is_var auto v, is_range_kind auto&& r) { return named_range{ std::move(r), v }; }
     constexpr auto operator|(is_varexpr auto&& v, is_named_range auto&& r) { return lc_construct{ v, std::move(r) }; }
 
-    template<is_var A, is_var B> constexpr auto operator,(const A&, const B&) { return info<A, B>{}; }
-    template<is_var A, is_var ...Bs> constexpr auto operator,(info<Bs...>, const A&) { return info<Bs..., A>{}; }
-    template<is_var A, is_var ...Bs> constexpr auto operator,(const A&, info<Bs...>) { return info<A, Bs...>{}; }
-
     template<is_var A, class Ty>
-    constexpr decltype(auto) eval_in_expression(A& value, Ty& tuple) {
-        return tuple.get<A>();
+    constexpr decltype(auto) eval_in_expression(const A& value, Ty& tuple) {
+        if constexpr (decay_t<Ty>::vars::template occurs<decay_t<A>>) return tuple.get<A>();
+        else return value;
     }
 
     template<is_expression A, class Ty>
@@ -468,16 +454,16 @@ namespace kaixo {
         std::tuple<As...> parts;
 
         constexpr decltype(auto) eval(auto& tuple) const {
-            return[&]<std::size_t ...Is>(std::index_sequence<Is...>) {
+            auto res = [&]<std::size_t ...Is>(std::index_sequence<Is...>) {
                 return std::tuple{ eval_in_expression(std::get<Is>(parts), tuple)... };
             }(std::index_sequence_for<As...>{});
+            if constexpr (as_info<decltype(res)>::template count_filter<is_expression_v> == 0) {
+                return res;
+            } else {
+                return move_tparams_t<decltype(res), expression>{ std::move(res) };
+            }
         }
     };
-
-    template<class A, class B> requires are_valid_expression_operators<A, B>
-    constexpr auto operator,(A&& a, B&& b) {
-        return expression<A, B>{ std::tuple{ std::forward<A>(a), std::forward<B>(b) } };
-    }
 
     template<is_var ...As>
     constexpr auto operator|(info<As...>, is_named_range auto&& r) {
@@ -495,14 +481,35 @@ namespace kaixo {
                     std::forward<Ty>(construct).part, std::forward<Parts>(parts)...
                 } };
             } else {
-                return partial_list_comprehension{ std::forward<Ty>(construct).result, std::tuple{
+                list_comprehension l{ std::forward<Ty>(construct).result, std::tuple{
                     std::forward<Ty>(construct).part, std::forward<Parts>(parts)...
                 } };
+
+                return expression<decltype(l)>{ std::move(l) };
             }
         };
     } lc;
 
     namespace operators {
+        template<is_var A, is_var B> constexpr auto operator,(const A&, const B&) { return info<A, B>{}; }
+        template<is_var A, is_var ...Bs> constexpr auto operator,(info<Bs...>, const A&) { return info<Bs..., A>{}; }
+        template<is_var A, is_var ...Bs> constexpr auto operator,(const A&, info<Bs...>) { return info<A, Bs...>{}; }
+
+        template<class A, class B> requires are_valid_expression_operators<A, B>
+        constexpr auto operator,(A&& a, B&& b) {
+            return expression<decay_t<A>, decay_t<B>>{ std::tuple{ std::forward<A>(a), std::forward<B>(b) } };
+        }
+
+        template<class A, class ...Bs> requires are_valid_expression_operators<Bs...>
+        constexpr auto operator,(A&& a, expression<Bs...>&& b) {
+            return expression<decay_t<A>, Bs...>{ std::tuple_cat(std::forward_as_tuple(std::forward<A>(a)), b.parts) };
+        }
+
+        template<class A, class ...Bs> requires are_valid_expression_operators<Bs...>
+        constexpr auto operator,(expression<Bs...>&& b, A&& a) {
+            return expression<Bs..., decay_t<A>>{ std::tuple_cat(std::move(b).parts, std::forward_as_tuple(std::forward<A>(a))) };
+        }
+
 #define KAIXO_BINARY_OPERATOR(name, op)                          \
         struct name {                                            \
             using is_operator = int;                             \
@@ -513,9 +520,30 @@ namespace kaixo {
         };                                                                            \
                                                                                       \
         template<class A, class B> requires are_valid_expression_operators<A, B>      \
-        constexpr expression<A, B, name> operator op(A&& a, B&& b) {                  \
-            return expression<A, B, name>{ std::forward<A>(a), std::forward<B>(b) };  \
+        constexpr expression<decay_t<A>, decay_t<B>, name> operator op(A&& a, B&& b) {                  \
+            return expression<decay_t<A>, decay_t<B>, name>{ std::forward<A>(a), std::forward<B>(b) };  \
         }
+
+    #define KAIXO_UNARY_OPERATOR(name, op)                \
+        struct name {                                     \
+            using is_operator = int;                      \
+            template<class A>                             \
+            constexpr static decltype(auto) eval(A&& a) { \
+                return op a;                              \
+            }                                             \
+        };                                                             \
+                                                                       \
+        template<is_varexpr A>                                         \
+        constexpr expression<decay_t<A>, name> operator op(A&& a) {    \
+            return expression<decay_t<A>, name>{ std::forward<A>(a) }; \
+        }
+        
+        KAIXO_UNARY_OPERATOR(dereference, *);
+        KAIXO_UNARY_OPERATOR(pointer, &);
+        KAIXO_UNARY_OPERATOR(negate, -);
+        KAIXO_UNARY_OPERATOR(plus, +);
+        KAIXO_UNARY_OPERATOR(boolean_not, !);
+        KAIXO_UNARY_OPERATOR(bitwise_not, ~);
 
         KAIXO_BINARY_OPERATOR(add, +);
         KAIXO_BINARY_OPERATOR(subtract, -);
@@ -548,82 +576,85 @@ namespace kaixo {
         KAIXO_BINARY_OPERATOR(xor_assign, ^=);
     }
 
+    namespace containers {
+        template<class ...As> struct range_t;
 
-    template<class ...As> struct range_t;
+        template<trivial Ty> requires (!is_varexpr<Ty>)
+            struct range_t<Ty> {
+            Ty a{};
+            Ty b{};
+            constexpr range_t(Ty a, Ty b) : a(a), b(b) {}
 
-    template<trivial Ty> requires (!is_varexpr<Ty>)
-    struct range_t<Ty> {
-        Ty a{};
-        Ty b{};
-        constexpr range_t(Ty a, Ty b) : a(a), b(b) {}
+            struct iterator {
+                using difference_type = std::ptrdiff_t;
+                using value_type = Ty;
+                using iterator_category = std::forward_iterator_tag;
 
-        struct iterator {
-            using difference_type = std::ptrdiff_t;
-            using value_type = Ty;
-            using iterator_category = std::forward_iterator_tag;
+                Ty value;
 
-            Ty value;
+                constexpr iterator& operator++() { ++value; return *this; }
+                constexpr iterator operator++(int) { iterator b = *this; ++value; return b; }
+                constexpr Ty operator*() { return value; }
+                constexpr bool operator==(const iterator& b) const { return value == b.value; }
+            };
 
-            constexpr iterator& operator++() { ++value; return *this; }
-            constexpr iterator operator++(int) { iterator b = *this; ++value; return b; }
-            constexpr Ty operator*() { return value; }
-            constexpr bool operator==(const iterator& b) const { return value == b.value; }
+            constexpr iterator begin() { return { a }; }
+            constexpr iterator end() { return { b }; }
         };
 
-        constexpr iterator begin() { return { a }; }
-        constexpr iterator end() { return { b }; }
-    };
+        template<is_varexpr A, trivial Ty> requires (!is_varexpr<Ty>)
+            struct range_t<A, Ty> {
+            using is_partial_range = int;
+            using depend = info<A>;
 
-    template<is_varexpr A, trivial Ty> requires (!is_varexpr<Ty>)
-    struct range_t<A, Ty> {
-        using is_partial_range = int;
-        using depend = info<A>;
+            Ty b{};
+            constexpr range_t(const A&, Ty b) : b(b) {}
 
-        Ty b{};
-        constexpr range_t(const A&, Ty b) : b(b) {}
+            constexpr auto eval(auto& tuple) { return range_t{ tuple.get<A>(), b }; }
+        };
 
-        constexpr auto eval(auto& tuple) { return range_t{ tuple.get<A>(), b }; }
-    };
+        template<trivial Ty, is_varexpr B> requires (!is_varexpr<Ty>)
+            struct range_t<Ty, B> {
+            using is_partial_range = int;
+            using depend = info<B>;
 
-    template<trivial Ty, is_varexpr B> requires (!is_varexpr<Ty>)
-    struct range_t<Ty, B> {
-        using is_partial_range = int;
-        using depend = info<B>;
+            Ty a{};
+            constexpr range_t(Ty a, const B&) : a(a) {}
 
-        Ty a{};
-        constexpr range_t(Ty a, const B&) : a(a) {}
+            constexpr auto eval(auto& tuple) { return range_t{ a, tuple.get<B>() }; }
+        };
 
-        constexpr auto eval(auto& tuple) { return range_t{ a, tuple.get<B>() }; }
-    };
-    
-    template<is_varexpr A, is_varexpr B>
-    struct range_t<A, B> {
-        using is_partial_range = int;
-        using depend = info<A, B>;
+        template<is_varexpr A, is_varexpr B>
+        struct range_t<A, B> {
+            using is_partial_range = int;
+            using depend = info<A, B>;
 
-        constexpr range_t(const A&, const B&) {}
+            constexpr range_t(const A&, const B&) {}
 
-        constexpr auto eval(auto& tuple) { return range_t{ tuple.get<A>(), tuple.get<B>() }; }
-    };
+            constexpr auto eval(auto& tuple) { return range_t{ tuple.get<A>(), tuple.get<B>() }; }
+        };
 
-    template<class A> requires (!is_varexpr<A>) range_t(A, A)->range_t<A>;
-    template<is_varexpr A, class B>  requires (!is_varexpr<B>) range_t(A, B)->range_t<A, B>;
-    template<class A, is_varexpr B>  requires (!is_varexpr<A>) range_t(A, B)->range_t<A, B>;
-    template<is_varexpr A, is_varexpr B> range_t(A, B)->range_t<A, B>;
+        template<class A> requires (!is_varexpr<A>) range_t(A, A)->range_t<A>;
+        template<is_varexpr A, class B>  requires (!is_varexpr<B>) range_t(A, B)->range_t<A, B>;
+        template<class A, is_varexpr B>  requires (!is_varexpr<A>) range_t(A, B)->range_t<A, B>;
+        template<is_varexpr A, is_varexpr B> range_t(A, B) -> range_t<A, B>;
 
-    template<class A, class B>
-    constexpr auto range(A&& a, B&& b) {
-        using range_type = decltype(range_t{ std::forward<A>(a), std::forward<B>(b) });
-        if constexpr (is_partial_range<range_type>) {
-            return range_t{ std::forward<A>(a), std::forward<B>(b) };
-        } else {
-            return range_t{ std::forward<A>(a), std::forward<B>(b) };
+        template<class A, class B>
+        constexpr auto range(A&& a, B&& b) {
+            using range_type = decltype(range_t{ std::forward<A>(a), std::forward<B>(b) });
+            if constexpr (is_partial_range<range_type>) {
+                return range_t{ std::forward<A>(a), std::forward<B>(b) };
+            }
+            else {
+                return range_t{ std::forward<A>(a), std::forward<B>(b) };
+            }
         }
     }
 }
 
 using namespace kaixo;
 using namespace kaixo::operators;
+using namespace kaixo::containers;
 
 int main() {
 
@@ -632,13 +663,23 @@ int main() {
     constexpr var_t<"c"> c;
     constexpr var_t<"x"> x;
 
-    (x <- range(1, a));
+    //constexpr named_tuple vls{ b = 1, c = 10 };
+    //constexpr named_tuple vls2{ a = 4 };
 
-    auto r6 = lc((x, a + b) | a <- std::array{ 1 }, x <- std::array{ 1, 2, 3, 4 });
+    constexpr auto expr = (a, b);
 
-    decltype(r6)::depend::size;
+    //constexpr auto ana = expr.eval(vls);
+    //constexpr auto aoine = ana.eval(vls2);
 
-    auto oaine = lc(a | a <- range(b, c), b <- range(1, c), c <- range(1, 10));
+
+
+    //constexpr auto r6 = lc((x, a + b) | a <- std::array{ 1 }, x <- std::array{ 1, 2, 3, 4 });
+
+    //auto r7 = r6.eval(vls);
+
+    //decltype(r6)::depend::size;
+
+    //auto oaine = lc(a | a <- range(b, c), b <- range(1, c), c <- range(1, 10));
 
     return 0;
 }
