@@ -482,7 +482,9 @@ namespace kaixo {
      * Dud type, used in places as a placeholder, or
      * when nothing else should match.
      */
-    struct dud {};
+    struct dud {
+        constexpr bool operator==(const dud&) const { return true; }
+    };
 
     /**
      * Extract enum name from function signature, used in
@@ -1641,6 +1643,9 @@ namespace kaixo {
 
     template<class L, std::size_t I, class Ty>// Value
     concept _call_type5 = requires(L l) { { l == Ty::value } -> convertible_to<bool>; };
+    
+    template<class L, std::size_t I, class Ty>// Value
+    concept _call_type6 = std::same_as<L, bool>;
 
     template<class L>
     struct wrap_filter_object { using type = filter_object_wrapper<L>; };
@@ -1656,7 +1661,8 @@ namespace kaixo {
     template<class L>
     struct filter_object : wrap_filter_object<L>::type {
         template<std::size_t I, class Ty> consteval bool call() {
-            if constexpr (_call_type0<L, I, Ty>) return this->value.template operator() < Ty > ();
+            if constexpr (_call_type6<L, I, Ty>) return this->value;
+            else if constexpr (_call_type0<L, I, Ty>) return this->value.template operator() < Ty > ();
             else if constexpr (_call_type1<L, I, Ty>) return this->value.template operator() < I, Ty > ();
             else if constexpr (_call_type2<L, I, Ty>) return this->value.template operator() < I > ();
             else if constexpr (_call_type3<L, I, Ty>) return true;
