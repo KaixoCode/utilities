@@ -51,6 +51,7 @@
  *                                                           *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+namespace deprecated {
 namespace kaixo {
 
     inline namespace type_utils_n {
@@ -3214,4 +3215,5 @@ struct template_switch_impl<n> {                                     \
                 }()... } {}
         };
     }
+}
 }
