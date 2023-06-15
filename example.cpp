@@ -8,8 +8,6 @@
 #include <ranges>
 #include <iostream>
 
-#include "list_comprehension.hpp"
-
 namespace aaaa {
 
     struct event {
@@ -266,6 +264,8 @@ namespace aaaa {
 
 }
 
+#include "list_comprehension.hpp"
+
 
 using namespace kaixo;
 using namespace kaixo::operators;
@@ -273,34 +273,39 @@ using namespace kaixo::containers;
 
 int main() {
 
-    constexpr var_t<"a"> a;
-    constexpr var_t<"b"> b;
-    constexpr var_t<"c"> c;
-    constexpr var_t<"x"> x;
+    constexpr var_t<"a"> a{};
+    constexpr var_t<"b"> b{};
+    constexpr var_t<"c"> c{};
+    constexpr var_t<"x"> x{};
 
     constexpr named_tuple vls{ b = 74, c = 10 };
     constexpr named_tuple vls2{ a = 4 };
     constexpr named_tuple vls3{ x = 4 };
 
-    auto fgrg = (a, b + 1).eval(vls);
+    std::map<int, int> faefa{ { 1, 3 }, { 2, 5 }, { 3, 10 } };
+
+    //for (auto [a, b] : oring) {
+    //    std::cout << a << "," << b << '\n';
+    //}
+
     auto ffffe = ((a, b) | a <- range(1, 10), b <- range(1, a));
 
     for (auto [a, b] : ffffe) {
         std::cout << a << "," << b << '\n';
     }
 
-    constexpr auto aioneo = is_range_kind<named_range<range_t<int>, var_t<"a">>>;
-
-    //auto aoinef = sizeof(ffffe);
     //
+    //std::pair<int, int> aefaef;
     //
+    //auto oesaine = std::get<0>(aefaef);
     //
-
-    auto test = ((a, b, c) | c <- range(1, 11), b <- range(1, c), a <- range(1, b), a*a + b*b == c*c);
-    
-    for (auto [a, b, c] : test) {
-        std::cout << "[" << a << ", " << b << ", " << c << "]\n";
-    }
+    //constexpr auto aioneo = is_range_kind<named_range<range_t<int>, var_t<"a">>>;
+    //
+    //auto test = ((a, b, c) | c <- range(1, 11), b <- range(1, c), a <- range(1, b), a*a + b*b == c*c);
+    //
+    //for (auto [a, b, c] : test) {
+    //    std::cout << "[" << a << ", " << b << ", " << c << "]\n";
+    //}
 
     //
     //auto aionefa = (a | a <- range(1, 10));
