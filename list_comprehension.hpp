@@ -455,9 +455,9 @@ namespace kaixo {
     template<class R, is_named_tuple T>
     struct iterator_data : std::type_identity<dud> {};
 
-    template<is_named_range R, is_named_tuple T>
+    template<is_range_kind R, is_named_tuple T>
     struct iterator_data<R, T> : range_iterator<R, T> {};
-
+    
     template<class R, is_named_tuple T>
     using iterator_data_t = iterator_data<R, T>::type;
 
@@ -472,6 +472,9 @@ namespace kaixo {
     template<is_named_range R, is_named_tuple T>
     struct defined_values<R, T> : std::type_identity<info<named_value<range_value_t<R, T>, typename R::var>>> {};
 
+    template<is_partial_range R, is_named_tuple T> // Complete partial range
+    struct defined_values<R, T> : defined_values<range_type_t<R, T>, T> {};
+    
     template<class R, is_named_tuple T>
     using defined_values_t = defined_values<R, T>::type;
 
@@ -587,6 +590,8 @@ namespace kaixo {
     struct list_comprehension {
         using define = concat_t<define<Parts>...>::unique;
         using depend = concat_t<depend<R>, depend<Parts>...>::unique::template remove<define>;
+
+        using part_types = info<Parts...>;
 
         using value_type = lc_value_type<R, Parts...>;
 
@@ -707,10 +712,11 @@ namespace kaixo {
                     auto& intr = std::get<I>(intermediate);
                     auto& iter = std::get<I>(iterators);
                     if constexpr (is_partial_range<type>) {
+                        using full = range_type_t<type, decltype(cur_values)>;
                         intr = part.eval(cur_values);
                         iter = std::ranges::begin(intr.value());
 
-                        return initialize<I + 1>(std::forward<Args>(args)..., typename type::var{} = *iter);
+                        return initialize<I + 1>(std::forward<Args>(args)..., typename full::var{} = *iter);
                     } else if constexpr (is_range<type>) {
                         iter = std::ranges::begin(part);
 
@@ -751,6 +757,8 @@ namespace kaixo {
 
         using define = concat_t<define<Parts>...>::unique;
         using depend = concat_t<depend<R>, depend<Parts>...>::unique::template remove<define>;
+
+        using part_types = info<Parts...>;
 
         R result;
         std::tuple<Parts...> parts;
@@ -817,10 +825,10 @@ namespace kaixo {
 #undef KAIXO_PARTIAL_CONSTRUCT
         };
         
-        template<is_partial_lc Ty, is_dependent ...Parts>
-        constexpr auto add_lc_part(Ty&& lc, Parts&& ...parts) {
+        template<is_partial_lc Ty, is_dependent Part>
+        constexpr auto operator,(Ty&& lc, Part&& part) {
 #define KAIXO_PARTIAL_CONSTRUCT(type) type{ std::forward<Ty>(lc).value.result, std::tuple_cat(   \
-                std::forward<Ty>(lc).value.parts, std::make_tuple(std::forward<Parts>(parts)...) \
+                std::forward<Ty>(lc).value.parts, std::make_tuple(std::forward<Part>(part)) \
             ) }
             // Determine whether the list comprehension is complete.
             using lc_t = decltype(KAIXO_PARTIAL_CONSTRUCT(partial_list_comprehension));

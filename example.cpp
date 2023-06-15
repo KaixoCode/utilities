@@ -283,11 +283,7 @@ int main() {
     constexpr named_tuple vls3{ x = 4 };
 
     auto fgrg = (a, b + 1).eval(vls);
-    auto ffffe = add_lc_part((a, b) | a <- range(1, 10), b <- range(1, a));
-
-    as_info<decltype(ffffe)::iterator::named_tuple_type>::size;;
-
-    decltype(ffffe)::depend::size;
+    auto ffffe = ((a, b) | a <- range(1, 10), b <- range(1, a));
 
     for (auto [a, b] : ffffe) {
         std::cout << a << "," << b << '\n';
@@ -299,7 +295,13 @@ int main() {
     //
     //
     //
-    //auto test = ((a, b, c) | c <- range(1, 11), b <- range(1, c), a <- range(1, b), a*a + b*b == c*c);
+
+    auto test = ((a, b, c) | c <- range(1, 11), b <- range(1, c), a <- range(1, b), a*a + b*b == c*c);
+    
+    for (auto [a, b, c] : test) {
+        std::cout << "[" << a << ", " << b << ", " << c << "]\n";
+    }
+
     //
     //auto aionefa = (a | a <- range(1, 10));
     ////
