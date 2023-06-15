@@ -278,62 +278,27 @@ int main() {
     constexpr var_t<"c"> c{};
     constexpr var_t<"x"> x{};
 
-    constexpr named_tuple vls{ b = 74, c = 10 };
+    constexpr named_tuple vls{ c = 10 };
     constexpr named_tuple vls2{ a = 4 };
     constexpr named_tuple vls3{ x = 4 };
 
     std::map<int, int> faefa{ { 1, 3 }, { 2, 5 }, { 3, 10 } };
 
-    //for (auto [a, b] : oring) {
-    //    std::cout << a << "," << b << '\n';
-    //}
+    //auto ffffe = ((a, b) | a <- range(1, 10), a % 2 == 0, b <- range(1, a), a == b);
+    
+    auto ffffe = ((a, a) | a <- range(1, 10));
 
-    auto ffffe = ((a, b) | a <- range(1, 10), b <- range(1, a));
+    //decltype(ffffe)::iterator::named_tuple_type::vars::element<1>::type;
 
     for (auto [a, b] : ffffe) {
         std::cout << a << "," << b << '\n';
     }
 
-    //
-    //std::pair<int, int> aefaef;
-    //
-    //auto oesaine = std::get<0>(aefaef);
-    //
-    //constexpr auto aioneo = is_range_kind<named_range<range_t<int>, var_t<"a">>>;
-    //
-    //auto test = ((a, b, c) | c <- range(1, 11), b <- range(1, c), a <- range(1, b), a*a + b*b == c*c);
-    //
-    //for (auto [a, b, c] : test) {
-    //    std::cout << "[" << a << ", " << b << ", " << c << "]\n";
+    //for (auto [a, b] : ffffe) {
+    //    std::cout << a << "," << b << '\n';
     //}
 
-    //
-    //auto aionefa = (a | a <- range(1, 10));
-    ////
-    //auto aoin = (a | a <- range(1, b), b % 2 == 0).eval(vls);
-    //
-    //for (auto x : aoin) {}
-
-    //auto aeaef = (((a | a <- range(1, b), c % 2 == 0) | b <- range(1, c)) | c <- range(1, 10));
-    //
-    //constexpr auto eona = a + 10;
-    //constexpr auto eion = execute(eona, vls2);
-    //
-    //for (auto x : aeaef) {
-    //    for (auto u : x) {
-    //        for (auto r : u) {
-    //            std::cout << r << ",";
-    //        }
-    //    }
-    //    std::cout << "\n";
-    //}
-
-    //for (auto [a, b, c] : test) {
-    //    std::cout << "[" << a << ", " << b << ", " << c << "]\n";
-    //}
-
-    // increment
-    // value
+    //constexpr auto aoine = is_dependent_range<decltype(a < -range(1, 10))>;
 
     return 0;
 }
