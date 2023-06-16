@@ -1819,7 +1819,7 @@ namespace kaixo {
         constexpr auto ralignment = []<class A, class B>{ return alignof_v<A> > alignof_v<B>; };
     }
 
-    template<class...>struct concat;
+    template<class...>struct concat { using type = info<>; };
     template<template<class...> class A, class ...As>
     struct concat<A<As...>> { using type = A<As...>; };
     template<template<class...> class A, template<class...> class B, class ...As, class ...Bs, class ...Rest>

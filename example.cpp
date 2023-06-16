@@ -273,26 +273,32 @@ using namespace kaixo::containers;
 
 int main() {
 
-    constexpr var_t<"a"> a{};
-    constexpr var_t<"b"> b{};
-    constexpr var_t<"c"> c{};
-    constexpr var_t<"x"> x{};
+    constexpr var<"a"> a{};
+    constexpr var<"b"> b{};
+    constexpr var<"c"> c{};
+    constexpr var<"x"> x{};
 
-    constexpr named_tuple vls{ c = 10 };
-    constexpr named_tuple vls2{ a = 4 };
-    constexpr named_tuple vls3{ x = 4 };
+    //constexpr named_tuple vls{ c = 10 };
+    //constexpr named_tuple vls2{ a = 4 };
+    //constexpr named_tuple vls3{ x = 4 };
 
     std::map<int, int> faefa{ { 1, 3 }, { 2, 5 }, { 3, 10 } };
 
     //auto ffffe = ((a, b) | a <- range(1, 10), a % 2 == 0, b <- range(1, a), a == b);
     
-    auto ffffe = ((a, a) | a <- range(1, 10));
+    auto ffffe = ((a) | a <- range(1, 10));
+    //auto ffffe = ((a, b) | a <- range(1, 10), b = a * 2);
 
+    auto aoine = ((a, b, c) | c <- range(1, 10), b <- range(1, c), a <- range(1, b), a * a + b * b == c * c);
+    
+    for (auto [a, b, c] : aoine) {
+        std::cout << a << "," << b << "," << c << '\n';
+    }
     //decltype(ffffe)::iterator::named_tuple_type::vars::element<1>::type;
 
-    for (auto [a, b] : ffffe) {
-        std::cout << a << "," << b << '\n';
-    }
+    //for (auto [a, b] : ffffe) {
+    //    std::cout << a << "," << b << '\n';
+    //}
 
     //for (auto [a, b] : ffffe) {
     //    std::cout << a << "," << b << '\n';
