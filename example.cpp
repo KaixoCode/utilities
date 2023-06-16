@@ -278,22 +278,12 @@ int main() {
     constexpr var<"c"> c{};
     constexpr var<"x"> x{};
 
-    //constexpr named_tuple vls{ c = 10 };
-    //constexpr named_tuple vls2{ a = 4 };
-    //constexpr named_tuple vls3{ x = 4 };
+    auto roign = (a | a <- range(0, inf), b = a * 2, brk = b > 100);
 
-    std::map<int, int> faefa{ { 1, 3 }, { 2, 5 }, { 3, 10 } };
-
-    //auto ffffe = ((a, b) | a <- range(1, 10), a % 2 == 0, b <- range(1, a), a == b);
-    
-    auto ffffe = ((a) | a <- range(1, 10));
-    //auto ffffe = ((a, b) | a <- range(1, 10), b = a * 2);
-
-    auto aoine = ((a, b, c) | c <- range(1, 10), b <- range(1, c), a <- range(1, b), a * a + b * b == c * c);
-    
-    for (auto [a, b, c] : aoine) {
-        std::cout << a << "," << b << "," << c << '\n';
+    for (auto a : roign) {
+        std::cout << a << '\n';
     }
+
     //decltype(ffffe)::iterator::named_tuple_type::vars::element<1>::type;
 
     //for (auto [a, b] : ffffe) {
