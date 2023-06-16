@@ -269,52 +269,83 @@ namespace aaaa {
 
 using namespace kaixo;
 using namespace kaixo::operators;
-using namespace kaixo::containers;
+using namespace kaixo::default_variables;
+using namespace kaixo::overloads;
+
+struct Test {
+    Test() { std::cout << "Construct\n"; }
+    Test(const Test&) { std::cout << "Copy\n"; }
+    Test(Test&&) { std::cout << "Move\n"; }
+
+    Test& operator=(const Test&) { std::cout << "Copy Assign\n"; return *this; }
+    Test& operator=(Test&&) { std::cout << "Move Assign\n"; return *this; }
+};
 
 int main() {
 
-    constexpr var<"a"> a{};
-    constexpr var<"b"> b{};
-    constexpr var<"c"> c{};
-    constexpr var<"x"> x{};
+    std::vector<Test> tests{ 1ull };
 
+    std::vector<std::string> strings{ "hello", "world", "test", "a", "carrot" };
 
+    auto filtered = (a | a <- strings, size(a) > 4);
+
+    for (auto& str : filtered) {
+        std::cout << str;
+    }
+
+    std::map<int, int> mapvals{ { 1, 1 }, { 2, 2 }, { 3, 4 } };
+
+    auto lc = (a, b, c) | (a, (b, c)) <- (tests, mapvals);
+    
+    for (auto [a, b, c] : lc) {
+        std::cout << " === iter === ";
+    }
+
+    auto aoing = (a, b, c) | (c, (a, b)) <- (range(1, 10), mapvals);
+
+    for (auto [a, b, c] : aoing) {
+        std::cout << a << "," << b << "," << c << '\n';
+    }
+    
+    auto eofin = (a, b, c) | (a, b, c) <- (range(1, 10), range(1, inf), range(1, 20));
+    
+    for (auto [a, b, c] : eofin) {
+        std::cout << a << "," << b << "," << c << '\n';
+    }
+    
+    named_tuple ff{ b = 1 };
+    
+    auto oe = (a | a <- range(1, 10), b == 1);
+    auto fin = oe.evaluate(ff);
+    
     auto rgonig = ((a | a <- range(0, b)) | b <- range(1, 10));
-
+    
     for (auto r : rgonig) {
         for (auto a : r) {
             std::cout << a << ',';
         }
         std::cout << '\n';
     }
-
+    
     
     auto ognrga = ((a, b) | a <- range(0, 10), b <- (c | c <- range(0, a)));
     
     for (auto [a, b] : ognrga) {
         std::cout << a << "," << b << '\n';
     }
-
-
-    auto roign = (a | a <- range(0, inf), b = a * 2, brk = b > 100);
+    
+    auto roign = (a | a <- range(0, inf), b = a * 2, brk = b > a);
 
     for (auto a : roign) {
         std::cout << a << '\n';
     }
-
-    //decltype(ffffe)::iterator::named_tuple_type::vars::element<1>::type;
-
+    
     auto ffffe = ((a, b) | a <- range(0, 10), b <- range(0, a));
+    
 
     for (auto [a, b] : ffffe) {
         std::cout << a << "," << b << '\n';
     }
-
-    //for (auto [a, b] : ffffe) {
-    //    std::cout << a << "," << b << '\n';
-    //}
-
-    //constexpr auto aoine = is_dependent_range<decltype(a < -range(1, 10))>;
 
     return 0;
 }
