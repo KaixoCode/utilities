@@ -1005,6 +1005,8 @@ namespace kaixo {
      */
     template<is_range_kind ...As> 
     struct partial_zipped_range {
+        using is_range = int;
+
         using depend = concat_t<depend<As>...>;
 
         std::tuple<As...> ranges;
