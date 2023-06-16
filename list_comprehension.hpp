@@ -17,8 +17,6 @@ namespace kaixo {
     namespace ranges = std::ranges;
     namespace views = std::views;
 
-    template<class Ty> concept is_range = ranges::range<Ty>;
-
     namespace has {
         template<class Ty> concept depend_v = requires (Ty) { typename Ty::depend; };
         template<class Ty> concept define_v = requires (Ty) { typename Ty::define; };
@@ -52,16 +50,15 @@ namespace kaixo {
         template<class Ty> using range = range_impl<Ty>::type;
     }
 
-    template<class Ty>
-    concept is_dependent = has::depend_v<decay_t<Ty>> || has::define_v<decay_t<Ty>>;
-
     template<class Ty> using depend = grab::depend<decay_t<Ty>>;
     template<class Ty> using define = grab::define<decay_t<Ty>>;
 
+
     template<class Ty> concept explicit_range = requires() { typename Ty::is_range; };
+    template<class Ty> concept is_range = ranges::range<Ty>;
     template<class Ty> concept is_partial = depend<Ty>::size != 0;
     template<class Ty> concept is_partial_range = is_partial<Ty> && explicit_range<Ty>;
-    template<class Ty> concept is_var = is_dependent<Ty> && requires() { { decay_t<Ty>::name }; };
+    template<class Ty> concept is_var = requires() { { decay_t<Ty>::name }; };
     template<class Ty> concept is_operator = requires() { typename Ty::is_operator; };
     template<class Ty> concept is_varexpr = is_partial<Ty> || is_var<Ty>;
     template<class Ty> concept is_range_kind = is_range<Ty> || is_partial_range<Ty>;
@@ -111,9 +108,9 @@ namespace kaixo {
      */
     template<string_literal Name>
     struct var {
-        using depend = info<var>;
-
         constexpr static string_literal name = Name;
+        
+        using depend = info<var>;
 
         template<class Ty>
         constexpr auto operator=(Ty&& value) const {
@@ -363,9 +360,9 @@ namespace kaixo {
 
      * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-     /**
-      * Return code for executables in comprehension.
-      */
+    /**
+     * Return code for executables in comprehension.
+     */
     enum class return_code {
         none = 0, // Continue like normal
         stop = 1, // Stop iteration now, and set to end
@@ -377,40 +374,26 @@ namespace kaixo {
     }
 
     /**
+     * Tests if expression is executable with a certain named tuple.
+     */
+    template<class Ty, class Tuple>
+    concept is_executable_with = requires(decay_t<Ty>&val, return_code & code, decay_t<Tuple>&tuple) {
+        { val.execute(code, tuple) } -> is_named_tuple;
+    };
+
+    /**
      * Get the complete type, given a named tuple.
      * @tparam R partial type
      * @tparam T named tuple
      */
     template<class R, is_named_tuple T>
-    struct full_type : std::type_identity<R> {};;
+    struct full_type : std::type_identity<R> {};
 
-    template<is_partial R, is_named_tuple T> // Recurse on partial range.
+    template<is_partial R, is_named_tuple T> // Recurse on partial.
     struct full_type<R, T> : full_type<decltype(std::declval<R&>().evaluate(std::declval<T&>())), T> {};
 
     template<class R, is_named_tuple T>
     using full_type_t = full_type<R, T>::type;
-
-    /**
-     * Get the value type of a range, given a named tuple.
-     * @tparam R (partial) range
-     * @tparam T named tuple
-     */
-    template<class R, is_named_tuple T>
-    using range_value_t = std::ranges::range_value_t<full_type_t<R, T>>;
-
-    /**
-     * Get the iterator type of a range, given a named tuple.
-     * @tparam R (partial) range
-     * @tparam T named tuple
-     */
-    template<class R, is_named_tuple T>
-    struct iterator_data : std::type_identity<dud> {};
-
-    template<is_range R, is_named_tuple T> // Normal range, just get its iterator type.
-    struct iterator_data<R, T> : std::type_identity<std::ranges::iterator_t<const R>> {};
-
-    template<class R, is_named_tuple T>
-    using iterator_data_t = iterator_data<full_type_t<R, T>, T>::type;
 
     /**
      * Get the defined named values of type R.
@@ -418,26 +401,41 @@ namespace kaixo {
      * @tparam T named tuple
      */
     template<class R, is_named_tuple T>
-    struct defined_values;
+    struct defined_values : std::type_identity<T> {};
 
-    template<class R, class T>
-    concept is_executable_with = requires(R & r, T & t, return_code & code) {
-        { execute(r, code, t) } -> is_named_tuple;
-    };
-
-    template<class R, is_named_tuple T> 
-        requires (is_executable_with<R, T> && !is_partial_range<R>)
-    struct defined_values<R, T> : std::type_identity<as_info<decay_t<decltype(
-        execute(std::declval<R&>(), std::declval<return_code&>(), std::declval<T&>()))>>> {};
+    template<class R, is_named_tuple T>
+        requires is_executable_with<R, T>
+    struct defined_values<R, T> : std::type_identity<decay_t<decltype(
+        std::declval<R&>().execute(std::declval<return_code&>(), std::declval<T&>()))>> {};
 
     template<is_range R, is_named_tuple T>
-    struct defined_values<R, T> : std::type_identity<as_info<prepend_t<as_info<T>, typename R::value_type>>> {};
+    struct defined_values<R, T> : std::type_identity<prepend_t<as_info<T>, typename R::value_type>> {};
     
     template<is_partial_range R, is_named_tuple T>
     struct defined_values<R, T> : defined_values<full_type_t<R, T>, T> {};
 
     template<class R, is_named_tuple T>
     using defined_values_t = defined_values<R, T>::type;
+
+    /**
+     * Get the type of the named tuple given all parts.
+     * @tparam Tuple named tuple
+     * @tparam Parts parts
+     */
+    template<is_named_tuple Tuple, class Parts>
+    struct named_tuple_type;
+
+    template<is_named_tuple Tuple, class Part, class ...Parts>
+    struct named_tuple_type<Tuple, info<Part, Parts...>>
+        : named_tuple_type<defined_values_t<Part, Tuple>, info<Parts...>> {};
+
+    template<is_named_tuple Tuple, class Part>
+    struct named_tuple_type<Tuple, info<Part>> {
+        using type = defined_values_t<Part, Tuple>;
+    };
+
+    template<class ...Parts>
+    using named_tuple_type_t = named_tuple_type<named_tuple<>, info<Parts...>>::type;
 
     /**
      * Get the intermediate value of type R. For every part this is a
@@ -456,75 +454,25 @@ namespace kaixo {
     using intermediate_value_t = intermediate_value<R, T>::type;
 
     /**
-     * Get recursively dependent data using the provided named tuple. Accumulates the
-     * defined values over all parts to evaluate incomplete parts.
-     * @tparam Get trait to get from parts
-     * @tparam Tuple named tuple to provide named values to the recursively dependent parts
-     * @tparam Parts parts
+     * Get the iterator type of a range, given a named tuple.
+     * @tparam R (partial) range
+     * @tparam T named tuple
      */
-    template<template<class, class> class Get, class Parts, is_named_tuple Tuple = named_tuple<>>
-    struct recursive_dependent_data;
+    template<class R, is_named_tuple T>
+    struct iterator_data : std::type_identity<dud> {};
 
-    template<template<class, class> class Get, is_named_tuple Tuple, class Part, class ...Parts>
-    struct recursive_dependent_data<Get, info<Part, Parts...>, Tuple> {
-        using type = recursive_dependent_data<Get, info<Parts...>, 
-            typename defined_values_t<Part, Tuple>::
-            template as<named_tuple>>::type::
-            template prepend<Get<Part, Tuple>>;
-    };
+    template<is_range R, is_named_tuple T> // Normal range, just get its iterator type.
+    struct iterator_data<R, T> : std::type_identity<std::ranges::iterator_t<const R>> {};
 
-    template<template<class, class> class Get, is_named_tuple Tuple, class Part>
-    struct recursive_dependent_data<Get, info<Part>, Tuple> {
-        using type = info<Get<Part, Tuple>>;
-    };
-
-    /**
-     * Get iterator types of the parts.
-     * @tparam ...Parts parts
-     */
-    template<class ...Parts>
-    using iterator_datas_t = recursive_dependent_data<iterator_data_t, info<Parts...>>::type::template as<std::tuple>;
-
-    /**
-     * Get intermediate value types, this is for ranges which are dependent on a
-     * variable, and for each iteration of the dependent variable need to create a new instance.
-     * @tparam ...Parts parts
-     */
-    template<class ...Parts>
-    using intermediate_values_t = recursive_dependent_data<intermediate_value_t, info<Parts...>>::type::template as<std::tuple>;
-
-    /**
-     * Get the type of the named tuple given all parts.
-     * @tparam Tuple named tuple
-     * @tparam Parts parts
-     */
-    template<is_named_tuple Tuple, class Parts>
-    struct named_tuple_type;
-
-    template<is_named_tuple Tuple, class Part, class ...Parts>
-    struct named_tuple_type<Tuple, info<Part, Parts...>>
-        : named_tuple_type<typename defined_values_t<Part, Tuple>::template as<named_tuple>, info<Parts...>> {};
-
-    template<is_named_tuple Tuple, class Part>
-    struct named_tuple_type<Tuple, info<Part>> {
-        using type = defined_values_t<Part, Tuple>::template as<named_tuple>;
-    };
-
-    template<class ...Parts>
-    using named_tuple_type_t = named_tuple_type<named_tuple<>, info<Parts...>>::type;
-
-    template<class E, class Tuple>
-    concept has_execute_for = requires 
-        (decay_t<E>&e, return_code& code, decay_t<Tuple>& tuple) {
-            { e.execute(code, tuple) } -> is_named_tuple;
-        };
+    template<class R, is_named_tuple T>
+    using iterator_data_t = iterator_data<full_type_t<R, T>, T>::type;
 
     /**
      * Execute overloads.
      */
     template<class E>
     constexpr decltype(auto) execute(E&& e, return_code& code, is_named_tuple auto& tuple) {
-        if constexpr (has_execute_for<E, decltype(tuple)>) {
+        if constexpr (is_executable_with<E, decltype(tuple)>) {
             return std::forward<E>(e).execute(code, tuple);
         } else if constexpr (std::convertible_to<decltype(evaluate(std::forward<E>(e), tuple)), bool>) {
             code = bool(evaluate(std::forward<E>(e), tuple)) ? return_code::none : return_code::skip;
@@ -600,8 +548,8 @@ namespace kaixo {
      */
     template<class R, class ...Parts>
     struct list_comprehension {
-        using value_type = decltype(evaluate(std::declval<R&>(), 
-            std::declval<named_tuple_type_t<Parts...>&>()));
+        using value_type = decay_t<decltype(evaluate(std::declval<R&>(), 
+            std::declval<named_tuple_type_t<Parts...>&>()))>;
 
         struct iterator {
             using iterator_category = std::input_iterator_tag;
@@ -626,9 +574,9 @@ namespace kaixo {
             }
 
         private:
-            using iterator_datas = iterator_datas_t<Parts...>;
             using named_tuple_type = named_tuple_type_t<Parts...>;
-            using intermediate_values = intermediate_values_t<Parts...>;
+            using iterator_datas = std::tuple<iterator_data_t<Parts, named_tuple_type>...>;
+            using intermediate_values = std::tuple<intermediate_value_t<Parts, named_tuple_type>...>;
 
             intermediate_values intermediate{};
             iterator_datas iterators{};
@@ -805,7 +753,10 @@ namespace kaixo {
             return partial_named_range{ std::move(r), v };
         }
         
-        template<is_varexpr A, is_dependent B>
+        template<class Ty>
+        concept is_valid_part = true; // is_executable<Ty> || is_range_kind<Ty> || is_partial<Ty>;
+
+        template<is_varexpr A, is_valid_part B>
         constexpr decltype(auto) construct_lc(A&& a, B&& b) {
 #define KAIXO_PARTIAL_CONSTRUCT(type) type<decay_t<A>, decay_t<B>>{  \
                 std::forward<A>(a), std::tuple{ std::forward<B>(b) } \
@@ -817,7 +768,7 @@ namespace kaixo {
 #undef KAIXO_PARTIAL_CONSTRUCT
         };
 
-        template<class Ty, is_dependent Part>
+        template<class Ty, is_valid_part Part>
             requires (is_lc<Ty> || is_partial_lc<Ty>)
         constexpr auto operator,(Ty&& lc, Part&& part) {
 #define KAIXO_PARTIAL_CONSTRUCT(type) type{ std::forward<Ty>(lc).result, std::tuple_cat(    \
@@ -830,12 +781,12 @@ namespace kaixo {
 #undef KAIXO_PARTIAL_CONSTRUCT
         };
         
-        template<is_varexpr A, is_dependent B>
+        template<is_varexpr A, is_valid_part B>
         constexpr auto operator|(A&& a, B&& b) {
             return construct_lc(std::forward<A>(a), std::forward<B>(b));
         }
 
-        template<is_var ...As, is_dependent B>
+        template<is_var ...As, is_valid_part B>
         constexpr auto operator|(info<As...>, B&& b) {
             return construct_lc(tuple_operation<As...>{ std::tuple{ As{}... } }, std::forward<B>(b));
         }

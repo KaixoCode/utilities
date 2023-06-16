@@ -278,6 +278,24 @@ int main() {
     constexpr var<"c"> c{};
     constexpr var<"x"> x{};
 
+
+    auto rgonig = ((a | a <- range(0, b)) | b <- range(1, 10));
+
+    for (auto r : rgonig) {
+        for (auto a : r) {
+            std::cout << a << ',';
+        }
+        std::cout << '\n';
+    }
+
+    
+    auto ognrga = ((a, b) | a <- range(0, 10), b <- (c | c <- range(0, a)));
+    
+    for (auto [a, b] : ognrga) {
+        std::cout << a << "," << b << '\n';
+    }
+
+
     auto roign = (a | a <- range(0, inf), b = a * 2, brk = b > 100);
 
     for (auto a : roign) {
@@ -286,9 +304,11 @@ int main() {
 
     //decltype(ffffe)::iterator::named_tuple_type::vars::element<1>::type;
 
-    //for (auto [a, b] : ffffe) {
-    //    std::cout << a << "," << b << '\n';
-    //}
+    auto ffffe = ((a, b) | a <- range(0, 10), b <- range(0, a));
+
+    for (auto [a, b] : ffffe) {
+        std::cout << a << "," << b << '\n';
+    }
 
     //for (auto [a, b] : ffffe) {
     //    std::cout << a << "," << b << '\n';
