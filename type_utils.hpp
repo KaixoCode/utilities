@@ -2918,7 +2918,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
     struct specialized_info<Tys...> {
         using _selected_specialization = _s_aggregate;
 
-        using members = info<struct_members_t<Tys>...>;
+        //using members = info<struct_members_t<Tys>...>;
     };
 
     template<auto V>

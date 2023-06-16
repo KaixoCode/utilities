@@ -818,20 +818,16 @@ namespace kaixo {
 
         template<class Self>
         constexpr decltype(auto) evaluate(this Self&& self, is_named_tuple auto& tuple) {
-            // Find remaining dependencies.
             using remaining = depend::template remove<define<decltype(tuple)>>;
             return sequence<sizeof...(Parts)>([&]<std::size_t ...Is>() {
-                if constexpr (remaining::size == 0) { // No more dependencies
-                    return list_comprehension{
-                        kaixo::evaluate(std::forward<Self>(self).result, tuple),
-                        std::make_tuple(std::move(kaixo::evaluate(std::get<Is>(std::forward<Self>(self).parts), tuple))...)
-                    };
-                } else {
-                    return partial_list_comprehension{
-                        kaixo::evaluate(std::forward<Self>(self).result, tuple),
-                        std::make_tuple(std::move(kaixo::evaluate(std::get<Is>(std::forward<Self>(self).parts), tuple))...)
-                    };
-                }
+                if constexpr (remaining::size == 0) return list_comprehension{ // No more dependencies
+                    kaixo::evaluate(std::forward<Self>(self).result, tuple),
+                    std::make_tuple(std::move(kaixo::evaluate(std::get<Is>(std::forward<Self>(self).parts), tuple))...)
+                };
+                else return partial_list_comprehension{
+                    kaixo::evaluate(std::forward<Self>(self).result, tuple),
+                    std::make_tuple(std::move(kaixo::evaluate(std::get<Is>(std::forward<Self>(self).parts), tuple))...)
+                };
             });
         }
     };
@@ -868,7 +864,6 @@ namespace kaixo {
 #define KAIXO_PARTIAL_CONSTRUCT(type) type<decay_t<A>, decay_t<B>>{  \
                 std::forward<A>(a), std::tuple{ std::forward<B>(b) } \
             }
-            // Determine whether the list comprehension is complete.
             using lc_t = decltype(KAIXO_PARTIAL_CONSTRUCT(partial_list_comprehension));
             if constexpr (depend<lc_t>::size == 0) return KAIXO_PARTIAL_CONSTRUCT(list_comprehension);
             else return KAIXO_PARTIAL_CONSTRUCT(partial_list_comprehension);
@@ -881,7 +876,6 @@ namespace kaixo {
 #define KAIXO_PARTIAL_CONSTRUCT(type) type{ std::forward<Ty>(lc).result, std::tuple_cat(    \
                 std::forward<Ty>(lc).parts, std::tuple(std::forward<Part>(part)) \
             ) }
-            // Determine whether the list comprehension is complete.
             using lc_t = decltype(KAIXO_PARTIAL_CONSTRUCT(partial_list_comprehension));
             if constexpr (depend<lc_t>::size == 0) return KAIXO_PARTIAL_CONSTRUCT(list_comprehension);
             else return KAIXO_PARTIAL_CONSTRUCT(partial_list_comprehension);
@@ -1018,15 +1012,12 @@ namespace kaixo {
         constexpr auto evaluate(is_named_tuple auto& tuple) const {
             using remaining = depend::template remove<define<decltype(tuple)>>;
             return sequence<sizeof...(As)>([&]<std::size_t ...Is>() {
-                if constexpr (remaining::size == 0) {
-                    return zipped_range{
-                        std::make_tuple(std::move(kaixo::evaluate(std::get<Is>(ranges), tuple))...)
-                    };
-                } else {
-                    return partial_zipped_range{
-                        std::make_tuple(std::move(kaixo::evaluate(std::get<Is>(ranges), tuple))...)
-                    };
-                }
+                if constexpr (remaining::size == 0) return zipped_range{
+                    std::make_tuple(std::move(kaixo::evaluate(std::get<Is>(ranges), tuple))...)
+                };
+                else return partial_zipped_range{
+                    std::make_tuple(std::move(kaixo::evaluate(std::get<Is>(ranges), tuple))...)
+                };
             });
         }
     };
@@ -1040,7 +1031,6 @@ namespace kaixo {
                 && !is_zipped_range<A> && !is_partial_zipped_range<A>)
         constexpr auto operator,(A&& a, B&& b) {
 #define KAIXO_PARTIAL_CONSTRUCT(type) type{ std::make_tuple(-std::forward<A>(a), -std::forward<B>(b)) }
-            // Determine whether the list comprehension is complete.
             using lc_t = decltype(KAIXO_PARTIAL_CONSTRUCT(partial_zipped_range));
             if constexpr (depend<lc_t>::size == 0) return KAIXO_PARTIAL_CONSTRUCT(zipped_range);
             else return KAIXO_PARTIAL_CONSTRUCT(partial_zipped_range);
@@ -1051,7 +1041,6 @@ namespace kaixo {
             requires (is_zipped_range<A> || is_partial_zipped_range<A>)
         constexpr auto operator,(A&& a, B&& b) {
 #define KAIXO_PARTIAL_CONSTRUCT(type) type{ std::tuple_cat(std::forward<A>(a).ranges, std::make_tuple(-std::forward<B>(b))) }
-            // Determine whether the list comprehension is complete.
             using lc_t = decltype(KAIXO_PARTIAL_CONSTRUCT(partial_zipped_range));
             if constexpr (depend<lc_t>::size == 0) return KAIXO_PARTIAL_CONSTRUCT(zipped_range);
             else return KAIXO_PARTIAL_CONSTRUCT(partial_zipped_range);

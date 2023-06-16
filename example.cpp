@@ -269,7 +269,6 @@ namespace aaaa {
 
 using namespace kaixo;
 using namespace kaixo::operators;
-using namespace kaixo::default_variables;
 using namespace kaixo::overloads;
 
 struct Test {
@@ -282,17 +281,44 @@ struct Test {
 };
 
 int main() {
+    using namespace kaixo::default_variables;
 
-    std::vector<Test> tests{ 1ull };
 
-    std::vector<std::string> strings{ "hello", "world", "test", "a", "carrot" };
+    //std::vector<std::string> strings{ 
+    //    "a", "hello", "apples", "test", "world", "carrot"
+    //};
+    //
+    //auto filtered = (a | (a, b) <- (strings, range(1, 6)), size(a) == b);
+    //
+    //for (auto& str : filtered) {
+    //    std::cout << str << '\n';
+    //}
+    //
+    //return 0;
 
-    auto filtered = (a | a <- strings, size(a) > 4);
+    auto vals = ((a | a <- range(0, b)) | b <- range(0, 9), b % 2 == 0);
 
-    for (auto& str : filtered) {
-        std::cout << str;
+    for (auto r : vals) {
+        for (auto a : r) {
+            std::cout << a;
+        }
+        std::cout << '\n';
     }
 
+    return 0;
+
+    auto triangles = ((a, b, c) | c <- range(1, 10), 
+                                  b <- range(1, c), 
+                                  a <- range(1, b),  
+                                  pow(a, 2) + pow(b, 2) == pow(c, 2));
+
+    for (auto [a, b, c] : triangles) {
+        std::cout << "[" << a << "," << b << "," << c << "]\n";
+    }
+
+    return 0;
+
+    std::vector<Test> tests{ 1ull };
     std::map<int, int> mapvals{ { 1, 1 }, { 2, 2 }, { 3, 4 } };
 
     auto lc = (a, b, c) | (a, (b, c)) <- (tests, mapvals);
