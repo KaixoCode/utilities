@@ -288,6 +288,19 @@ struct Test {
 int main() {
     using namespace kaixo::default_variables;
 
+    constexpr var<"range"> val;
+
+    constexpr auto with_index = (a | a <- val);
+    constexpr named_tuple gsrs{ val = range(0, 10) };
+    constexpr auto aeiongnrrs = with_index(val = range(0, 10));
+    constexpr auto oisna = sizeof(aeiongnrrs);
+    constexpr auto sorignisrg = *++++++++++++++++++++aeiongnrrs.begin();
+   
+
+    std::vector<int> values{};
+
+    auto efoaie = (a | a <- range(0, 10), b = std::ref(values), back_inserter(b));
+
     auto lcaa = ((a, b, c) | a <- range(1, 20), b <- range(a, 20), c <- range(b, 20), a * a + b * b == c * c);
     
     for (auto [a_val, b_val, c_val] : lcaa) {

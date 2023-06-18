@@ -53,9 +53,8 @@ namespace kaixo {
     template<class Ty> concept is_range = std::ranges::range<Ty>;
     template<class Ty> concept is_partial = depend<Ty>::size != 0;
     template<class Ty> concept is_partial_range = is_partial<Ty> && explicit_range<Ty>;
-    template<class Ty> concept is_var = requires() { { decay_t<Ty>::name }; };
+    template<class Ty> concept is_var = is_partial<Ty> && requires() { { decay_t<Ty>::name }; };
     template<class Ty> concept is_operator = requires() { typename Ty::is_operator; };
-    template<class Ty> concept is_varexpr = is_partial<Ty> || is_var<Ty>;
     template<class Ty> concept is_range_kind = is_range<Ty> || is_partial_range<Ty>;
 
     /**
@@ -75,7 +74,6 @@ namespace kaixo {
         constexpr decltype(auto) execute(auto&, auto& tuple) const;
     };
 
-    // Is type a named value.
     template<class Ty> concept is_named_value = specialization<Ty, named_value> && !is_partial<Ty>;
 
     /**
@@ -141,8 +139,9 @@ namespace kaixo {
         }
         
         /**
-         * Get value linked to variable.
+         * Assign value to variable.
          * @tparam Var variable
+         * @param value value
          */
         template<is_var Var, class Self, class Ty>
         constexpr decltype(auto) set(this Self&& self, Ty&& value) {
@@ -153,8 +152,9 @@ namespace kaixo {
 
         /**
          * Assign another named tuple, either contains all variables of
-         * this named tuple, or it contains none of them.
-         * @param val named tuple
+         * this named tuple, or it contains none of them. Does not handle the
+         * case where some variables are already in this tuple, and some are not.
+         * @param val other named tuple
          */
         template<class Self, is_named_value ...Tys>
         constexpr decltype(auto) assign(this Self&& self, named_tuple<Tys...>&& val) {
@@ -172,8 +172,11 @@ namespace kaixo {
 
     template<class Ty> concept is_named_tuple = specialization<Ty, named_tuple>;
 
+    /**
+     * Has an evaluate function that works for a certain tuple.
+     */
     template<class A, class Tuple>
-    concept has_eval_for = requires(A & a, Tuple & tuple) { { a.evaluate(tuple) }; };
+    concept has_evaluate_for = requires(A & a, Tuple & tuple) { { a.evaluate(tuple) }; };
 
     /**
      * Evaluate a variable in an expression.
@@ -182,7 +185,7 @@ namespace kaixo {
      */
     template<class A>
     constexpr decltype(auto) evaluate(A&& val, is_named_tuple auto& tuple) {
-        if constexpr (has_eval_for<decay_t<A>, decay_t<decltype(tuple)>>)
+        if constexpr (has_evaluate_for<decay_t<A>, decay_t<decltype(tuple)>>)
             return val.evaluate(tuple);
         else return std::forward<A>(val);
     }
@@ -197,14 +200,20 @@ namespace kaixo {
         return kaixo::evaluate(value, tuple);
     }
 
-    // Valid expression parts, one must be an expression or variable
-    // and the rest may not be an operator or a range of any kind.
+    /**
+     * Valid expression parts, one must be a partial value
+     * and the rest may not be an operator or a range of any kind.
+     */
     template<class ...As>
-    concept are_valid_expression = (is_varexpr<decay_t<As>> || ...)
+    concept are_valid_expression = (is_partial<decay_t<As>> || ...)
         && ((!is_range_kind<decay_t<As>> && !is_operator<decay_t<As>>) && ...);
 
+    /**
+     * Are valid arguments to an overloaded function for 
+     * partial values. Means at least one of the values is partial.
+     */
     template<class ...As>
-    concept are_valid_arguments = (is_varexpr<decay_t<As>> || ...);
+    concept are_valid_arguments = (is_partial<decay_t<As>> || ...);
 
     /**
      * Binary operator expression.
@@ -233,7 +242,7 @@ namespace kaixo {
      * @tparam A first type
      * @tparam Op operator
      */
-    template<is_varexpr A, is_operator Op>
+    template<is_partial A, is_operator Op>
     struct unary_operation {
         using depend = depend<A>;
 
@@ -261,12 +270,17 @@ namespace kaixo {
             auto res = [&]<std::size_t ...Is>(std::index_sequence<Is...>) {
                 return std::forward_as_tuple(kaixo::evaluate(std::get<Is>(std::forward<Self>(self).parts), tuple)...);
             }(std::index_sequence_for<As...>{});
-            if constexpr (as_info<decltype(res)>::template count_filter < []<is_varexpr>{} > != 0)
+            // Check whether the resulting tuple still has partial values.
+            if constexpr (as_info<decltype(res)>::template count_filter<[]<is_partial>{}> != 0)
                 return move_tparams_t<decltype(res), tuple_operation>{ std::move(res) };
             else return res;
         }
     };
 
+    /**
+     * Tuple of vars, used in deconstruction of tuples, and 
+     * in resulting expressions to yield a tuple.
+     */
     template<is_var ...As> 
     struct var_tuple {};
 
@@ -319,16 +333,17 @@ namespace kaixo {
             using is_operator = int;                          \
             template<class A>                                 \
             constexpr static decltype(auto) evaluate(A&& a) { \
-                return op(a);                                 \
+                return op std::forward<A>(a);                 \
             }                                                 \
         };                                                                  \
                                                                             \
-        template<is_varexpr A>                                              \
+        template<is_partial A>                                              \
         constexpr unary_operation<decay_t<A>, name> operator op(A&& a) {    \
             return unary_operation<decay_t<A>, name>{ std::forward<A>(a) }; \
         }
 
-        KAIXO_UNARY_OPERATOR(negate, -);
+        KAIXO_UNARY_OPERATOR(increment, ++);
+        KAIXO_UNARY_OPERATOR(decrement, --);
         KAIXO_UNARY_OPERATOR(boolean_not, !);
         KAIXO_UNARY_OPERATOR(bitwise_not, ~);
 
@@ -593,8 +608,8 @@ namespace kaixo {
             }
         };
 
-        iterator begin() const { return iterator{ std::ranges::begin(rng) }; }
-        iterator end() const { return iterator{ std::ranges::end(rng) }; }
+        constexpr iterator begin() const { return iterator{ std::ranges::begin(rng) }; }
+        constexpr iterator end() const { return iterator{ std::ranges::end(rng) }; }
     };
 
     /**
@@ -808,32 +823,47 @@ namespace kaixo {
                 };
             });
         }
+
+        template<class Self, is_named_value ...Tys>
+        constexpr decltype(auto) operator()(this Self&& self, Tys&& ...vals) {
+            named_tuple tpl{ std::forward<Tys>(vals)... };
+            return std::forward<Self>(self).evaluate(tpl);
+        }
     };
 
     template<class Ty> concept is_lc = specialization<Ty, list_comprehension>;
     template<class Ty> concept is_partial_lc = specialization<Ty, partial_list_comprehension>;
 
     namespace operators {
-        constexpr auto operator-(is_range auto& r) { return std::views::all(r); }
-        constexpr auto operator-(is_range auto&& r) { return std::views::all(std::move(r)); }
-        constexpr auto operator-(is_partial_range auto& r) { return r; }
-        constexpr auto operator-(is_partial_range auto&& r) { return std::move(r); }
+        constexpr decltype(auto) operator-(is_range auto& r) { return std::views::all(r); }
+        constexpr decltype(auto) operator-(is_range auto&& r) { return std::views::all(std::move(r)); }
+        constexpr decltype(auto) operator-(is_partial auto& r) { return r; }
+        constexpr decltype(auto) operator-(is_partial auto&& r) { return std::move(r); }
         
-        constexpr auto operator<(is_var auto v, is_range auto&& r) { 
+        constexpr decltype(auto) operator<(is_var auto v, is_range auto&& r) {
             return named_range{ std::move(r), v }; 
         }
 
-        constexpr auto operator<(is_var auto v, is_partial_range auto&& r) {
+        constexpr decltype(auto) operator<(is_var auto v, is_partial auto& r) {
+            return partial_named_range{ std::move(r), v };
+        }
+        
+        constexpr decltype(auto) operator<(is_var auto v, is_partial auto&& r) {
             return partial_named_range{ std::move(r), v };
         }
         
         template<is_var ...Vars>
-        constexpr auto operator<(var_tuple<Vars...>, is_range auto&& r) { 
+        constexpr decltype(auto) operator<(var_tuple<Vars...>, is_range auto&& r) {
             return named_range{ std::move(r), Vars{}... };
         }
 
         template<is_var ...Vars>
-        constexpr auto operator<(var_tuple<Vars...>, is_partial_range auto&& r) {
+        constexpr decltype(auto) operator<(var_tuple<Vars...>, is_partial auto& r) {
+            return partial_named_range{ std::move(r), Vars{}... };
+        }
+        
+        template<is_var ...Vars>
+        constexpr decltype(auto) operator<(var_tuple<Vars...>, is_partial auto&& r) {
             return partial_named_range{ std::move(r), Vars{}... };
         }
 
@@ -860,7 +890,7 @@ namespace kaixo {
 #undef KAIXO_PARTIAL_CONSTRUCT
         };
         
-        template<is_varexpr A, class B>
+        template<is_partial A, class B>
         constexpr auto operator|(A&& a, B&& b) {
             return construct_lc(std::forward<A>(a), std::forward<B>(b));
         }
@@ -981,7 +1011,7 @@ namespace kaixo {
     /**
      * Partial zipped range, still depends on variables.
      */
-    template<is_range_kind ...As> 
+    template<class ...As> 
     struct partial_zipped_range {
         using is_range = int;
         using depend = concat_t<depend<As>...>;
@@ -1006,11 +1036,15 @@ namespace kaixo {
     concept is_partial_zipped_range = specialization<Ty, partial_zipped_range>;
 
     namespace operators {
-        template<is_range_kind A, is_range_kind B>
-            requires (!is_lc<A> && !is_partial_lc<A> 
+        template<class Ty> constexpr decltype(auto) wrap_range(Ty&& val) { return std::forward<Ty>(val); }
+        template<is_range Ty> constexpr decltype(auto) wrap_range(Ty&& val) { return std::views::all(std::forward<Ty>(val)); }
+
+        template<class A, class B>
+            requires ((is_range_kind<A> || is_range_kind<B>) 
+                && !is_lc<A> && !is_partial_lc<A> 
                 && !is_zipped_range<A> && !is_partial_zipped_range<A>)
         constexpr auto operator,(A&& a, B&& b) {
-#define KAIXO_PARTIAL_CONSTRUCT(type) type{ std::make_tuple(-std::forward<A>(a), -std::forward<B>(b)) }
+#define KAIXO_PARTIAL_CONSTRUCT(type) type{ std::make_tuple(wrap_range(std::forward<A>(a)), wrap_range(std::forward<B>(b))) }
             using lc_t = decltype(KAIXO_PARTIAL_CONSTRUCT(partial_zipped_range));
             if constexpr (depend<lc_t>::size == 0) return KAIXO_PARTIAL_CONSTRUCT(zipped_range);
             else return KAIXO_PARTIAL_CONSTRUCT(partial_zipped_range);
@@ -1020,7 +1054,7 @@ namespace kaixo {
         template<class A, is_range_kind B>
             requires (is_zipped_range<A> || is_partial_zipped_range<A>)
         constexpr auto operator,(A&& a, B&& b) {
-#define KAIXO_PARTIAL_CONSTRUCT(type) type{ std::tuple_cat(std::forward<A>(a).ranges, std::make_tuple(-std::forward<B>(b))) }
+#define KAIXO_PARTIAL_CONSTRUCT(type) type{ std::tuple_cat(std::forward<A>(a).ranges, std::make_tuple(wrap_range(std::forward<B>(b)))) }
             using lc_t = decltype(KAIXO_PARTIAL_CONSTRUCT(partial_zipped_range));
             if constexpr (depend<lc_t>::size == 0) return KAIXO_PARTIAL_CONSTRUCT(zipped_range);
             else return KAIXO_PARTIAL_CONSTRUCT(partial_zipped_range);
@@ -1036,10 +1070,10 @@ namespace kaixo {
 
     template<arithmetic A> range(A, A)->range<A>;
     template<arithmetic A> range(A, inf_t)->range<A, inf_t>;
-    template<is_varexpr A> range(A, inf_t)->range<decay_t<A>, inf_t>;
-    template<is_varexpr A, arithmetic B> range(A, B)->range<decay_t<A>, B>;
-    template<arithmetic A, is_varexpr B> range(A, B)->range<A, decay_t<B>>;
-    template<is_varexpr A, is_varexpr B> range(A, B)->range<decay_t<A>, decay_t<B>>;
+    template<is_partial A> range(A, inf_t)->range<decay_t<A>, inf_t>;
+    template<is_partial A, arithmetic B> range(A, B)->range<decay_t<A>, B>;
+    template<arithmetic A, is_partial B> range(A, B)->range<A, decay_t<B>>;
+    template<is_partial A, is_partial B> range(A, B)->range<decay_t<A>, decay_t<B>>;
 
     /**
      * Default range between 2 numbers.
@@ -1096,7 +1130,7 @@ namespace kaixo {
     /**
      * Range from dependent variable to value.
      */
-    template<is_varexpr A, arithmetic Ty>
+    template<is_partial A, arithmetic Ty>
     struct range<A, Ty> {
         using is_range = int;
         using depend = depend<A>;
@@ -1115,7 +1149,7 @@ namespace kaixo {
     /**
      * Range from dependent variable to infinity.
      */
-    template<is_varexpr A>
+    template<is_partial A>
     struct range<A, inf_t> {
         using is_range = int;
         using depend = depend<A>;
@@ -1133,7 +1167,7 @@ namespace kaixo {
     /**
      * Range from value to dependent variable.
      */
-    template<arithmetic Ty, is_varexpr B>
+    template<arithmetic Ty, is_partial B>
     struct range<Ty, B> {
         using is_range = int;
         using depend = depend<B>;
@@ -1152,7 +1186,7 @@ namespace kaixo {
     /**
      * Range from dependent variable to dependent variable.
      */
-    template<is_varexpr A, is_varexpr B>
+    template<is_partial A, is_partial B>
     struct range<A, B> {
         using is_range = int;
         using depend = concat_t<depend<A>, depend<B>>;
