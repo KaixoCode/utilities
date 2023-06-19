@@ -290,51 +290,58 @@ int main() {
 
     constexpr var<"range"> val;
 
-    constexpr auto with_index = (a | a <- val);
-    constexpr named_tuple gsrs{ val = range(0, 10) };
-    constexpr auto aeiongnrrs = with_index(val = range(0, 10));
-    constexpr auto oisna = sizeof(aeiongnrrs);
-    constexpr auto sorignisrg = *++++++++++++++++++++aeiongnrrs.begin();
-   
+    constexpr named_tuple aefa{ a = 10 };
 
+    auto val2524s = std::array{
+        std::array{ std::tuple{ 1, 2.3 }, std::tuple{ 4, 4.6 } },
+        std::array{ std::tuple{ 4, 5.2 }, std::tuple{ 8, 1.9 } },
+        std::array{ std::tuple{ 2, 6.1 }, std::tuple{ 9, 7.7 } },
+    };
+    
+    auto ggg = (b + c | a <- val2524s, (b, c) <- a);
+    
+    for (auto val : ggg) {
+        std::cout << val << '\n';
+    }
+    
     std::vector<int> values{};
-
+    
     auto efoaie = (a | a <- range(0, 10), b = std::ref(values), back_inserter(b));
-
+    
     auto lcaa = ((a, b, c) | a <- range(1, 20), b <- range(a, 20), c <- range(b, 20), a * a + b * b == c * c);
     
     for (auto [a_val, b_val, c_val] : lcaa) {
         std::cout << "(" << a_val << ", " << b_val << ", " << c_val << ")" << std::endl;
     }
-
-
+    
+    
     auto iogngr = ((a, b) | c <- range(1, 5), (a, b) <- (range(0, c), range(c, 2 * c)));
-
+    
     for (auto [a, b] : iogngr) {
         std::cout << a << "," << b << '\n';
     }
-
+    
     auto aonef = ((a | a <- range(b, c - 2)) | (b, c) <- (range(1, 10), range(5, 15)));
-
+    
     for (auto p : aonef) {
         for (auto a : p) {
             std::cout << a;
         }
         std::cout << "\n";
     }
-
+    
     const std::vector<Test> aaaff{ 1ull };
-
+    
     auto fsefes = (a + a) | a <- aaaff;
-
+    
     for (auto& eafa : fsefes) {
         std::cout << "-\n";
     }
     
     auto onef = ((c, d) | a <- (range(1, 10), range(1, 10)));
-
+    
     named_tuple afea{ b = 10 };
-
+    
     std::vector<std::string> strings{ 
         "a", "hello", "apples", "test", "world", "carrot"
     };
@@ -345,38 +352,38 @@ int main() {
         str += "a";
         std::cout << str << '\n';
     }
-
+    
     auto vals = ((c | a <- range(0, b)) | b <- range(0, 9), b % 2 == 0, c = 10);
-
+    
     auto oaine = -(a + 1);
-
+    
     for (auto r : vals) {
         for (auto a : r) {
             std::cout << a;
         }
         std::cout << '\n';
     }
-
+    
     auto triangles = ((a, b, c) | c <- range(1, inf), 
                                   b <- range(1, c), 
                                   a <- range(1, b),  
                                   pow(a, 2) + pow(b, 2) == pow(c, 2));
-
+    
     for (auto [a, b, c] : triangles) {
         std::cout << "[" << a << "," << b << "," << c << "]\n";
     }
-
+    
     std::vector<Test> tests{ 1ull };
     std::map<int, int> mapvals{ { 1, 1 }, { 2, 2 }, { 3, 4 } };
-
+    
     auto lc = (a, b, c) | (a, (b, c)) <- (tests, mapvals);
     
     for (auto [a, b, c] : lc) {
         std::cout << " === iter === ";
     }
-
+    
     auto aoing = (a, b, c) | (c, (a, b)) <- (range(1, 10), mapvals);
-
+    
     for (auto [a, b, c] : aoing) {
         std::cout << a << "," << b << "," << c << '\n';
     }
@@ -409,14 +416,14 @@ int main() {
     }
     
     auto roign = (a | a <- range(0, inf), b = a * 2, brk = b > a);
-
+    
     for (auto a : roign) {
         std::cout << a << '\n';
     }
     
     auto ffffe = ((a, b) | a <- range(0, 10), b <- range(0, a));
     
-
+    
     for (auto [a, b] : ffffe) {
         std::cout << a << "," << b << '\n';
     }
