@@ -3230,7 +3230,7 @@ struct function_info_impl<R(*)(Args...) NOEXCEPT> {                             
 
     template<std::size_t I> constexpr auto get_v = get_v_impl<I>{};
 
-    template<class T, is_tuple_modifier<T> Ty>
+    template<specialization<std::tuple> T, is_tuple_modifier<T> Ty>
     constexpr decltype(auto) operator|(T&& tuple, Ty&& val) {
         return std::forward<Ty>(val)(std::forward<T>(tuple));
     }

@@ -369,10 +369,21 @@ int main() {
     using namespace kaixo::default_variables;
     using kaixo::overloads::empty;
 
+    for (auto v : (x | x <- range(0, inf)) | std::views::take(10)) {
+        std::cout << v << '\n';
+    }
+
     constexpr var<"range"> val;
 
+    //std::list<int> xs{ 1 };
+    //auto singr = (x | x <- xs, xs << x + 1);
+    //
+    //for (auto v : singr) {
+    //    std::cout << v << '\n';
+    //}
+
     std::map<int, int> vsrrs;
-    auto srgsr = (_ | (a, b) <- (range(0, 10), range(0, 10)), vsrrs << (a, b));
+    auto srgsr = (_ | (a, _) <- (range(0, 10), range(0, 10)), vsrrs << (a, 1));
 
     for (auto a : srgsr) {}
 

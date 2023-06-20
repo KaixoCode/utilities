@@ -24,6 +24,17 @@ namespace kaixo {
         return type{ std::forward<Args>(args)... };
     }
 
+    /**
+     * Construct a pair from a tuple of size 2.
+     * @param t tuple
+     */
+    template<specialization<std::tuple> Tuple>
+        requires (std::tuple_size_v<decay_t<Tuple>> == 2)
+    constexpr auto tuple_to_pair(Tuple&& t) {
+        using pair_type = move_tparams_t<decay_t<Tuple>, std::pair>;
+        return pair_type(std::get<0>(t), std::get<1>(t));
+    }
+
     namespace has {
         template<class Ty> concept depend_v = requires (Ty) { typename Ty::depend; };
         template<class Ty> concept define_v = requires (Ty) { typename Ty::define; };
@@ -1333,14 +1344,14 @@ namespace kaixo {
         constexpr var<"_"> _{};
     }
 
-    template<specialization<std::tuple> Tuple>
-        requires (std::tuple_size_v<decay_t<Tuple>> == 2)
-    auto tuple_to_pair(Tuple&& t) {
-        return std::make_pair(std::get<0>(t), std::get<1>(t));
-    }
-
+    /**
+     * Extension for a list comprehension to insert values
+     * into a range directly.
+     * @tparam Range range, must be non-const reference
+     * @tparam Ty expression
+     */
     template<is_range Range, class Ty>
-    struct range_assigner {
+    struct range_inserter {
         using depend = depend<Ty>;
         
         std::reference_wrapper<Range> value;
@@ -1348,7 +1359,7 @@ namespace kaixo {
 
         template<class Self>
         constexpr decltype(auto) evaluate(this Self&& self, auto& tuple) {
-            return range_assigner{ value.get(), std::forward<Self>(self).expr };
+            return range_inserter{ value.get(), std::forward<Self>(self).expr };
         }
 
         template<class Self>
@@ -1370,7 +1381,7 @@ namespace kaixo {
     namespace operators {
         template<is_range Range, is_partial Ty>
         constexpr auto operator<<(Range& range, Ty&& expr) {
-            return range_assigner<Range, decay_t<Ty>>{ range, std::forward<Ty>(expr) };
+            return range_inserter<Range, decay_t<Ty>>{ range, std::forward<Ty>(expr) };
         }
     }
 }
