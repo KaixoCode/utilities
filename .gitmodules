@@ -1,3 +1,6 @@
 [submodule "libs/type_utils"]
 	path = libs/type_utils
 	url = https://github.com/KaixoCode/type_utils.git
+[submodule "libs/list_comprehension"]
+	path = libs/list_comprehension
+	url = https://github.com/KaixoCode/list_comprehension.git

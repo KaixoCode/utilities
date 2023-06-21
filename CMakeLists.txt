@@ -5,11 +5,12 @@ set (CMAKE_CXX_STANDARD 23)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules/")
 
-add_subdirectory("${utilities_SOURCE_DIR}/libs/type_utils")
+add_subdirectory(libs)
 
 include_directories( 
   "${utilities_SOURCE_DIR}/libs"
-  "${utilities_SOURCE_DIR}/libs/type_utils/include"
+  "${list_comprehension_SOURCE_DIR}/include/"
+  "${type_utils_SOURCE_DIR}/include/"
 )
 
 add_library(utilities STATIC
@@ -39,7 +40,7 @@ add_library(utilities STATIC
   "${utilities_SOURCE_DIR}/delegate.hpp"
   "${utilities_SOURCE_DIR}/match.hpp"
   "${utilities_SOURCE_DIR}/function_utils.hpp"
-  "${utilities_SOURCE_DIR}/type_utils.hpp"
+  "${utilities_SOURCE_DIR}/type_utils_old.hpp"
   "${utilities_SOURCE_DIR}/multi_initializer_list.hpp"
   "${utilities_SOURCE_DIR}/linq.hpp"
   "${utilities_SOURCE_DIR}/json.hpp"
