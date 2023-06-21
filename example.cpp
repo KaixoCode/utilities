@@ -7,6 +7,7 @@
 #include <string>
 #include <ranges>
 #include <iostream>
+#include <tuple>
 
 //namespace aaaa {
 //
@@ -365,48 +366,69 @@ constexpr void tests() {
 
 #include <set>
 
+struct Testaefa {
+    int a;
+    std::tuple<int> b;
+};
+
+
+
+struct aegina {
+    int a;
+    std::tuple<int> c;
+    int f;
+};
+
+
+using a01 = copy_const_t<int, const int&>;
+using a02 = copy_volatile_t<int, volatile int&>;
+using a03 = copy_cv_t<int, const int&>;
+using a04 = copy_ref_t<int, int&&>;
+using a05 = copy_cvref_t<int, const int&>;
+using a06 = add_const_t<int>;
+using a07 = add_volatile_t<int>;
+using a08 = add_cv_t<int>;
+using a09 = add_ref_t<int, int&>;
+using a10 = add_cvref_t<int, const int&>;
+using a11 = add_lvalue_reference_t<int>;
+using a12 = add_rvalue_reference_t<int>;
+using a13 = add_pointer_t<int>;
+using a14 = remove_const_t<int>;
+using a15 = remove_volatile_t<int>;
+using a16 = remove_cv_t<int>;
+using a17 = remove_reference_t<int>;
+using a18 = remove_cvref_t<int>;
+using a19 = remove_pointer_t<int>;
+using a20 = decay_t<int>;
+
+
 int main() {
     using namespace kaixo::default_variables;
     using kaixo::overloads::empty;
 
-    for (auto v : (x | x <- range(0, inf)) | std::views::take(10)) {
-        std::cout << v << '\n';
-    }
+    struct_size<aegina>::value;
 
-    constexpr var<"range"> val;
+    //auto sroing = (x | x <- range(2, inf), y = sqrt(x), empty((a | a <- range(0, x))));
 
-    //std::list<int> xs{ 1 };
-    //auto singr = (x | x <- xs, xs << x + 1);
+    //auto primes = (x | x <- range(2, inf), empty((a | a <- range(2, sqrt(x)), x % a == 0)));
     //
-    //for (auto v : singr) {
-    //    std::cout << v << '\n';
-    //}
-
-    std::map<int, int> vsrrs;
-    auto srgsr = (_ | (a, _) <- (range(0, 10), range(0, 10)), vsrrs << (a, 1));
-
-    for (auto a : srgsr) {}
-
-
-    auto primes = (x | x <- range(2, inf), empty((a | a <- range(2, sqrt(x)), x % a == 0)));
-    
-    std::cout << primes[999999];
-
-    return 0;
-
-    std::vector<int> values;
-    values.reserve(100000);
-    auto lc = (x | x <- range(2, inf),       // Infinite range
-                   y = sqrt(x),              // Precalculate sqrt(x)
-                   empty(                    // Check not divisible by previous primes
-                         (a | a <- values,   // Go through all previous primes
-                              x % a == 0,    // Check divisibility
-                              brk = a > y)), // Break at sqrt of number
-                   values << x);             // Add resulting value to vector
-
-    for (auto v : lc) { if (values.size() == 100000) break; }
-
-    std::cout << values.back();
+    //std::cout << primes[999999];
+    //
+    //return 0;
+    //
+    //std::vector<int> values;
+    //values.reserve(100000);
+    //auto lc = (x | x <- range(2, inf),       // Infinite range
+    //               y = sqrt(x),              // Precalculate sqrt(x)
+    //               empty(                    // Check not divisible by previous primes
+    //                     (a | a <- values,   // Go through all previous primes
+    //                          x % a == 0,    // Check divisibility
+    //                          brk = a > y)), // Break at sqrt of number
+    //               values << x);             // Add resulting value to vector
+    //
+    //for (auto v : lc) { if (values.size() == 100000) break; }
+    //
+    //std::cout << values.back();
 
     //auto val2524s = std::array{
     //    std::array{ std::tuple{ 1, 2.3 }, std::tuple{ 4, 4.6 } },

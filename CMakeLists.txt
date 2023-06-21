@@ -5,8 +5,11 @@ set (CMAKE_CXX_STANDARD 23)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules/")
 
+add_subdirectory("${utilities_SOURCE_DIR}/libs/type_utils")
+
 include_directories( 
   "${utilities_SOURCE_DIR}/libs"
+  "${utilities_SOURCE_DIR}/libs/type_utils/include"
 )
 
 add_library(utilities STATIC
