@@ -1,7 +1,7 @@
 #pragma once
 #include <any>
 #include <variant>
-#include "type_utils.hpp" // Contains helpers for getting lambda argument types
+#include "kaixo/type_utils.hpp" // Contains helpers for getting lambda argument types
 
 /**
  * example:
