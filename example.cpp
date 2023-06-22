@@ -16,9 +16,6 @@ using namespace kaixo::default_variables;
 
 int main() {
 
-    match(a, b) {
-        [a, b]
-    }
 
     return 0;
 }
