@@ -17,5 +17,12 @@ using namespace kaixo::default_variables;
 int main() {
 
 
+    info<int, double, int>
+        ::transform<std::vector>
+        ::tparams
+        ::transform<drop_last<1>::type>
+        ::transform<grab::type>
+        ::bytes::size;
+
     return 0;
 }
