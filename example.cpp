@@ -18,17 +18,17 @@ using namespace kaixo::default_variables;
 
 
 struct aaa {
-    std::string b = "aaa[0]";
+    std::string a = "aaa[0]";
 
-    struct {
+    struct B {
         std::string a = "aaa[1][0]";
         std::string b = "aaa[1][1]";
 
-        struct {
+        struct C {
             std::string a = "aaa[1][2][0]";
             std::string b = "aaa[1][2][1]";
         } c;
-    } a;
+    } b;
 
     std::string c = "aaa[2]";
     std::string d = "aaa[3]";
@@ -72,10 +72,12 @@ int main() {
     std::vector<aaa> avals{ 1ull }; // aaa is an aggregate
     std::vector<bbb> bvals{ 1ull }; // bbb is a class with structured bindings defined.
 
-    auto lc = ((a, b) | ((_, (a, _, _), _, _), (_, b)) <- (avals, bvals));
+    std::vector<std::pair<int, int>> aefa;
 
-    for (auto [a, b] : lc) {
-        std::cout << "[" << a << ", " << b << "]\n";
+    auto lc = ((a, b, c) | (x, y) <- (avals, bvals), (_, (a, b, _), _, _) = x, (_, c) = y);
+
+    for (auto [a, b, c] : lc) {
+        std::cout << "[" << a << ", " << b << ", " << c << "]\n";
     }
 
     return 0;
