@@ -36,15 +36,13 @@ struct aaa {
 int main() {
     using namespace std::string_literals;
 
-    std::map<int, std::string> names{
-        { 3, "fizz" },
-        { 5, "buzz "},
-    };
 
-    auto fizzbuzz = ((x, ranges::fold_left((b | (a, b) <- names, x % a == 0), ""s, std::plus{})) | x <- range(1, inf));
-    
-    for (auto [x, fb] : fizzbuzz) {
-        std::cout << x << ": " << fb << "\n";
+    auto oaine = range(1, 10);
+    auto lc = (b | a <- range(1, 10), b <- views::stride(range(1, 10), a));
+
+
+    for (auto a : lc) {
+        std::cout << a << '\n';
     }
 
     return 0;
