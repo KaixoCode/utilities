@@ -16,12 +16,21 @@ using namespace kaixo::default_variables;
 
 
 struct aaa {
-    std::tuple<int> a;
+    int a;
     int b;
-    double c;
 };
 
 int main() {
+
+    std::vector<aaa> vals{ { 1, 2 }, { 3, 4 }, { 5, 6 } };
+
+    auto lc = ((a, b) | (a, b) <- vals);
+    
+    for (auto [a, b] : lc) {
+        std::cout << "[" << a << ", " << b << "]\n";
+    }
+
+   // constexpr auto aoinf = struct_get_member<aaa, struct_size_v<aaa>>::get<0>(val);
 
     return 0;
 }
