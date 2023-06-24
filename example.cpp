@@ -9,6 +9,7 @@
 #include "kaixo/list_comprehension.hpp"
 #include "kaixo/range.hpp"
 #include "kaixo/zipped_range.hpp"
+#include "kaixo/range_inserter.hpp"
 
 using namespace kaixo;
 using namespace kaixo::operators;
@@ -17,29 +18,34 @@ using namespace kaixo::default_variables;
 
 
 struct aaa {
-    int a;
-    int b;
-    int c;
-    int d;
+    struct {
+        int a = 1;
+        int b = 2;
+
+        struct {
+            int a = 3;
+            int b = 4;
+        } c;
+    } a;
+    int b = 5;
+    int c = 6;
+    int d = 7;
 };
 
+
 int main() {
+    using namespace std::string_literals;
 
-    constexpr var<"key"> key;
-
-    std::map<int, aaa> vals{ 
-        { 1, { 1, 2, 3, 4 } }, 
-        { 2, { 3, 4, 5, 6 } }, 
-        { 3, { 5, 6, 7, 8 } } 
+    std::map<int, std::string> names{
+        { 3, "fizz" },
+        { 5, "buzz "},
     };
 
-    auto lc = ((key, a, b) | (key, (a, b, _, _)) <- vals);
-
-    for (auto [key, a, b] : lc) {
-        std::cout << key << ": [" << a << ", " << b << "]\n";
+    auto fizzbuzz = ((x, ranges::fold_left((b | (a, b) <- names, x % a == 0), ""s, std::plus{})) | x <- range(1, inf));
+    
+    for (auto [x, fb] : fizzbuzz) {
+        std::cout << x << ": " << fb << "\n";
     }
-
-   // constexpr auto aoinf = struct_get_member<aaa, struct_size_v<aaa>>::get<0>(val);
 
     return 0;
 }
