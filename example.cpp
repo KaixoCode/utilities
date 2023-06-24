@@ -25,12 +25,18 @@ struct aaa {
 
 int main() {
 
-    std::vector<aaa> vals{ { 1, 2, 3, 4 }, { 3, 4, 5, 6 }, { 5, 6, 7, 8 } };
+    constexpr var<"key"> key;
 
-    auto lc = ((a, b, c) | ((a, b, _, _), c) <- (vals, range(0, inf)));
+    std::map<int, aaa> vals{ 
+        { 1, { 1, 2, 3, 4 } }, 
+        { 2, { 3, 4, 5, 6 } }, 
+        { 3, { 5, 6, 7, 8 } } 
+    };
 
-    for (auto [a, b, c] : lc) {
-        std::cout << "[" << a << ", " << b << ", " << c << "]\n";
+    auto lc = ((key, a, b) | (key, (a, b, _, _)) <- vals);
+
+    for (auto [key, a, b] : lc) {
+        std::cout << key << ": [" << a << ", " << b << "]\n";
     }
 
    // constexpr auto aoinf = struct_get_member<aaa, struct_size_v<aaa>>::get<0>(val);
