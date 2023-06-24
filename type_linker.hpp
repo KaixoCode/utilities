@@ -1,35 +1,23 @@
 #pragma once
-#include "utils.hpp"
+#include "kaixo/type_utils.hpp"
 
 namespace kaixo {
-
-    template<size_t V>
-    struct number {
-        constexpr static inline size_t value = V;
-    };
-
-    template<class ...Types>
-    struct type_group {
-        constexpr static inline size_t count = sizeof...(Types);
-        using types = std::tuple<Types...>;
-    };
-
     template<class> struct tag;
     template<class ...Input>
-    struct tag<type_group<Input...>> {
-        friend auto magic_linker(tag<type_group<Input...>>);
+    struct tag<info<Input...>> {
+        friend auto magic_linker(tag<info<Input...>>);
     };
 
     template<class, class> struct magic_define;
     template<class ...Input, class ...Output>
-    struct magic_define<type_group<Input...>, type_group<Output...>> {
-        friend auto magic_linker(tag<type_group<Input...>>) { return type_group<Output...>{}; };
+    struct magic_define<info<Input...>, info<Output...>> {
+        friend auto magic_linker(tag<info<Input...>>) { return info<Output...>{}; };
     };
 
     template<class> struct generate_definitions;
     template<class ...Input>
-    struct generate_definitions<type_group<Input...>> {
-        template<class Type> requires (sizeof(magic_define<type_group<Input...>, Type>), true)
+    struct generate_definitions<info<Input...>> {
+        template<class Type> requires (sizeof(magic_define<info<Input...>, Type>), true)
         operator Type();
     };
 
@@ -39,5 +27,5 @@ namespace kaixo {
     };
 
     template<class ...Input>
-    using linked_types = decltype(magic_linker(tag<type_group<Input...>>{}));
+    using linked_types = decltype(magic_linker(tag<info<Input...>>{}));
 }

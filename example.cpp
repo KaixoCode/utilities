@@ -72,8 +72,6 @@ int main() {
     std::vector<aaa> avals{ 1ull }; // aaa is an aggregate
     std::vector<bbb> bvals{ 1ull }; // bbb is a class with structured bindings defined.
 
-    std::vector<std::pair<int, int>> aefa;
-
     auto lc = ((a, b, c) | (x, y) <- (avals, bvals), (_, (a, b, _), _, _) = x, (_, c) = y);
 
     for (auto [a, b, c] : lc) {
