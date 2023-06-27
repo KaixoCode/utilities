@@ -1,118 +1,122 @@
 ﻿#include <iostream>
 #include <set>
 #include <deque>
+#include <vector>
 #include <map>
+#include <ranges>
 
 #include "kaixo/type_utils.hpp"
-#include "kaixo/expression.hpp"
-#include "kaixo/overloads.hpp"
-#include "kaixo/list_comprehension.hpp"
-#include "kaixo/range.hpp"
-#include "kaixo/zipped_range.hpp"
-#include "kaixo/range_inserter.hpp"
 
-using namespace kaixo;
-using namespace kaixo::operators;
-using namespace kaixo::overloads;
-using namespace kaixo::default_variables;
 
-struct aaa {
-    std::string a = "aaa[0]";
-
-    struct B {
-        std::string a = "aaa[1][0]";
-        std::string b = "aaa[1][1]";
-
-        struct C {
-            std::string a = "aaa[1][2][0]";
-            std::string b = "aaa[1][2][1]";
-        } c;
-    } b;
-
-    std::string c = "aaa[2]";
-    std::string d = "aaa[3]";
-};
-
-class bbb {
-    std::string a = "bbb[0]";
-    std::string b = "bbb[1]";
-
-public:
-    constexpr bbb() {}
-
-    template <size_t I>
-    auto& get()& {
-        if constexpr (I == 0) return a;
-        else if constexpr (I == 1) return b;
+struct MyType {
+    MyType() { 
+        std::cout << "Construct\n"; 
     }
 
-    template <size_t I>
-    auto const& get() const& {
-        if constexpr (I == 0) return a;
-        else if constexpr (I == 1) return b;
+    MyType(MyType&& v) noexcept
+        : a(v.a), b(v.b), c(v.c) { 
+        std::cout << "Move\n"; 
     }
 
-    template <size_t I>
-    auto&& get()&& {
-        if constexpr (I == 0) return std::move(a);
-        else if constexpr (I == 1) return std::move(b);
+    MyType(const MyType& v)
+        : a(v.a), b(v.b), c(v.c) {
+        std::cout << "Copy\n";
+    }
+    
+    MyType& operator=(MyType&& v) noexcept {
+        a = v.a, b = v.b, c = v.c;
+        std::cout << "Move Assign\n"; 
+        return *this;
+    }
+
+    MyType& operator=(const MyType& v) {
+        a = v.a, b = v.b, c = v.c;
+        std::cout << "Copy Assign\n";
+        return *this;
+    }
+
+    ~MyType() {
+        std::cout << "Destruct\n";
+    }
+
+    int a = 1;
+    float b = 2;
+    std::string c = "Woof";
+
+    template<std::size_t I>
+    constexpr auto& get() & {
+        if constexpr (I == 0) return a;
+        else if constexpr (I == 1) return b;
+        else if constexpr (I == 2) return c;
+    }
+
+    template<std::size_t I>
+    constexpr auto&& get() && {
+        if constexpr (I == 0) return a;
+        else if constexpr (I == 1) return b;
+        else if constexpr (I == 2) return c;
+    }
+    template<std::size_t I>
+    constexpr auto& get() const & {
+        if constexpr (I == 0) return a;
+        else if constexpr (I == 1) return b;
+        else if constexpr (I == 2) return c;
+    }
+
+    template<std::size_t I>
+    constexpr auto&& get() const && {
+        if constexpr (I == 0) return a;
+        else if constexpr (I == 1) return b;
+        else if constexpr (I == 2) return c;
     }
 };
 
 namespace std {
-    template<> struct tuple_size<bbb> : std::integral_constant<std::size_t, 2> {};
-    template<> struct tuple_element<0, bbb> : std::type_identity<std::string> {};
-    template<> struct tuple_element<1, bbb> : std::type_identity<std::string> {};
+    template<> struct tuple_size<MyType> : std::integral_constant<std::size_t, 3> {};
+    template<> struct tuple_element<0, MyType> : std::type_identity<int> {};
+    template<> struct tuple_element<1, MyType> : std::type_identity<float> {};
+    template<> struct tuple_element<2, MyType> : std::type_identity<std::string> {};
 }
 
-namespace kaixo {
-    template<class C, class B, class E>
-    struct iff {
-        using depend = concat_t<depend<C>, depend<B>, depend<E>>;
+using namespace kaixo;
+template<class ...Args>
+constexpr decltype(auto) fun(Args&& ...args) {
+    using kaixo::tuple::take;
+    using kaixo::tuple::reverse;
+    using kaixo::tuple::unique;
 
-        C condition;
-        B body;
-        E otherwise;
+    template_pack<Args...> pack{ args... };
 
-        template<class Self>
-        constexpr auto evaluate(this Self&& self, is_named_tuple auto& tpl) {
-            constexpr auto c1 = kaixo::depend<decay_t<decltype(kaixo::evaluate(std::forward<Self>(self).condition, tpl))>>::size == 0;
-            constexpr auto c2 = kaixo::depend<decay_t<decltype(kaixo::evaluate(std::forward<Self>(self).body, tpl))>>::size == 0;
-            constexpr auto c3 = kaixo::depend<decay_t<decltype(kaixo::evaluate(std::forward<Self>(self).otherwise, tpl))>>::size == 0;
-            constexpr auto complete = c1 && c2 && c3;
-            if constexpr (complete) {
-                if (bool(kaixo::evaluate(std::forward<Self>(self).condition, tpl)))
-                    return kaixo::evaluate(std::forward<Self>(self).body, tpl);
-                else return kaixo::evaluate(std::forward<Self>(self).otherwise, tpl);
-            }
-            else {
-                return kaixo::iff{
-                    kaixo::evaluate(std::forward<Self>(self).condition, tpl),
-                    kaixo::evaluate(std::forward<Self>(self).body, tpl),
-                    kaixo::evaluate(std::forward<Self>(self).otherwise, tpl),
-                };
-            }
-        }
-    };
+    return pack | unique | take<3> | reverse;
 }
-
 
 int main() {
     using namespace std::string_literals;
+    using namespace kaixo;
+    using kaixo::tuple::take;
+    using kaixo::tuple::drop;
+    using kaixo::tuple::remove_indices;
+    using kaixo::tuple::get;
+    using kaixo::tuple::last;
+    using kaixo::tuple::insert;
+    using kaixo::tuple::append;
+    using kaixo::tuple::prepend;
+    using kaixo::tuple::reverse;
+    using kaixo::tuple::zip;
+    using kaixo::tuple::unique;
 
-    std::vector<aaa> avals{ 1ull }; // aaa is an aggregate
-    std::vector<bbb> bvals{ 1ull }; // bbb is a class with structured bindings defined.
 
-    auto lc = ((a, b, c) | (x, y) <- (avals, bvals), (_, (a, b, _), _, _) = x, (_, c) = y);
-    
-    for (auto [a, b, c] : lc) {
-        std::cout << "[" << a << ", " << b << ", " << c << "]\n";
-    }
+    std::tuple tpl{ 1, 2., 4.f };
 
-    std::vector<std::pair<int, std::string>> vals{
-        { 3, "Fizz" },
-        { 5, "Buzz" },
-    };
+    std::tuple res = tpl
+        | append("Hello World"s, 3.)
+        | prepend(0.)
+        | reverse
+        | remove_indices<2, 3>
+        | take<3>
+        | drop<1>;
+
+    std::tuple res2 = zip(res, tpl);
 
     return 0;
 }
