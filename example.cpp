@@ -153,7 +153,20 @@ namespace std {
     template<> struct tuple_element<1, bbb> : std::type_identity<std::string> {};
 }
 
+
+
+
 int main() {
+
+    {
+        using namespace kaixo::tuples;
+        
+        std::tuple<std::tuple<int, double>, std::tuple<float, short>> vals;
+
+        auto res = vals | join | append(1) | get<4>;
+
+    }
+
     using namespace kaixo;
     using namespace kaixo::pack;
     using namespace kaixo::operators;
@@ -161,16 +174,24 @@ int main() {
     using namespace kaixo::type_traits;
     using namespace kaixo::default_variables;
 
-    auto lc = ((a, b) | a <- range(0, inf), b <- range(0, a), (c, d) <- (range(0, b), range(0, b)), a == b, brk = a == 10);
+    static_assert(same_as<
+        info<                                                      // Bunch of function signatures
+            void       (&)(double, int        ),                   //
+            int        (*)(int,    double     ),                   //
+            std::size_t   (float,  std::string),                   //
+            std::string(*)(double, int        ),                   //
+            void       (*)(double, char       )>                   //
+        ::filter<                                                  //
+               with<arguments_t>(index_filter_v<is_integral> != 0) // First argument may not be integral
+            && with<return_type_t>(!is_void)                       // Return type may not be void
+            && is_pointer>                                         // Must be a pointer
+        ::element<0>::type,                                        // Grab first element
+                                                                   //
+        std::string(*)(double, int)                                //
+    >);
 
-    std::vector<aaa> avals{ 1ull }; // aaa is an aggregate
-    std::vector<bbb> bvals{ 1ull }; // bbb is a class with structured bindings defined.
 
-    auto lca = ((a, b, c) | (x, y) <- (avals, bvals), (_, (a, b, _), _, _) = x, (_, c) = y);
 
-    for (auto [a, b, c] : lca) {
-        std::cout << "[" << a << ", " << b << ", " << c << "]\n";
-    }
 
     constexpr auto myfilter = []<std::size_t Index, class Type>() -> bool {
         if constexpr (Index == 0) return std::is_integral_v<Type>;
