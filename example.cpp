@@ -153,26 +153,75 @@ namespace std {
     template<> struct tuple_element<1, bbb> : std::type_identity<std::string> {};
 }
 
+//struct Type {
+//    int field1;
+//    int field2;
+//
+//    template<std::size_t I>
+//    int get(this Type self) {
+//        if constexpr (I == 0) return self.field1;
+//        if constexpr (I == 1) return self.field2;
+//    }
+//};
+//
+//namespace std {
+//    template<> struct tuple_size<Type> : std::integral_constant<std::size_t, 2> {};
+//    template<> struct tuple_element<0, Type> : std::type_identity<int> {};
+//    template<> struct tuple_element<1, Type> : std::type_identity<int> {};
+//}
 
-
-
+//namespace test {
+//
+//template<class Ty>
+//struct Type {
+//    bool membr = false;
+//    constexpr static bool val = false;
+//    bool fun() { return false; }
+//    constexpr static bool sfun() { return false; }
+//    template<int> constexpr static bool templ = false;
+//};
+//    
+//template<class ...Tys> using v1 = std::tuple<std::bool_constant<Type<Tys>{}.membr>...>;
+//template<class ...Tys> using v2 = std::tuple<std::bool_constant<decltype(Type<Tys>{})::val>...>;
+//template<class ...Tys> using v3 = std::tuple<std::bool_constant<Type<Tys>{}.fun()>...>;
+//template<class ...Tys> using v4 = std::tuple<std::bool_constant<Type<Tys>{}.sfun()>...>;
+//template<class ...Tys> using v5 = std::tuple<std::bool_constant<decltype(Type<Tys>{})::template tem<0>>...>;
+//
+//}
 int main() {
+    //{
+    //    auto [a, b] = Type{};
+    //}
 
     {
         using namespace kaixo::tuples;
         
-        std::tuple<std::tuple<int, double>, std::tuple<float, short>> vals;
+        //std::tuple<std::tuple<int, double>, std::tuple<float, short>> vals;
 
-        auto res = vals | join | append(1) | get<4>;
+        //auto res = vals | join | append(1) | get<4>;
 
     }
 
     using namespace kaixo;
-    using namespace kaixo::pack;
     using namespace kaixo::operators;
     using namespace kaixo::concepts;
     using namespace kaixo::type_traits;
     using namespace kaixo::default_variables;
+
+    {
+        using namespace tuples;
+        using tuples::get;
+
+        std::tuple<MyType, double> t1{};
+        std::tuple<float, char> t2{};
+
+        auto roisn = zip(std::move(t1), t2);
+
+        return 0;
+
+    }
+    /*
+    using namespace kaixo::pack;
 
     static_assert(same_as<
         info<                                                      // Bunch of function signatures
@@ -191,7 +240,7 @@ int main() {
     >);
 
 
-
+    
 
     constexpr auto myfilter = []<std::size_t Index, class Type>() -> bool {
         if constexpr (Index == 0) return std::is_integral_v<Type>;
@@ -406,5 +455,5 @@ int main() {
     //kaixo::sizeof_v<>;
     //element_t<0>;
 
-    return 0;
+    return 0;*/
 }
