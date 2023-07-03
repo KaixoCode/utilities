@@ -170,52 +170,161 @@ namespace std {
 //    template<> struct tuple_element<1, Type> : std::type_identity<int> {};
 //}
 
-//namespace test {
-//
-//template<class Ty>
-//struct Type {
-//    bool membr = false;
-//    constexpr static bool val = false;
-//    bool fun() { return false; }
-//    constexpr static bool sfun() { return false; }
-//    template<int> constexpr static bool templ = false;
-//};
-//    
-//template<class ...Tys> using v1 = std::tuple<std::bool_constant<Type<Tys>{}.membr>...>;
-//template<class ...Tys> using v2 = std::tuple<std::bool_constant<decltype(Type<Tys>{})::val>...>;
-//template<class ...Tys> using v3 = std::tuple<std::bool_constant<Type<Tys>{}.fun()>...>;
-//template<class ...Tys> using v4 = std::tuple<std::bool_constant<Type<Tys>{}.sfun()>...>;
-//template<class ...Tys> using v5 = std::tuple<std::bool_constant<decltype(Type<Tys>{})::template tem<0>>...>;
-//
-//}
-int main() {
-    //{
-    //    auto [a, b] = Type{};
-    //}
+using namespace kaixo;
+using namespace kaixo::operators;
+using namespace kaixo::concepts;
+using namespace kaixo::type_traits;
+using namespace kaixo::default_variables;
 
-    {
-        using namespace kaixo::tuples;
-        
-        //std::tuple<std::tuple<int, double>, std::tuple<float, short>> vals;
+struct MyData {
+    std::string str;
+    std::vector<std::string> values;
+};
 
-        //auto res = vals | join | append(1) | get<4>;
+namespace serialize_modes {
+    template<class Ty> concept can_trivial = trivial<Ty>;
+    template<class Ty> concept can_structured = structured_binding<Ty>;
+    template<class Ty> concept can_contiguous = std::ranges::contiguous_range<Ty> && trivial<std::ranges::range_value_t<Ty>>;
+    template<class Ty> concept can_range = std::ranges::range<Ty>;
+}
 
+
+struct serialized_object {
+    enum class mode { None, Trivial, Structured, Contiguous, Range };
+
+    template<class Ty>
+    constexpr static mode pick_mode =
+          serialize_modes::can_trivial<decay_t<Ty>>    ? mode::Trivial
+        : serialize_modes::can_structured<decay_t<Ty>> ? mode::Structured
+        : serialize_modes::can_contiguous<decay_t<Ty>> ? mode::Contiguous
+        : serialize_modes::can_range<decay_t<Ty>>      ? mode::Range 
+        :                                                mode::None;
+
+    template<class Ty>
+        requires (pick_mode<Ty> == mode::None)
+    constexpr void write(Ty&&) {
+        static_assert(pick_mode<Ty> != mode::None, "Cannot write object");
     }
 
-    using namespace kaixo;
-    using namespace kaixo::operators;
-    using namespace kaixo::concepts;
-    using namespace kaixo::type_traits;
-    using namespace kaixo::default_variables;
+    template<class Ty> 
+        requires (pick_mode<Ty> == mode::Trivial)
+    constexpr serialized_object& write(Ty&& value) {
+        using value_type = decay_t<Ty>;
+        std::size_t _size = sizeof(value_type);
+        std::uint8_t* _mem = reinterpret_cast<std::uint8_t*>(&value);
+        _bytes.insert(_bytes.end(), _mem, _mem + _size);
+        return *this;
+    }
+    
+    template<class Ty>
+        requires (pick_mode<Ty> == mode::Structured)
+    constexpr serialized_object& write(Ty&& value) {
+        tuples::call(std::forward<Ty>(value), [this]<class ...Args>(Args&&... args) {
+            (write(std::forward<Args>(args)), ...);
+        });
+        return *this;
+    }
+    
+    template<class Ty>
+        requires (pick_mode<Ty> == mode::Contiguous)
+    constexpr serialized_object& write(Ty&& value) {
+        using value_type = std::ranges::range_value_t<decay_t<Ty>>;
+        std::size_t _size = std::ranges::size(value) * sizeof(value_type);
+        std::uint8_t* _mem = reinterpret_cast<std::uint8_t*>(std::ranges::data(value));
+        write(_size);
+        _bytes.insert(_bytes.end(), _mem, _mem + _size);
+        return *this;
+    }
+
+    template<class Ty>
+        requires (pick_mode<Ty> == mode::Range)
+    constexpr serialized_object& write(Ty&& value) {
+        using reference = std::ranges::range_reference_t<decay_t<Ty>>;
+        write<std::size_t>(std::ranges::size(value));
+        for (reference val : value) write(val);
+        return *this;
+    }
+
+    constexpr std::string to_string() const {
+        constexpr auto chars = "0123456789ABCDEF";
+        std::string _result = "";
+        _result.reserve(_bytes.size() * 3);
+        for (std::uint8_t byte : _bytes) {
+            _result += byte;
+            //_result += chars[byte & 0x0F];
+            //_result += chars[(byte & 0xF0) >> 8ull];
+            //_result += ' ';
+        }
+        return _result;
+    }
+
+private:
+    std::vector<std::uint8_t> _bytes;
+};
+
+struct MyDataType {
+    int a;
+    double b;
+};
+
+int main() {
+
+    serialized_object data;
+    MyDataType aefa{ 10, 2.0323 };
+    data.write(aefa);
+
+    std::array<int, 2> aefae{};
+    data.write(aefae);
+
+    std::string name = "Hello World";
+    data.write(name);
+
+    MyData val{
+        .str = "Test",
+        .values = { "Woof", "Carrot", "Thing", "Aaa" }
+    };
+
+    data.write(val);
+
+    std::cout << data.to_string() << '\n';
+
+    return 0;
 
     {
-        using namespace tuples;
-        using tuples::get;
+        //auto rsion = aefae | split<int>;
 
-        std::tuple<MyType, double> t1{};
-        std::tuple<float, char> t2{};
+        //auto roisn = rsion.get<0>();
 
-        auto roisn = zip(std::move(t1), t2);
+        //std::tuple<int, int, int> t1{ 1, 2, 3 };
+        //std::tuple<int, int, int> t2{ 4, 5, 6 };
+        //
+        ////   | 0 1 2 3 4 5 6 7 8  <- First index
+        ////---+------------------
+        //// 0 | 1 2 3 1 2 3 1 2 3
+        //// 1 | 4 4 4 5 5 5 6 6 6
+        //// ^
+        //// Second index
+        //
+        //all_t<std::tuple<int, int, int>>::types::size;
+        //
+        //auto sorin = cartesian(std::tuple{}, t1, t2);
+        //
+        //auto oisnr = empty_view{} | join;
+        //
+        //auto res = cartesian(t1, t2);
+        //
+        //auto el = std::get<3>(res); // Should get (1, 5)
+        //
+        //auto& v1 = std::get<0>(el);
+        //auto& v2 = std::get<1>(el);
+        // ^^^ Yes these are references to the original element!
+
+
+        //static_assert(pack::cartesian_t<info<int, double>, info<float, char>>::size == 4);
+
+        //decay_t<decltype(feaef)>::cartesian_element_view<6>::types::size;
+
+        //auto roisn = concat(std::move(t1), t2) | get<5>;
 
         return 0;
 
