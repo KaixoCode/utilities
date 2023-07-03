@@ -45,6 +45,7 @@ add_library(utilities STATIC
   "${utilities_SOURCE_DIR}/linq.hpp"
   "${utilities_SOURCE_DIR}/json.hpp"
   "${utilities_SOURCE_DIR}/bag.hpp"
+  "${utilities_SOURCE_DIR}/serializer.hpp"
 )
 
 set_target_properties(utilities PROPERTIES LINKER_LANGUAGE CXX)

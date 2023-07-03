@@ -104,191 +104,93 @@ struct sC {
 #include "kaixo/zipped_range.hpp"
 #include "kaixo/break.hpp"
 
-struct aaa {
-    std::string a = "aaa[0]";
-
-    struct B {
-        std::string a = "aaa[1][0]";
-        std::string b = "aaa[1][1]";
-
-        struct C {
-            std::string a = "aaa[1][2][0]";
-            std::string b = "aaa[1][2][1]";
-        } c;
-    } b;
-
-    std::string c = "aaa[2]";
-    std::string d = "aaa[3]";
-};
-
-class bbb {
-    std::string a = "bbb[0]";
-    std::string b = "bbb[1]";
-
-public:
-    constexpr bbb() {}
-
-    template <size_t I>
-    auto& get()& {
-        if constexpr (I == 0) return a;
-        else if constexpr (I == 1) return b;
-    }
-
-    template <size_t I>
-    auto const& get() const& {
-        if constexpr (I == 0) return a;
-        else if constexpr (I == 1) return b;
-    }
-
-    template <size_t I>
-    auto&& get()&& {
-        if constexpr (I == 0) return std::move(a);
-        else if constexpr (I == 1) return std::move(b);
-    }
-};
-
-namespace std {
-    template<> struct tuple_size<bbb> : std::integral_constant<std::size_t, 2> {};
-    template<> struct tuple_element<0, bbb> : std::type_identity<std::string> {};
-    template<> struct tuple_element<1, bbb> : std::type_identity<std::string> {};
-}
-
-//struct Type {
-//    int field1;
-//    int field2;
-//
-//    template<std::size_t I>
-//    int get(this Type self) {
-//        if constexpr (I == 0) return self.field1;
-//        if constexpr (I == 1) return self.field2;
-//    }
-//};
-//
-//namespace std {
-//    template<> struct tuple_size<Type> : std::integral_constant<std::size_t, 2> {};
-//    template<> struct tuple_element<0, Type> : std::type_identity<int> {};
-//    template<> struct tuple_element<1, Type> : std::type_identity<int> {};
-//}
-
 using namespace kaixo;
 using namespace kaixo::operators;
 using namespace kaixo::concepts;
 using namespace kaixo::type_traits;
 using namespace kaixo::default_variables;
+#include "serializer.hpp"
 
-struct MyData {
+
+struct MyTrivialStruct {
+    int a;
+    double b;
+};
+
+struct MyNonTrivialStruct {
     std::string str;
     std::vector<std::string> values;
 };
 
-namespace serialize_modes {
-    template<class Ty> concept can_trivial = trivial<Ty>;
-    template<class Ty> concept can_structured = structured_binding<Ty>;
-    template<class Ty> concept can_contiguous = std::ranges::contiguous_range<Ty> && trivial<std::ranges::range_value_t<Ty>>;
-    template<class Ty> concept can_range = std::ranges::range<Ty>;
-}
+class MyClass {
+    std::string a;
+    int b;
 
+public:
+    constexpr MyClass(std::string a, int b)
+        :a(a), b(b) {}
 
-struct serialized_object {
-    enum class mode { None, Trivial, Structured, Contiguous, Range };
+    std::string& getA() { return a; }
+    int& getB() { return b; }
+};
 
-    template<class Ty>
-    constexpr static mode pick_mode =
-          serialize_modes::can_trivial<decay_t<Ty>>    ? mode::Trivial
-        : serialize_modes::can_structured<decay_t<Ty>> ? mode::Structured
-        : serialize_modes::can_contiguous<decay_t<Ty>> ? mode::Contiguous
-        : serialize_modes::can_range<decay_t<Ty>>      ? mode::Range 
-        :                                                mode::None;
-
-    template<class Ty>
-        requires (pick_mode<Ty> == mode::None)
-    constexpr void write(Ty&&) {
-        static_assert(pick_mode<Ty> != mode::None, "Cannot write object");
-    }
-
-    template<class Ty> 
-        requires (pick_mode<Ty> == mode::Trivial)
-    constexpr serialized_object& write(Ty&& value) {
-        using value_type = decay_t<Ty>;
-        std::size_t _size = sizeof(value_type);
-        std::uint8_t* _mem = reinterpret_cast<std::uint8_t*>(&value);
-        _bytes.insert(_bytes.end(), _mem, _mem + _size);
-        return *this;
-    }
-    
-    template<class Ty>
-        requires (pick_mode<Ty> == mode::Structured)
-    constexpr serialized_object& write(Ty&& value) {
-        tuples::call(std::forward<Ty>(value), [this]<class ...Args>(Args&&... args) {
-            (write(std::forward<Args>(args)), ...);
-        });
-        return *this;
-    }
-    
-    template<class Ty>
-        requires (pick_mode<Ty> == mode::Contiguous)
-    constexpr serialized_object& write(Ty&& value) {
-        using value_type = std::ranges::range_value_t<decay_t<Ty>>;
-        std::size_t _size = std::ranges::size(value) * sizeof(value_type);
-        std::uint8_t* _mem = reinterpret_cast<std::uint8_t*>(std::ranges::data(value));
-        write(_size);
-        _bytes.insert(_bytes.end(), _mem, _mem + _size);
-        return *this;
-    }
-
-    template<class Ty>
-        requires (pick_mode<Ty> == mode::Range)
-    constexpr serialized_object& write(Ty&& value) {
-        using reference = std::ranges::range_reference_t<decay_t<Ty>>;
-        write<std::size_t>(std::ranges::size(value));
-        for (reference val : value) write(val);
-        return *this;
-    }
-
-    constexpr std::string to_string() const {
-        constexpr auto chars = "0123456789ABCDEF";
-        std::string _result = "";
-        _result.reserve(_bytes.size() * 3);
-        for (std::uint8_t byte : _bytes) {
-            _result += byte;
-            //_result += chars[byte & 0x0F];
-            //_result += chars[(byte & 0xF0) >> 8ull];
-            //_result += ' ';
-        }
+template<>
+struct serialize<MyClass> {
+    static serialized_object write(MyClass& value) {
+        serialized_object _result;
+        _result.write(value.getA());
+        _result.write(value.getB());
         return _result;
     }
 
-private:
-    std::vector<std::uint8_t> _bytes;
-};
-
-struct MyDataType {
-    int a;
-    double b;
+    static MyClass read(serialized_object& data) {
+        auto mem1 = data.read<std::string>();
+        auto mem2 = data.read<int>();
+        return MyClass(std::move(mem1), mem2);
+    }
 };
 
 int main() {
 
     serialized_object data;
-    MyDataType aefa{ 10, 2.0323 };
-    data.write(aefa);
+    {
+        int val1 = 420;                        // Trivial type
 
-    std::array<int, 2> aefae{};
-    data.write(aefae);
+        std::string val2 = "Hello World";      // Non-trivial type
+        
+        std::array<int, 4> val3{ 1, 2, 3, 4 }; // Contiguous trivial container
 
-    std::string name = "Hello World";
-    data.write(name);
+        std::vector<std::string> val4{         // Non-trivial container
+            "String 1", "More Strings", "Plenty of Strings" };
 
-    MyData val{
-        .str = "Test",
-        .values = { "Woof", "Carrot", "Thing", "Aaa" }
-    };
+        MyTrivialStruct val5{ 10, 2.0323 };    // Trivial struct
 
-    data.write(val);
+        MyNonTrivialStruct val6{               // Non-trivial struct
+            .str = "Test",
+            .values = { "Woof", "Carrot", "Thing", "Aaa" } };
 
-    std::cout << data.to_string() << '\n';
+        MyClass val7{ "Private Member", 69 };  // Class w/ serialize overloads
 
-    return 0;
+        data.write(val1);
+        data.write(val2);
+        data.write(val3);
+        data.write(val4);
+        data.write(val5);
+        data.write(val6);
+        data.write(val7);
+    }
+
+    {
+        auto v1 = data.read<int>();
+        auto v2 = data.read<std::string>();
+        auto v3 = data.read<std::array<int, 4>>();
+        auto v4 = data.read<std::vector<std::string>>();
+        auto v5 = data.read<MyTrivialStruct>();
+        auto v6 = data.read<MyNonTrivialStruct>();
+        auto v7 = data.read<MyClass>();
+
+        return 0;
+    }
 
     {
         //auto rsion = aefae | split<int>;
