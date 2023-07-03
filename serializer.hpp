@@ -168,6 +168,7 @@ namespace kaixo {
         }
 
         constexpr std::size_t size() const { return _last - _first; }
+        constexpr std::uint8_t* data() { return _first; }
         constexpr std::uint8_t* begin() { return _first; }
         constexpr std::uint8_t* end() { return _last; }
         constexpr const std::uint8_t* begin() const { return _first; }
