@@ -4,7 +4,9 @@
 #include <vector>
 #include <map>
 #include <ranges>
+#include <complex>
 #include <list>
+#include <fstream>
 
 #include "kaixo/type_utils.hpp"
 
@@ -132,18 +134,18 @@ public:
 
     std::string& getA() { return a; }
     int& getB() { return b; }
+    const std::string& getA() const { return a; }
+    const int& getB() const { return b; }
 };
 
 template<>
 struct serialize<MyClass> {
-    static serialized_object write(MyClass& value) {
-        serialized_object _result;
-        _result.write(value.getA());
-        _result.write(value.getB());
-        return _result;
+    static void write(serialized_object<>& data, const MyClass& value) {
+        data.write(value.getA());
+        data.write(value.getB());
     }
 
-    static MyClass read(serialized_object& data) {
+    static MyClass read(serialized_object<>& data) {
         auto mem1 = data.read<std::string>();
         auto mem2 = data.read<int>();
         return MyClass(std::move(mem1), mem2);
@@ -152,7 +154,8 @@ struct serialize<MyClass> {
 
 int main() {
 
-    serialized_object data;
+    serialized_object<> data;
+
     {
         // Trivial type
         int val1 = 420;                        
@@ -200,7 +203,11 @@ int main() {
         data.write(val9);
     }
 
-    std::cout << data.to_string() << '\n';
+    std::ofstream rgrgsr{ "" };
+
+    a << 1;
+
+    std::cout << data << '\n';
 
     {
         auto v1 = data.read<int>();
