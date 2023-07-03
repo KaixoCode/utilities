@@ -2,47 +2,56 @@
 #include "kaixo/type_utils.hpp"
 
 namespace kaixo {
-
     struct serialized_object;
 
     template<class Ty>
     struct serialize;
 
     namespace serialize_modes {
-        template<class Ty> 
+        template<class Ty> // Overload for serialize<Ty> class
         concept can_serialize = requires (Ty val, serialized_object & data) {
             { serialize<Ty>::write(val) } -> concepts::same_as<serialized_object>;
             { serialize<Ty>::read(data) } -> concepts::same_as<Ty>;
         };
 
-        template<class Ty> 
+        template<class Ty> // Contiguous range of trivials
         concept can_contiguous = std::ranges::contiguous_range<Ty> 
             && concepts::trivial<std::ranges::range_value_t<Ty>>;
 
         template<class Ty> concept can_range = std::ranges::range<Ty>;
         template<class Ty> concept can_trivial = concepts::trivial<Ty>;
-        template<class Ty> concept can_structured = concepts::aggregate<Ty>;
-
-
+        template<class Ty> concept can_aggregate = concepts::aggregate<Ty>;
     }
 
     class serialized_object {
-        enum class mode { None, Trivial, Structured, Contiguous, Range, Serializable };        
+        enum class mode { None, Trivial, Aggregate, Contiguous, Range, Serializable };
         
         template<class Ty>
         constexpr static mode pick_mode =
               serialize_modes::can_serialize<decay_t<Ty>>  ? mode::Serializable
             : serialize_modes::can_trivial<decay_t<Ty>>    ? mode::Trivial
-            : serialize_modes::can_structured<decay_t<Ty>> ? mode::Structured
+            : serialize_modes::can_aggregate<decay_t<Ty>>  ? mode::Aggregate
             : serialize_modes::can_contiguous<decay_t<Ty>> ? mode::Contiguous
             : serialize_modes::can_range<decay_t<Ty>>      ? mode::Range
             :                                                mode::None;
 
     public:
-        template<class Ty>
-            requires (pick_mode<Ty> == mode::None)
-        constexpr void write(Ty&&) {
-            static_assert(pick_mode<Ty> != mode::None, "Cannot write object");
+        constexpr serialized_object() = default;
+        constexpr serialized_object(const serialized_object&) = delete;
+
+        constexpr serialized_object(serialized_object&& o)
+            : _data(o._data), _first(o._first), _last(o._last), _end(o._end) {
+            o.invalidate();
+        }
+
+        constexpr ~serialized_object() { delete[] _data; }
+        
+        constexpr serialized_object& operator=(const serialized_object&) = delete;
+
+        constexpr serialized_object& operator=(serialized_object&& o) {
+            _data = o._data, _first = o._first, _last = o._last, _end = o._end;
+            o.invalidate();
+            return *this;
         }
 
         template<class Ty>
@@ -52,7 +61,7 @@ namespace kaixo {
             return *this;
         }
 
-        template<class Ty>
+        template<class Ty> 
             requires (pick_mode<Ty> == mode::Serializable)
         constexpr Ty read() {
             return serialize<decay_t<Ty>>::read(*this);
@@ -79,7 +88,7 @@ namespace kaixo {
         }
 
         template<class Ty>
-            requires (pick_mode<Ty> == mode::Structured)
+            requires (pick_mode<Ty> == mode::Aggregate)
         constexpr serialized_object& write(Ty&& value) {
             tuples::call(std::forward<Ty>(value), [this]<class ...Args>(Args&&... args) {
                 (write(std::forward<Args>(args)), ...);
@@ -88,9 +97,9 @@ namespace kaixo {
         }
 
         template<class Ty>
-            requires (pick_mode<Ty> == mode::Structured)
+            requires (pick_mode<Ty> == mode::Aggregate)
         constexpr Ty read() {
-            return binding_types_t<Ty>::for_each([this]<class ...Args>{
+            return struct_members_t<Ty>::for_each([this]<class ...Args>{
                 return Ty{ this->read<Args>()... };
             });
         }
@@ -164,6 +173,8 @@ namespace kaixo {
         constexpr const std::uint8_t* begin() const { return _first; }
         constexpr const std::uint8_t* end() const { return _last; }
 
+        constexpr void clear() { delete[] _data; invalidate(); }
+
         constexpr std::string to_string() const {
             constexpr auto chars = "0123456789ABCDEF";
             std::string _result = "";
@@ -207,6 +218,13 @@ namespace kaixo {
             _data = _newData;
             _first = _newData;
             _end = _newData + _newSize;
+        }
+
+        constexpr void invalidate() {
+            _data = nullptr;
+            _first = nullptr;
+            _last = nullptr;
+            _end = nullptr;
         }
     };
 }
