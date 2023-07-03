@@ -20,7 +20,10 @@ namespace kaixo {
 
         template<class Ty> concept can_range = std::ranges::range<Ty>;
         template<class Ty> concept can_trivial = concepts::trivial<Ty>;
-        template<class Ty> concept can_aggregate = concepts::aggregate<Ty>;
+
+        template<class Ty>
+        concept can_aggregate = concepts::structured_binding<Ty> 
+            && binding_types_t<Ty>::template can_construct<Ty>::value;
     }
 
     class serialized_object {
@@ -99,7 +102,7 @@ namespace kaixo {
         template<class Ty>
             requires (pick_mode<Ty> == mode::Aggregate)
         constexpr Ty read() {
-            return struct_members_t<Ty>::for_each([this]<class ...Args>{
+            return binding_types_t<Ty>::for_each([this]<class ...Args>{
                 return Ty{ this->read<Args>()... };
             });
         }

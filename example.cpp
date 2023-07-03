@@ -154,22 +154,40 @@ int main() {
 
     serialized_object data;
     {
-        int val1 = 420;                        // Trivial type
+        // Trivial type
+        int val1 = 420;                        
 
-        std::string val2 = "Hello World";      // Non-trivial type
+        // Non-trivial type
+        std::string val2 = "Hello World";      
         
-        std::array<int, 4> val3{ 1, 2, 3, 4 }; // Contiguous trivial container
+        // Contiguous trivial container
+        std::array<int, 4> val3{ 1, 2, 3, 4 }; 
 
-        std::vector<std::string> val4{         // Non-trivial container
+        // Non-trivial container
+        std::vector<std::string> val4{         
             "String 1", "More Strings", "Plenty of Strings" };
 
-        MyTrivialStruct val5{ 10, 2.0323 };    // Trivial struct
+        // Trivial struct
+        MyTrivialStruct val5{ 10, 2.0323 };    
 
-        MyNonTrivialStruct val6{               // Non-trivial struct
+        // Non-trivial struct
+        MyNonTrivialStruct val6{               
             .str = "Test",
             .values = { "Woof", "Carrot", "Thing", "Aaa" } };
 
-        MyClass val7{ "Private Member", 69 };  // Class w/ serialize overloads
+        // Non-default constructible class w/ serialize overloads
+        MyClass val7{ "Private Member", 69 };  
+
+        // Tuple of classes
+        std::tuple<MyClass, std::string, std::list<int>> val8{
+            { "Big Very Long String", 9595 }, "More Strings!!",
+            { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }
+        };
+
+        // Array of non-default constructible classes
+        std::array<MyClass, 2> val9{
+            MyClass{ "In Array 1", 424 }, MyClass{ "In Array 2", 536 }
+        };
 
         data.write(val1);
         data.write(val2);
@@ -178,7 +196,11 @@ int main() {
         data.write(val5);
         data.write(val6);
         data.write(val7);
+        data.write(val8);
+        data.write(val9);
     }
+
+    std::cout << data.to_string() << '\n';
 
     {
         auto v1 = data.read<int>();
@@ -188,6 +210,8 @@ int main() {
         auto v5 = data.read<MyTrivialStruct>();
         auto v6 = data.read<MyNonTrivialStruct>();
         auto v7 = data.read<MyClass>();
+        auto v8 = data.read<std::tuple<MyClass, std::string, std::list<int>>>();
+        auto v9 = data.read<std::array<MyClass, 2>>();
 
         return 0;
     }
