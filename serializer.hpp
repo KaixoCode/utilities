@@ -34,7 +34,7 @@ namespace kaixo {
 
     // =======================================================
 
-    // Direct serializer stores the serialized data in an internal container.
+    // Serializer stores the serialized data in an internal container.
     template<class Allocator>
     class serializer_base {
     public:
@@ -154,6 +154,7 @@ namespace kaixo {
 
     // =======================================================
 
+    // (De)serialize directly to and from an iostream.
     class ios_serializer_base {
     public:
         using _can_i = int; // Can input 
@@ -179,6 +180,7 @@ namespace kaixo {
     
     // =======================================================
     
+    // Serialize directly to an ostream.
     class os_serializer_base {
     public:
         using _can_o = int; // Can output
@@ -196,6 +198,7 @@ namespace kaixo {
     
     // =======================================================
 
+    // Deserialize directly from an istream.
     class is_serializer_base {
     public:
         using _can_i = int; // Can input 

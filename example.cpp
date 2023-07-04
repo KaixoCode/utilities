@@ -195,15 +195,15 @@ int main() {
             MyClass{ "In Array 1", 424 }, MyClass{ "In Array 2", 536 }
         };
 
-        data.write(val1);
-        data.write(val2);
-        data.write(val3);
-        data.write(val4);
-        data.write(val5);
-        data.write(val6);
-        data.write(val7);
-        data.write(val8);
-        data.write(val9);
+        data << val1;
+        data << val2;
+        data << val3;
+        data << val4;
+        data << val5;
+        data << val6;
+        data << val7;
+        data << val8;
+        data << val9;
     }
 
     {
