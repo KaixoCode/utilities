@@ -4,3 +4,6 @@
 [submodule "libs/list_comprehension"]
 	path = libs/list_comprehension
 	url = https://github.com/KaixoCode/list_comprehension.git
+[submodule "libs/serializer"]
+	path = libs/serializer
+	url = https://github.com/KaixoCode/serializer.git
