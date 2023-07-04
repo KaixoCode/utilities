@@ -3,16 +3,19 @@
 #include "kaixo/type_utils.hpp"
 
 namespace kaixo {
-    template<class Byte = std::uint8_t, class Allocator = std::allocator<Byte>>
-    class serialized_object;
+    template<class Allocator = std::allocator<std::uint8_t>>
+    class serializer_base;
+
+    template<class Type>
+    class basic_serializer;
 
     template<class Ty>
     // Specialize this to support serialization on classes.
     struct serialize; 
 
     namespace detail {
-        template<class Ty> // Overload for serialize<Ty> class
-        concept can_serialize = requires (Ty val, serialized_object<> & data) {
+        template<class Ty, class Type> // Overload for serialize<Ty> class
+        concept can_serialize = requires (Ty val, basic_serializer<Type> & data) {
             { serialize<Ty>::write(data, val) } -> concepts::same_as<void>;
             { serialize<Ty>::read(data) } -> concepts::same_as<Ty>;
         };
@@ -29,35 +32,22 @@ namespace kaixo {
         template<class Ty> concept can_trivial = concepts::trivially_copyable<Ty>;
     }
 
-    template<class Byte, class Allocator>
-    class serialized_object {
-        static_assert(sizeof(Byte) == 1, "Requires size of Byte to be 1 byte.");
+    // =======================================================
 
-        enum class mode { 
-            None,        // Not supported
-            Trivial,     // Trivially copyable (std::copy_n)
-            Structured,  // Has structured binding, and can be constructed with binding types
-            Contiguous,  // Contiguous range of trivially copyable types
-            Range,       // Any range
-            Serializable // Has overloaded serialize<Ty> class
-        };
-        
-        template<class Ty>
-        constexpr static mode Choice =
-              detail::can_serialize<decay_t<Ty>>  ? mode::Serializable
-            : detail::can_trivial<decay_t<Ty>>    ? mode::Trivial
-            : detail::can_structured<decay_t<Ty>> ? mode::Structured
-            : detail::can_contiguous<decay_t<Ty>> ? mode::Contiguous
-            : detail::can_range<decay_t<Ty>>      ? mode::Range
-            :                                       mode::None;
-
+    // Direct serializer stores the serialized data in an internal container.
+    template<class Allocator>
+    class serializer_base {
     public:
-        using value_type = Byte;
+        using _can_pop = int; // Can directly pop bytes
+        using _can_i = int;   // Can input 
+        using _can_o = int;   // Can output
+
+        using value_type = std::uint8_t;
         using allocator_type = Allocator;
         using size_type = std::size_t;
         using difference_type = std::ptrdiff_t;
-        using reference = Byte&;
-        using const_reference = const Byte&;
+        using reference = std::uint8_t&;
+        using const_reference = const std::uint8_t&;
         using pointer = std::allocator_traits<Allocator>::pointer;
         using const_pointer = std::allocator_traits<Allocator>::const_pointer;
         using iterator = const_pointer;
@@ -67,17 +57,20 @@ namespace kaixo {
 
         // =======================================================
 
-        constexpr ~serialized_object() { clear(); }
-        constexpr serialized_object() = default;
-        constexpr serialized_object(const serialized_object&) = delete;
-        constexpr serialized_object(serialized_object&& o)
-            : _data(o._data), _first(o._first), 
-              _last(o._last), _end(o._end) { o.invalidate(); }
-        
-        constexpr serialized_object& operator=(const serialized_object&) = delete;
-        constexpr serialized_object& operator=(serialized_object&& o) {
+        constexpr ~serializer_base() { clear(); }
+        constexpr serializer_base() = default;
+        constexpr serializer_base(Allocator allocator) : _alloc(allocator) {};
+        constexpr serializer_base(const serializer_base&) = delete;
+        constexpr serializer_base(serializer_base&& o)
+            : _data(o._data), _first(o._first),
+            _last(o._last), _end(o._end) {
+            o.invalidate();
+        }
+
+        constexpr serializer_base& operator=(const serializer_base&) = delete;
+        constexpr serializer_base& operator=(serializer_base&& o) {
             _data = o._data;
-            _first = o._first; 
+            _first = o._first;
             _last = o._last;
             _end = o._end;
             o.invalidate();
@@ -85,114 +78,17 @@ namespace kaixo {
         }
 
         // =======================================================
-
-        template<class Ty> requires (Choice<Ty> == mode::Serializable)
-        constexpr serialized_object& write(Ty&& value) {
-            serialize<decay_t<Ty>>::write(*this, std::forward<Ty>(value));
-            return *this;
+        
+        constexpr std::uint8_t* pop_bytes(std::size_t nbytes) {
+            std::uint8_t* _backup = _first;
+            _first += nbytes;
+            return _backup;
         }
 
-        template<class Ty> requires (Choice<Ty> == mode::Serializable)
-        constexpr Ty read() {
-            return serialize<decay_t<Ty>>::read(*this);
-        }
-
-        // =======================================================
-
-        template<class Ty> requires (Choice<Ty> == mode::Trivial)
-        constexpr serialized_object& write(Ty&& value) {
-            const Byte* _mem = reinterpret_cast<const Byte*>(&value);
-            push_bytes(_mem, sizeof(decay_t<Ty>));
-            return *this;
-        }
-
-        template<class Ty> requires (Choice<Ty> == mode::Trivial)
-        constexpr Ty read() {
-            return *reinterpret_cast<Ty*>(pop_bytes(sizeof(decay_t<Ty>)));
-        }
-
-        // =======================================================
-
-        template<class Ty> requires (Choice<Ty> == mode::Structured)
-        constexpr serialized_object& write(Ty&& value) {
-            tuples::call(std::forward<Ty>(value), [this]<class ...Args>(Args&&... args) {
-                (this->write(std::forward<Args>(args)), ...);
-            });
-            return *this;
-        }
-
-        template<class Ty> requires (Choice<Ty> == mode::Structured)
-        constexpr Ty read() {
-            return binding_types_t<Ty>::for_each([this]<class ...Args>{
-                return Ty{ this->read<Args>()... };
-            });
-        }
-
-        // =======================================================
-
-        template<class Ty> requires (Choice<Ty> == mode::Contiguous)
-        constexpr serialized_object& write(Ty&& value) {
-            using value_type = std::ranges::range_value_t<decay_t<Ty>>;
-            std::size_t _size = std::ranges::size(value);
-            write(_size); // Save range size
-            const Byte* _mem = reinterpret_cast<const Byte*>(std::ranges::data(value));
-            push_bytes(_mem, _size * sizeof(value_type));
-            return *this;
-        }
-
-        template<class Ty> requires (Choice<Ty> == mode::Contiguous)
-        constexpr Ty read() {
-            using value_type = std::ranges::range_value_t<decay_t<Ty>>;
-            std::size_t _size = read<std::size_t>(); // Read range size
-            value_type* _at = reinterpret_cast<value_type*>(pop_bytes(_size * sizeof(value_type)));
-            if constexpr (concepts::constructible<Ty, value_type*, value_type*>) {
-                return Ty{ _at, _at + _size };
-            } else {
-                Ty _result{}; 
-                std::copy_n(_at, _size, std::begin(_result));
-                return _result;
-            }
-        }
-
-        // =======================================================
-
-        template<class Ty> requires (Choice<Ty> == mode::Range)
-        constexpr serialized_object& write(Ty&& value) {
-            using reference = std::ranges::range_reference_t<decay_t<Ty>>;
-            write<std::size_t>(std::ranges::size(value)); // Save range size
-            for (reference val : value) write(val);
-            return *this;
-        }
-
-        template<class Ty> requires (Choice<Ty> == mode::Range)
-        constexpr Ty read() {
-            using value_type = std::ranges::range_value_t<decay_t<Ty>>;
-            using reference = std::ranges::range_reference_t<decay_t<Ty>>;
-            const std::size_t _size = read<std::size_t>(); // Read range size
-            Ty _result{};
-            if constexpr (requires (Ty ty) { { ty.reserve(1ull) }; })
-                _result.reserve(_size); // reserve if possible
-            for (std::size_t i = 0; i < _size; ++i)
-                _result.push_back(read<value_type>());
-            return _result;
-        }
-
-        // =======================================================
-
-        template<class Ty> requires (Choice<Ty> != mode::None)
-        constexpr serialized_object& operator<<(Ty&& value) {
-            return write(std::forward<Ty>(value));
-        }
-
-        template<class Ty> requires (Choice<Ty> != mode::None)
-        constexpr Ty& operator>>(Ty& value) {
-            return value = read<decay_t<Ty>>();
-        }
-
-        // =======================================================
-
-        constexpr void push(const serialized_object& other) {
-            push_bytes(other._first, other.size());
+        constexpr void push_bytes(const std::uint8_t* ptr, std::size_t size) {
+            if (available_space() < size) reallocate(size);
+            std::copy_n(ptr, size, _last);
+            _last += size;
         }
 
         constexpr std::size_t empty() const { return _last == _first; }
@@ -205,60 +101,24 @@ namespace kaixo {
                 reallocate(bytes - capacity()); 
         }
 
-        constexpr const Byte* data() const { return _first; }
-
-        constexpr const_iterator begin() const { return _first; }
-        constexpr const_iterator end() const { return _last; }
-        constexpr const_iterator cbegin() const { return begin(); }
-        constexpr const_iterator cend() const { return end(); }
-        constexpr const_reverse_iterator rbegin() const { return end(); }
-        constexpr const_reverse_iterator rend() const { return begin(); }
-        constexpr const_reverse_iterator crbegin() const { return end(); }
-        constexpr const_reverse_iterator crend() const { return begin(); }
-
         constexpr void clear() {
             if (_data != nullptr)
                 _alloc.deallocate(_data, _end - _data); 
             invalidate(); 
         }
 
-        constexpr bool operator==(const serialized_object& other) const {
-            return size() == other.size() && std::memcmp(_first, other._first, size()) == 0;
-        }
-        
-        constexpr std::weak_ordering operator<=>(const serialized_object& other) const {
-            auto _order = std::memcmp(_first, other._first, std::min(size(), other.size()));
-            return _order < 0 ? std::weak_ordering::less :
-                   _order > 0 ? std::weak_ordering::greater :
-                                size() <=> other.size();
-        }
-
     private:
-        Byte* _data = nullptr;  // Allocated pointer
-        Byte* _first = nullptr; // First stored byte
-        Byte* _last = nullptr;  // Last stored byte
-        Byte* _end = nullptr;   // End of allocated memory
+        std::uint8_t* _data = nullptr;  // Allocated pointer
+        std::uint8_t* _first = nullptr; // First stored byte
+        std::uint8_t* _last = nullptr;  // Last stored byte
+        std::uint8_t* _end = nullptr;   // End of allocated memory
         [[no_unique_address]] Allocator _alloc{};
 
         constexpr std::size_t available_space() const { return _end - _last; }
 
-        // Pops from front, does no move memory or deallocate
-        constexpr Byte* pop_bytes(std::size_t nbytes) {
-            Byte* _backup = _first;
-            _first += nbytes; 
-            return _backup;
-        }
-
-        // Pushes block of memory, reallocates if necessary
-        constexpr void push_bytes(const Byte* ptr, std::size_t size) {
-            if (available_space() < size) reallocate(size);
-            std::copy_n(ptr, size, _last);
-            _last += size;
-        }
-
         constexpr void reallocate(std::size_t more) {
             std::size_t _newSize = size() * 2 + more;
-            Byte* _newData = _alloc.allocate(_newSize);
+            std::uint8_t* _newData = _alloc.allocate(_newSize);
             if (_data != nullptr) {
                 std::copy_n(_first, size(), _newData);
                 _alloc.deallocate(_data, _end - _data);
@@ -276,16 +136,236 @@ namespace kaixo {
             _end = nullptr;
         }
 
-        friend std::ostream& operator<<(std::ostream& os, const serialized_object& data) {
+        // =======================================================
+
+        friend std::ostream& operator<<(std::ostream& os, const serializer_base& data) {
             auto state = os.rdstate();
             os << std::hex;
-            for (Byte byte : data) {
+            for (std::size_t i = 0; i < data.size(); ++i) {
+                std::uint8_t byte = data._first[i];
                 os << (byte & 0x0F)
-                    << ((byte & 0xF0) >> 8ull)
-                    << ' ';
+                   << ((byte & 0xF0) >> 8ull)
+                   << ' ';
             }
             os.clear(state);
             return os;
         }
     };
+
+    // =======================================================
+
+    class ios_serializer_base {
+    public:
+        using _can_i = int; // Can input 
+        using _can_o = int; // Can output
+
+        constexpr ios_serializer_base(std::iostream& stream)
+            : _stream(&stream) {}
+
+        template<class Ty> requires trivially_copyable<Ty>
+        Ty get_direct() {
+            char _bytes[sizeof(Ty)];
+            _stream->read(_bytes, sizeof(Ty));
+            return *reinterpret_cast<Ty*>(_bytes);
+        }
+
+        void push_bytes(const std::uint8_t* ptr, std::size_t size) {
+            _stream->write(reinterpret_cast<const char*>(ptr), size);
+        }
+
+    private:
+        std::iostream* _stream;
+    };
+    
+    // =======================================================
+    
+    class os_serializer_base {
+    public:
+        using _can_o = int; // Can output
+
+        constexpr os_serializer_base(std::ostream& stream)
+            : _stream(&stream) {}
+
+        void push_bytes(const std::uint8_t* ptr, std::size_t size) {
+            _stream->write(reinterpret_cast<const char*>(ptr), size);
+        }
+
+    private:
+        std::ostream* _stream;
+    };
+    
+    // =======================================================
+
+    class is_serializer_base {
+    public:
+        using _can_i = int; // Can input 
+
+        constexpr is_serializer_base(std::istream& stream)
+            : _stream(&stream) {}
+
+        template<class Ty> requires trivially_copyable<Ty>
+        Ty get_direct() {
+            char _bytes[sizeof(Ty)];
+            _stream->read(_bytes, sizeof(Ty));
+            return *reinterpret_cast<Ty*>(_bytes);
+        }
+
+    private:
+        std::istream* _stream;
+    };
+
+    // =======================================================
+
+    template<class Type>
+    class basic_serializer : public Type {
+        enum class mode { 
+            None,        // Not supported
+            Trivial,     // Trivially copyable (std::copy_n)
+            Structured,  // Has structured binding, and can be constructed with binding types
+            Contiguous,  // Contiguous range of trivially copyable types
+            Range,       // Any range
+            Serializable // Has overloaded serialize<Ty> class
+        };
+        
+        template<class Ty>
+        constexpr static mode Choice =
+              detail::can_serialize<decay_t<Ty>, Type> ? mode::Serializable
+            : detail::can_trivial<decay_t<Ty>>         ? mode::Trivial
+            : detail::can_structured<decay_t<Ty>>      ? mode::Structured
+            : detail::can_contiguous<decay_t<Ty>>      ? mode::Contiguous
+            : detail::can_range<decay_t<Ty>>           ? mode::Range
+            :                                            mode::None;
+
+        // CanPop means can retrieve pointer to memory, does not work for streams.
+        constexpr static bool CanPop = requires() { typename Type::_can_pop; };
+        constexpr static bool CanI = requires() { typename Type::_can_i; };
+        constexpr static bool CanO = requires() { typename Type::_can_o; };
+
+    public:
+        using Type::Type;
+
+        // =======================================================
+
+        template<class Ty, class Self> requires (CanO && Choice<Ty> == mode::Serializable)
+        constexpr Self& write(this Self& self, Ty&& value) {
+            serialize<decay_t<Ty>>::write(self, std::forward<Ty>(value));
+            return self;
+        }
+
+        template<class Ty> requires (CanI && Choice<Ty> == mode::Serializable)
+        constexpr Ty read() {
+            return serialize<decay_t<Ty>>::read(*this);
+        }
+
+        // =======================================================
+
+        template<class Ty, class Self> requires (CanO && Choice<Ty> == mode::Trivial)
+        constexpr Self& write(this Self& self, Ty&& value) {
+            const std::uint8_t* _mem = reinterpret_cast<const std::uint8_t*>(&value);
+            self.push_bytes(_mem, sizeof(decay_t<Ty>));
+            return self;
+        }
+
+        template<class Ty> requires (CanI && Choice<Ty> == mode::Trivial)
+        constexpr Ty read() {
+            if constexpr (CanPop) {
+                return *reinterpret_cast<Ty*>(this->pop_bytes(sizeof(decay_t<Ty>)));
+            } else {
+                return this->get_direct<Ty>();
+            }
+        }
+
+        // =======================================================
+
+        template<class Ty, class Self> requires (CanO && Choice<Ty> == mode::Structured)
+        constexpr Self& write(this Self& self, Ty&& value) {
+            tuples::call(std::forward<Ty>(value), [&]<class ...Args>(Args&&... args) {
+                (self.write(std::forward<Args>(args)), ...);
+            });
+            return self;
+        }
+
+        template<class Ty> requires (CanI && Choice<Ty> == mode::Structured)
+        constexpr Ty read() {
+            return binding_types_t<Ty>::for_each([this]<class ...Args>{
+                return Ty{ this->read<Args>()... };
+            });
+        }
+
+        // =======================================================
+
+        template<class Ty, class Self> requires (CanO && Choice<Ty> == mode::Contiguous)
+        constexpr Self& write(this Self& self, Ty&& value) {
+            using value_type = std::ranges::range_value_t<decay_t<Ty>>;
+            const std::size_t _size = std::ranges::size(value);
+            self.write(_size); // Save range size
+            const std::uint8_t* _mem = reinterpret_cast<const std::uint8_t*>(std::ranges::data(value));
+            self.push_bytes(_mem, _size * sizeof(value_type));
+            return self;
+        }
+
+        template<class Ty> requires (CanI && Choice<Ty> == mode::Contiguous)
+        constexpr Ty read() {
+            using value_type = std::ranges::range_value_t<decay_t<Ty>>;
+            const std::size_t _size = read<std::size_t>(); // Read range size
+            if constexpr (CanPop) {
+                value_type* _at = reinterpret_cast<value_type*>(this->pop_bytes(_size * sizeof(value_type)));
+                if constexpr (concepts::constructible<Ty, value_type*, value_type*>) {
+                    return Ty{ _at, _at + _size };
+                } else {
+                    Ty _result{}; 
+                    std::copy_n(_at, _size, std::begin(_result));
+                    return _result;
+                }
+            } else {
+                Ty _result{};
+                if constexpr (requires (Ty ty) { { ty.reserve(1ull) }; })
+                    _result.reserve(_size); // reserve if possible
+                for (std::size_t i = 0; i < _size; ++i)
+                    _result.insert(_result.end(), read<value_type>());
+                return _result;
+            }
+        }
+
+        // =======================================================
+
+        template<class Ty, class Self> requires (CanO && Choice<Ty> == mode::Range)
+        constexpr Self& write(this Self& self, Ty&& value) {
+            using reference = std::ranges::range_reference_t<decay_t<Ty>>;
+            self.template write<std::size_t>(std::ranges::size(value)); // Save range size
+            for (reference val : value) self.write(val);
+            return self;
+        }
+
+        template<class Ty> requires (CanI && Choice<Ty> == mode::Range)
+        constexpr Ty read() {
+            using value_type = std::ranges::range_value_t<decay_t<Ty>>;
+            using reference = std::ranges::range_reference_t<decay_t<Ty>>;
+            const std::size_t _size = read<std::size_t>(); // Read range size
+            Ty _result{};
+            if constexpr (requires (Ty ty) { { ty.reserve(1ull) }; })
+                _result.reserve(_size); // reserve if possible
+            for (std::size_t i = 0; i < _size; ++i)
+                _result.insert(_result.end(), read<value_type>());
+            return _result;
+        }
+
+        // =======================================================
+
+        template<class Ty, class Self> requires (CanO && Choice<Ty> != mode::None)
+        constexpr Self& operator<<(this Self& self, Ty&& value) {
+            return self.write(std::forward<Ty>(value));
+        }
+
+        template<class Ty, class Self> requires (CanI && Choice<Ty> != mode::None)
+        constexpr Self& operator>>(this Self& self, Ty& value) {
+            value = self.template read<decay_t<Ty>>();
+            return self;
+        }
+    };
+
+    using serializer = basic_serializer<serializer_base<>>;
+    using ios_serializer = basic_serializer<ios_serializer_base>;
+    using os_serializer = basic_serializer<os_serializer_base>;
+    using is_serializer = basic_serializer<is_serializer_base>;
 }

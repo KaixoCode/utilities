@@ -140,12 +140,14 @@ public:
 
 template<>
 struct serialize<MyClass> {
-    static void write(serialized_object<>& data, const MyClass& value) {
+    template<class Type>
+    static void write(basic_serializer<Type>& data, const MyClass& value) {
         data.write(value.getA());
         data.write(value.getB());
     }
 
-    static MyClass read(serialized_object<>& data) {
+    template<class Type>
+    static MyClass read(basic_serializer<Type>& data) {
         auto mem1 = data.read<std::string>();
         auto mem2 = data.read<int>();
         return MyClass(std::move(mem1), mem2);
@@ -154,9 +156,10 @@ struct serialize<MyClass> {
 
 int main() {
 
-    serialized_object<> data;
-
     {
+        std::ofstream outfile{ "./test.data" };
+        os_serializer data = outfile;
+
         // Trivial type
         int val1 = 420;                        
 
@@ -203,13 +206,10 @@ int main() {
         data.write(val9);
     }
 
-    std::ofstream rgrgsr{ "" };
-
-    a << 1;
-
-    std::cout << data << '\n';
-
     {
+        std::ifstream outfile{ "./test.data" };
+        is_serializer data = outfile;
+
         auto v1 = data.read<int>();
         auto v2 = data.read<std::string>();
         auto v3 = data.read<std::array<int, 4>>();
