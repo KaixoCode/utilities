@@ -11,6 +11,7 @@ include_directories(
   "${utilities_SOURCE_DIR}/libs"
   "${list_comprehension_SOURCE_DIR}/include/"
   "${type_utils_SOURCE_DIR}/include/"
+  "${serializer_SOURCE_DIR}/include/"
 )
 
 add_library(utilities STATIC
@@ -45,7 +46,6 @@ add_library(utilities STATIC
   "${utilities_SOURCE_DIR}/linq.hpp"
   "${utilities_SOURCE_DIR}/json.hpp"
   "${utilities_SOURCE_DIR}/bag.hpp"
-  "${utilities_SOURCE_DIR}/serializer.hpp"
 )
 
 set_target_properties(utilities PROPERTIES LINKER_LANGUAGE CXX)
