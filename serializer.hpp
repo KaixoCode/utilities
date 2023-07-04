@@ -28,7 +28,7 @@ namespace kaixo {
         concept can_structured = concepts::structured_binding<Ty>
             && binding_types_t<Ty>::template can_construct<Ty>::value;
 
-        template<class Ty> concept can_range = std::ranges::range<Ty>;
+        template<class Ty> concept can_range = std::ranges::range<Ty> && default_constructible<Ty>;
         template<class Ty> concept can_trivial = concepts::trivially_copyable<Ty>;
     }
 
