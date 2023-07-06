@@ -113,10 +113,222 @@ using namespace kaixo::default_variables;
 #include "kaixo/serializer.hpp"
 
 
+constexpr std::uint64_t fnv1a_32(char const* s, std::size_t count) {
+    std::uint64_t hash = 2166136261ull;
+
+    for (std::size_t i = 0; i < count; ++i) {
+        hash ^= s[i];
+        hash *= 16777619ull;
+    }
+
+    return hash;
+}
+
+template<std::size_t N>
+constexpr std::uint64_t constexpr_string_hash(const char(&s)[N]) {
+    return fnv1a_32(s, N);
+}
+
+template<class Ty>
+constexpr std::uint64_t unique_id = constexpr_string_hash(type_name<Ty>.m_Data);
+
+
+
+namespace kaixoaa {
+    template<class, class, class> 
+    struct function_storage;
+
+    template<class Ty, class R, class ...Args>
+    struct function_storage<Ty, R, info<Args...>> {
+        Ty object;
+
+        constexpr R do_call(Args... args)  {
+            return object(std::forward<Args>(args)...);
+        }
+    };
+
+    template<class Ty> 
+    class function {
+    public:
+        using result_type = info<Ty>::result::type;
+        using arguments = info<Ty>::arguments;
+
+        template<class Arg>
+            requires arguments::template can_invoke<Arg>::value
+        constexpr function(Arg&& arg) { _initialize(std::forward<Arg>(arg)); }
+
+        constexpr ~function() { if (_clean) _clean(_object); }
+
+        template<class Self, class ...Args>
+            requires invocable<Ty, Args&&...>
+        constexpr result_type operator()(this Self&& self, Args&&...args) noexcept(nothrow_invocable<Ty, Args&&...>){
+            return std::forward<Self>(self)._fun(
+                std::forward<Self>(self)._object, std::forward<Args>(args)...);
+        }
+
+    private:
+        using _fun_signature = to_function_t<result_type, typename arguments::template prepend<void*>>;
+        void* _object;
+        void(*_clean)(void*);
+        _fun_signature* _fun;
+
+        template<class Ty>
+        constexpr void _initialize(Ty&& val) {
+            using type = decay_t<Ty>;
+            if constexpr (empty<type>) {
+                _clean = nullptr;
+                _object = nullptr;
+                _fun = [](void*, auto...args) constexpr {
+                    return type{}(args...);
+                };
+            } else if constexpr (concepts::function<remove_pointer_t<type>> && pointer<type>) {
+                _clean = nullptr;
+                _object = val;
+                _fun = [](void* ptr, auto...args) constexpr {
+                    return (reinterpret_cast<type>(ptr))(args...);
+                };
+            } else {
+                using _fun_type = function_storage<type, result_type, arguments>;
+                _clean = [](void* obj) {
+                    delete reinterpret_cast<_fun_type*>(obj);
+                };
+                _object = new _fun_type{ std::forward<Ty>(val) };
+                _fun = [](void* obj, auto...args) constexpr {
+                    return reinterpret_cast<_fun_type*>(obj)->do_call(args...);
+                };
+            }
+        }
+    };
+
+    template<class Ty>
+    function(Ty&&)->function<typename info<decay_t<Ty>>::fun_decay::signature::type>;
+}
+
+namespace kaixoaef {
+
+    template<class> struct function_impl_base;
+    template<class R, class ...Args> 
+    struct function_impl_base<R(Args...)> {
+        constexpr virtual R do_call(Args...) = 0;
+    };
+
+    template<class>
+    class function_impl;
+    
+    template<class R, class ...Args>
+    class function_impl<R(Args...)> {
+    public:
+        template<class Arg>
+            requires invocable<Arg&&, Args...>
+        constexpr function_impl(Arg&& arg) { _initialize(std::forward<Arg>(arg)); }
+
+        constexpr R operator()(Args...args) {
+            return _impl()->do_call(std::forward<Args>(args)...);
+        }
+
+        constexpr static std::size_t _smallSize = 8;
+
+        using _ptr = function_impl_base<R(Args...)>;
+
+        void* _storage[_smallSize];
+
+        template<class Arg>
+        constexpr void _initialize(Arg&& arg) {
+            using type = decay_t<Arg>;
+            // Function pointer
+            if constexpr (concepts::function<remove_pointer_t<type>> && pointer<type>) {
+                _storage[_smallSize - 1] = &_storage[0];
+                _storage[0] = &_storage[1];
+                _storage[1] = arg;
+                //_storage[2] = +[](void** self, Args ...args) -> R {
+                //    return reinterpret_cast<type>(self[1])(std::forward<Args>(args)...);
+                //};
+            }
+
+        }
+
+        constexpr _ptr* _impl() { return reinterpret_cast<_ptr*>(_storage[_smallSize - 1]); }
+    };
+
+    template<class Ty>
+    class function : public function_impl<typename info<Ty>::fun_decay::signature::type> {
+    public:
+
+    };
+
+
+    template<class Ty>
+    function(Ty&&) -> function<typename info<decay_t<Ty>>::fun_decay::signature::type>;
+}
+
+
+#include "type_linker.hpp"
+
+template<string_literal Name>
+struct define_map_index;
+
+#define define(Name, Ty) template<> struct define_map_index<Name> { using type = Ty; }
+
+template<string_literal Name, class Ty>
+struct map_index {
+    constexpr static std::string_view name = Name.view();
+    using type = Ty;
+};
+
+template<string_literal Name>
+constexpr map_index<Name, typename define_map_index<Name>::type> operator""_i() {
+    return {};
+}
+
+struct untyped_map {
+    template<class Ty>
+    constexpr auto& operator[](Ty) {
+        if (!values[Ty::name].has_value()) {
+            values[Ty::name] = typename Ty::type{};
+        }
+        return std::any_cast<typename Ty::type&>(values[Ty::name]);
+    }
+
+private:
+    std::unordered_map<std::string_view, std::any> values;
+};
+
+
+struct MyStruct {
+    int a;
+    std::string b;
+};
+
+template<> struct define_map_index<"test"> { using type = int; };
+template<> struct define_map_index<"hello"> { using type = double; };
+template<> struct define_map_index<"world"> { using type = MyStruct; };
+
 
 int main() {
-    
 
+    untyped_map map{};
+
+    map["test"_i] = 1;
+    map["hello"_i] = 6.9;
+    map["world"_i] = MyStruct{ 420, "Hello World" };
+
+    auto& val1 = map["test"_i];
+    auto& val2 = map["hello"_i];
+    auto& val3 = map["world"_i];
+
+
+
+    //kaixo::function fun1{ [](int a, double b) -> int { return a + b; } };
+    //kaixo::function fun2{ myfun };
+    //kaixo::function fun3{ [val](int a, double b) -> int { return a + b + val; } };
+
+    //constexpr auto sroin = sizeof kaixo::function<int(int, double)>;
+
+    //auto res1 = fun1(1, 1);
+    //auto res2 = fun2(1, 1);
+    //auto res3 = fun3(1, 1);
+
+    return 0;
     {
         //auto rsion = aefae | split<int>;
 
