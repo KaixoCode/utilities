@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <utility>
 #include <algorithm>
-#include "type_utils.hpp"
+#include "kaixo/type_utils.hpp"
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
 
@@ -20,7 +20,7 @@ namespace kaixo {
      */
     template<class ...Args>
     constexpr auto ref_tuple(Args&& ...args) {
-        using type = std::tuple<std::conditional_t<lvalue_reference<Args>, Args, decay_t<Args>>...>;
+        using type = std::tuple<std::conditional_t<concepts::lvalue_reference<Args>, Args, decay_t<Args>>...>;
         return type{ std::forward<Args>(args)... };
     }
 
@@ -28,7 +28,7 @@ namespace kaixo {
      * Construct a pair from a tuple of size 2.
      * @param t tuple
      */
-    template<specialization<std::tuple> Tuple>
+    template<concepts::specialization<std::tuple> Tuple>
         requires (std::tuple_size_v<decay_t<Tuple>> == 2)
     constexpr auto tuple_to_pair(Tuple&& t) {
         using pair_type = move_tparams_t<decay_t<Tuple>, std::pair>;

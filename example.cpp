@@ -106,7 +106,6 @@ struct sC {
 #include "kaixo/break.hpp"
 
 using namespace kaixo;
-using namespace kaixo::operators;
 using namespace kaixo::concepts;
 using namespace kaixo::type_traits;
 using namespace kaixo::default_variables;
@@ -131,7 +130,6 @@ constexpr std::uint64_t constexpr_string_hash(const char(&s)[N]) {
 
 template<class Ty>
 constexpr std::uint64_t unique_id = constexpr_string_hash(type_name<Ty>.m_Data);
-
 
 
 namespace kaixoaa {
@@ -261,60 +259,51 @@ namespace kaixoaef {
     function(Ty&&) -> function<typename info<decay_t<Ty>>::fun_decay::signature::type>;
 }
 
-
-#include "type_linker.hpp"
+#include "Json.hpp"
 
 template<string_literal Name>
-struct define_map_index;
-
-#define define(Name, Ty) template<> struct define_map_index<Name> { using type = Ty; }
-
-template<string_literal Name, class Ty>
-struct map_index {
+struct _json_property {
+    using _is_property = int;
     constexpr static std::string_view name = Name.view();
-    using type = Ty;
 };
 
-template<string_literal Name>
-constexpr map_index<Name, typename define_map_index<Name>::type> operator""_i() {
-    return {};
+template<class Ty>
+concept _is_property = requires() { typename Ty::_is_property; };
+
+#define json_property(Name, C) no_unique_address]] _json_property<Name> KAIXO_UNIQUE_NAME;[[
+
+template<class Ty>
+constexpr auto to_json(Ty& value) {
+    using types = binding_types_t<Ty>;
+    json _result = json::object();
+    indexed_for<1, types::size>([&]<std::size_t I>{
+        using type1 = types::template element<I - 1>::type;
+        using type2 = types::template element<I>::type;
+        if constexpr (_is_property<type1>) {
+            _result[type1::name] = tuples::get<I>(value);
+        }
+    });
+    return _result;
 }
 
-struct untyped_map {
-    template<class Ty>
-    constexpr auto& operator[](Ty) {
-        if (!values[Ty::name].has_value()) {
-            values[Ty::name] = typename Ty::type{};
-        }
-        return std::any_cast<typename Ty::type&>(values[Ty::name]);
-    }
+struct JsonObject {
+    [[json_property("test")]]
+    int test = 1;
 
-private:
-    std::unordered_map<std::string_view, std::any> values;
+    [[json_property("value")]]
+    double value = 4.2;
+
+    [[json_property("name")]]
+    std::string name = "Hello World";
 };
-
-
-struct MyStruct {
-    int a;
-    std::string b;
-};
-
-template<> struct define_map_index<"test"> { using type = int; };
-template<> struct define_map_index<"hello"> { using type = double; };
-template<> struct define_map_index<"world"> { using type = MyStruct; };
 
 
 int main() {
+    JsonObject _obj;
 
-    untyped_map map{};
+    auto _json = to_json(_obj);
 
-    map["test"_i] = 1;
-    map["hello"_i] = 6.9;
-    map["world"_i] = MyStruct{ 420, "Hello World" };
 
-    auto& val1 = map["test"_i];
-    auto& val2 = map["hello"_i];
-    auto& val3 = map["world"_i];
 
 
 
