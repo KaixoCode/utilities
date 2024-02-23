@@ -8207,3 +8207,188 @@ template<class T> constexpr bool is_scoped_v = is_scoped<T>::value;
 
 enum Unscoped {};
 enum class Scoped {};
+
+#include <iostream>
+#include <set>
+#include <deque>
+#include <vector>
+#include <ranges>
+#include <string>
+#include <fstream>
+#include <iostream>
+#include <deque>
+#include <typeinfo>
+#include <typeindex>
+#include <map>
+#include <any>
+
+struct Context {};
+
+template<class Ty> struct Rect { Ty x, y, w, h; };
+template<class Ty> struct Point { Ty x, y; };
+
+struct Assigner {
+    virtual void assign(void* self, std::string_view val) = 0;
+};
+
+struct SerializableClass {
+    inline static std::map<std::type_index, SerializableClass*> types{};
+    std::map<std::string_view, Assigner*> assigners;
+
+    struct Adder {
+        std::string_view name;
+        SerializableClass* self;
+
+        void create(Assigner* assigner) { self->assigners[name] = assigner; }
+    };
+
+    Adder add(std::string_view name) { return Adder(name, this); }
+
+    SerializableClass(std::type_index type) { types[type] = this; }
+
+    void assign(void* self, std::string_view mbr, std::string_view val) {
+        for (auto& [name, assigner] : assigners) {
+            if (name == mbr) return assigner->assign(self, val);
+        }
+    }
+};
+
+struct View {
+
+    View(Context) {}
+    virtual ~View() = default;
+
+    void dimensions(Rect<int>) {}
+
+    void assign(std::string_view mbr, std::string_view val) {
+        std::type_index type = typeid(*this);
+        if (SerializableClass::types.contains(type)) {
+            SerializableClass::types[type]->assign(this, mbr, val);
+        }
+    }
+
+};
+
+template<class> struct MemPtrInfo;
+template<class Ty, class Self> struct MemPtrInfo<Ty Self::*> {
+    using self = Self;
+    using type = Ty;
+};
+
+template<class Ty> struct StringParser;
+
+template<class Ty> requires std::is_arithmetic_v<Ty>
+struct StringParser<Ty> {
+    static Ty parse(std::string_view val) {
+        Ty result = 0;
+        std::from_chars(val.data(), val.data() + val.size(), result);
+        return result;
+    }
+};
+
+template<auto ...Ptrs>
+struct MemberAssigner : Assigner {
+
+    MemberAssigner(SerializableClass::Adder add) { add.create(this); }
+
+    template<auto Ptr, auto...Rest>
+    static void assignImpl(auto* ptr, std::string_view val) {
+        using ptrt = MemPtrInfo<decltype(Ptr)>;
+        using type = typename ptrt::type;
+        using self = typename ptrt::self;
+        if constexpr (sizeof...(Rest) == 0) {
+            (reinterpret_cast<self*>(ptr)->*Ptr) = StringParser<type>::parse(val);
+        }
+        else {
+            assignImpl<Rest...>(&(reinterpret_cast<self*>(ptr)->*Ptr), val);
+        }
+    }
+
+    void assign(void* self, std::string_view val) override { assignImpl<Ptrs...>(self, val); }
+
+};
+
+#define MAKE_IDENTIFIER(a, b) CONCAT(a, b)
+#define CONCAT(a, b) a ## b
+#define MAKE_SERIALIZER(Type) \
+struct Type##Serializer : SerializableClass {\
+    using SerializableClass::SerializableClass;
+#define MEMBER(name, ...) MemberAssigner<__VA_ARGS__> MAKE_IDENTIFIER(value, __COUNTER__){ add(#name) };
+#define END_SERIALIZER(Type) \
+};\
+Type##Serializer _instance{ typeid(Type) };
+
+
+class MyView : public View {
+public:
+
+    struct Settings {
+
+        int member = 0;
+        float thing = 0;
+
+    } settings;
+
+    int value = 0;
+
+    MyView(Context c = {}, Settings s = {})
+        : View(c), settings(std::move(s))
+    {}
+
+};
+
+MAKE_SERIALIZER(MyView)
+MEMBER(value, &MyView::value)
+MEMBER(settings.member, &MyView::settings, &MyView::Settings::member)
+MEMBER(settings.thing, &MyView::settings, &MyView::Settings::thing)
+END_SERIALIZER(MyView)
+
+
+
+struct MyData1 {
+    char a;
+    // 7x padding
+    double b;
+    char c;
+    // 3x padding
+    int d;
+};
+
+static_assert(alignof(MyData1::a) == 1);
+static_assert(alignof(MyData1::b) == 8);
+static_assert(alignof(MyData1::c) == 1);
+static_assert(alignof(MyData1::d) == 4);
+static_assert(sizeof(MyData1) == 24);
+
+struct MyData2 {
+    double a;
+    int b;
+    int c;
+};
+
+
+constexpr bool same = sizeof(MyData1) == sizeof(MyData2);
+
+
+
+int main() {
+
+    MyView view{};
+
+    std::cout << "====================================\n";
+    std::cout << view.value << "\n";
+    std::cout << view.settings.member << "\n";
+    std::cout << view.settings.thing << "\n";
+    std::cout << "====================================\n\n\n";
+
+    view.assign("value", "45");
+    view.assign("settings.member", "10");
+    view.assign("settings.thing", "31");
+
+    std::cout << "====================================\n";
+    std::cout << view.value << "\n";
+    std::cout << view.settings.member << "\n";
+    std::cout << view.settings.thing << "\n";
+    std::cout << "====================================\n";
+
+}

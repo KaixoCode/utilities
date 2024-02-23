@@ -7,3 +7,6 @@
 [submodule "libs/serializer"]
 	path = libs/serializer
 	url = https://github.com/KaixoCode/serializer.git
+[submodule "libs/pack_utils"]
+	path = libs/pack_utils
+	url = https://github.com/KaixoCode/pack_utils.git

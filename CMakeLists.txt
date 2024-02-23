@@ -11,11 +11,13 @@ include_directories(
   "${utilities_SOURCE_DIR}/libs"
   "${list_comprehension_SOURCE_DIR}/include/"
   "${type_utils_SOURCE_DIR}/include/"
+  "${pack_utils_SOURCE_DIR}/"
   "${serializer_SOURCE_DIR}/include/"
 )
 
 add_library(utilities STATIC
   "${utilities_SOURCE_DIR}/utils.hpp"
+  "${utilities_SOURCE_DIR}/simd.hpp"
   "${utilities_SOURCE_DIR}/state.hpp"
   "${utilities_SOURCE_DIR}/smart_tuple.hpp"
   "${utilities_SOURCE_DIR}/pa_function.hpp"

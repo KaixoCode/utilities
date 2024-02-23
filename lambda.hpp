@@ -1,5 +1,5 @@
 #pragma once
-#include "utils.hpp"
+#include "kaixo/type_utils.hpp"
 #include "function.hpp"
 
 // Based on
@@ -102,6 +102,9 @@ namespace kaixo {
     struct nth_capture<N, captures<Tys...>> {
         using type = typename std::tuple_element<N, std::tuple<Tys...>>::type;
     };
+
+    template<class Ty, class ...Tys>
+    concept one_of = (std::same_as<Ty, Tys> || ...);
 
     template<class, class = captures<>>
     class lambda;
@@ -227,5 +230,5 @@ namespace kaixo {
     }
 
     template<class T>
-    lambda(T)->lambda<lambda_signature_t<T>, decltype(lambda_captures<T>())>;
+    lambda(T)->lambda<typename info<T>::signature::fun_decay::type, decltype(lambda_captures<T>())>;
 }
