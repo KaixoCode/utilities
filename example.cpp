@@ -248,7 +248,15 @@ namespace kaixo {
 
         // ------------------------------------------------
 
-        struct empty_view : view_interface<empty_view> {};
+        struct empty_view : view_interface<empty_view> {
+
+            // ------------------------------------------------
+
+            constexpr static std::size_t size = 0;
+
+            // ------------------------------------------------
+
+        };
 
         // ------------------------------------------------
         
@@ -612,7 +620,7 @@ int main() {
 
     std::tuple<int, double, int, float> vals{ 1, 1.3, 3, 4.f };
 
-    auto res = vals | nth_unique<1>;
+    auto res = vals | nth_unique<1> | drop<1>;
 
     std::tuple<int, double, float> values{ 1, 1.2, 3.f };
 
