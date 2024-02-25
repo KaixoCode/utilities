@@ -9,6 +9,7 @@
 #include <ranges>
 #include <algorithm>
 #include <utility>
+#include <functional>
 #include <cassert>
 
 // ------------------------------------------------
@@ -95,7 +96,21 @@ int main() {
         float&  res2 = values | forward<2>;
         long&   res3 = values | forward<3>;
     }
+    {
 
+        constexpr std::tuple<int, double, float, long, char, long long> values{ 1, 3, 4, 5, 6, 7 };
+
+        constexpr auto oinf = values | fold<std::plus<>>;
+
+        constexpr auto efae = values | call([](auto ...args) { return (args + ...); });
+
+        constexpr auto res = values | sub<0, 5> | append(8, 9, 10) | drop_while<std::is_integral>
+                                    | filter<std::is_integral> | take<4> | reverse | last_unique 
+                                    | fold<std::multiplies<>>;
+
+        
+
+    }
     indices_remove_all_t<std::index_sequence<0, 1, 3>, std::index_sequence<0, 1, 2>>;
 
     constexpr std::tuple<int, double, float, int> feaefa{ 1, 2.0, 3.f, 4 };
