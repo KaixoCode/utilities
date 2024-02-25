@@ -82,8 +82,20 @@ int main() {
         assert(res2 == num);
         assert(res3 == 3.);
         assert(res4 == 1);
-
     }
+
+    {
+        std::tuple<int, double> a{ 1, 2.0 };
+        std::tuple<float, long> b{ 3.f, 4 };
+
+        auto values = concat(a, b);
+
+        int&    res0 = values | forward<0>;
+        double& res1 = values | forward<1>;
+        float&  res2 = values | forward<2>;
+        long&   res3 = values | forward<3>;
+    }
+
     indices_remove_all_t<std::index_sequence<0, 1, 3>, std::index_sequence<0, 1, 2>>;
 
     constexpr std::tuple<int, double, float, int> feaefa{ 1, 2.0, 3.f, 4 };
