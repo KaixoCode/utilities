@@ -40,7 +40,7 @@ using namespace tuples;
 using namespace views;
 
 double someFunction(tuple_view<int, double, int> value) {
-    return std::get<0>(value) + std::get<1>(value) + std::get<2>(value);
+    return value | fold<std::plus<>>;
 }
 
 void myEpicCode() {
