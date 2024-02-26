@@ -35,138 +35,28 @@ namespace std {
 
 }
 
-namespace kaixo::tuples {
+using namespace kaixo;
+using namespace tuples;
+using namespace views;
 
-    // ------------------------------------------------
-
-    template<tuple_like Tpl>
-    struct tuple_view_tuple {
-
-        // ------------------------------------------------
-
-        constexpr virtual Tpl& _tuple() = 0;
-
-        // ------------------------------------------------
-
-    };
-
-    template<class, class Ty, std::size_t>
-    struct tuple_view_get {
-
-        // ------------------------------------------------
-
-        constexpr virtual Ty& _get() = 0;
-
-        // ------------------------------------------------
-
-    };
-
-    template<view Tpl, class Ty, std::size_t I>
-    struct tuple_view_get<Tpl, Ty, I> : virtual tuple_view_get<void, Ty, I>,
-                                        virtual tuple_view_tuple<Tpl> {
-
-        // ------------------------------------------------
-
-        constexpr Ty& _get() override { return std::get<I>(this->_tuple()); }
-
-        // ------------------------------------------------
-
-    };
-
-    // ------------------------------------------------
-
-    template<class Ty, class Pack, class Indices = std::make_index_sequence<pack_size<Pack>::value>>
-    struct tuple_view_get_pack;
-
-    template<class Ty, class ...Tys, std::size_t ...Is>
-    struct tuple_view_get_pack<Ty, pack<Tys...>, std::index_sequence<Is...>>
-        : virtual tuple_view_get<Ty, Tys, Is>... {};
-
-    // ------------------------------------------------
-
-    template<class, class Pack>
-    struct tuple_view_impl : tuple_view_get_pack<void, Pack> {};
-
-    template<view Tpl, class Pack>
-    struct tuple_view_impl<Tpl, Pack> : tuple_view_impl<void, Pack>, tuple_view_get_pack<Tpl, Pack> {
-
-        // ------------------------------------------------
-
-        tuple_view_impl(Tpl&& tuple) : m_Tuple(std::move(tuple)) {}
-
-        // ------------------------------------------------
-
-        constexpr Tpl& _tuple() override { return m_Tuple; }
-
-        // ------------------------------------------------
-
-    private:
-        Tpl m_Tuple;
-
-        // ------------------------------------------------
-
-    };
-
-    // ------------------------------------------------
-
-    template<class ...Tys>
-    struct tuple_view : view_interface<tuple_view<Tys...>> {
-
-        // ------------------------------------------------
-
-        using _pack = pack<Tys...>;
-
-        // ------------------------------------------------
-
-        constexpr static std::size_t size = sizeof...(Tys);
-
-        template<std::size_t I>
-        using element = typename pack_element<I, _pack>::type;
-
-        // ------------------------------------------------
-
-        template<tuple_like Tpl>
-            requires std::same_as<_pack, typename as_pack<views::all_t<Tpl>>::type>
-        constexpr tuple_view(Tpl&& tuple)
-            : m_Ptr(std::make_shared<tuple_view_impl<views::all_t<Tpl>, _pack>>(views::all(std::forward<Tpl>(tuple))))
-        {}
-
-        // ------------------------------------------------
-
-        template<std::size_t I>
-        constexpr pack_element<I, _pack>::type& get() {
-            using _element = typename pack_element<I, _pack>::type;
-            auto* ptr = m_Ptr.get();
-            return dynamic_cast<tuple_view_get<void, _element, I>*>(ptr)->_get();
-        }
-
-        // ------------------------------------------------
-
-    private:
-        std::shared_ptr<tuple_view_impl<void, _pack>> m_Ptr;
-
-        // ------------------------------------------------
-
-    };
-
-    // ------------------------------------------------
-
+double someFunction(tuple_view<int, double, int> value) {
+    return std::get<0>(value) + std::get<1>(value) + std::get<2>(value);
 }
 
-double myfun(kaixo::tuples::tuple_view<double, int> value) {
-    return std::get<0>(value) + std::get<1>(value);
+void myEpicCode() {
+    std::tuple<int, int, int> values{ 1, 2, 3 };
+
+    auto pi = someFunction(values | take<2> | insert<1>(0.14159));
+
+
+    std::cout << pi;
 }
 
 int main() {
     using namespace kaixo;
     using namespace tuples;
     using namespace views;
-    {
-        std::tuple<int, float, double> tuple{ 1, 2, 3 };
-        int value = myfun(tuple | erase<1> | reverse);
-        std::cout << value << '\n';
-    }
-
+    myEpicCode();
     {
         std::tuple<float, int, int, float, double, int> tuple{ 0.f, 1, 2, 3.f, 4.0, 5 };
         float& result = std::get<0>(tuple | take<5> | drop<1> | drop_while<std::is_integral>);
@@ -239,7 +129,6 @@ int main() {
         
 
     }
-    indices_remove_all_t<std::index_sequence<0, 1, 3>, std::index_sequence<0, 1, 2>>;
 
     constexpr std::tuple<int, double, float, int> feaefa{ 1, 2.0, 3.f, 4 };
     constexpr auto aoine = (std::move(feaefa) | last_unique | take_last<2> | forward<1>) == 4;
