@@ -1,4 +1,3 @@
 add_subdirectory(type_utils)
-add_subdirectory(list_comprehension)
 add_subdirectory(serializer)
 add_subdirectory(pack_utils)

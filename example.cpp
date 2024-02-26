@@ -35,10 +35,143 @@ namespace std {
 
 }
 
+namespace kaixo::tuples {
+
+    // ------------------------------------------------
+
+    template<class ...Tys>
+    struct tuple_view_base;
+
+    template<class Ty, std::size_t I>
+    struct tuple_view_base_impl {
+        constexpr virtual Ty& _get() = 0;
+    };
+
+    template<class Ty, class ...Tys>
+    struct tuple_view_base<Ty, Tys...> : tuple_view_base<Tys...>, virtual tuple_view_base_impl<Ty, sizeof...(Tys)> {};
+    
+    template<>
+    struct tuple_view_base<> {};
+
+    template<class>
+    struct _as_view_base;
+
+    template<class ...Tys>
+    struct _as_view_base<pack<Tys...>> {
+        using type = tuple_view_base<Tys...>;
+    };
+
+    // ------------------------------------------------
+
+    template<tuple_like Tpl, class ...Tys>
+    struct tuple_view_impl_base;
+
+    template<tuple_like Tpl>
+    struct tuple_view_tuple {
+        constexpr virtual Tpl& _tuple() = 0;
+    };
+
+    template<tuple_like Tpl, class Ty, std::size_t I>
+    struct tuple_view_impl_base_impl : virtual tuple_view_base_impl<Ty, I>, 
+                                       virtual tuple_view_tuple<Tpl> {
+        constexpr virtual Ty& _get() override {
+            constexpr std::size_t size = views::all_t<Tpl>::size;
+            return std::get<size - I - 1>(this->_tuple());
+        }
+    };
+
+    template<tuple_like Tpl, class Ty, class ...Tys>
+    struct tuple_view_impl_base<Tpl, Ty, Tys...> 
+        : tuple_view_impl_base<Tpl, Tys...>, tuple_view_impl_base_impl<Tpl, Ty, sizeof...(Tys)>
+    {};
+
+    template<tuple_like Tpl>
+    struct tuple_view_impl_base<Tpl> : _as_view_base<typename as_pack<views::all_t<Tpl>>::type>::type {};
+
+    // ------------------------------------------------
+
+    template<class, class>
+    struct _as_view_impl_base;
+    
+    template<tuple_like Tpl, class ...Tys>
+    struct _as_view_impl_base<Tpl, pack<Tys...>> {
+        using type = tuple_view_impl_base<Tpl, Tys...>;
+    };
+
+    // ------------------------------------------------
+
+    template<class Tpl>
+    struct tuple_view_impl;
+
+    template<tuple_like Tpl> requires (!view<Tpl>)
+    struct tuple_view_impl<Tpl> : _as_view_impl_base<Tpl, typename as_pack<views::all_t<Tpl>>::type>::type {
+        tuple_view_impl(Tpl& tuple) : m_Tuple(&tuple) {}
+
+        Tpl* m_Tuple;
+
+        constexpr virtual Tpl& _tuple() override { return *m_Tuple; }
+    };
+
+    template<view Tpl>
+    struct tuple_view_impl<Tpl> : _as_view_impl_base<Tpl, typename as_pack<Tpl>::type>::type {
+        tuple_view_impl(const Tpl& tuple) : m_Tuple(tuple) {}
+        tuple_view_impl(Tpl&& tuple) : m_Tuple(std::move(tuple)) {}
+
+        Tpl m_Tuple;
+
+        constexpr virtual Tpl& _tuple() override { return m_Tuple; }
+    };
+
+    template<class ...Tys>
+    struct tuple_view : view_interface<tuple_view<Tys...>> {
+
+        using _pack = pack<Tys...>;
+
+        constexpr static std::size_t size = sizeof...(Tys);
+
+        template<std::size_t I>
+        using element = typename pack_element<I, _pack>::type;
+
+        template<tuple_like Tpl>
+            requires std::same_as<pack<Tys...>, typename as_pack<views::all_t<Tpl>>::type>
+        constexpr tuple_view(Tpl& tuple)
+            : m_Ptr(std::make_shared<tuple_view_impl<Tpl>>(tuple))
+        {}
+        
+        template<view Tpl>
+            requires std::same_as<pack<Tys...>, typename as_pack<Tpl>::type>
+        constexpr tuple_view(Tpl&& tuple)
+            : m_Ptr(std::make_shared<tuple_view_impl<std::decay_t<Tpl>>>(tuple))
+        {}
+
+        template<std::size_t I>
+        constexpr pack_element<I, _pack>::type& get() {
+            using _element = typename pack_element<I, _pack>::type;
+            constexpr std::size_t _index = pack_size<_pack>::value - I - 1;
+            auto* ptr = m_Ptr.get();
+            return dynamic_cast<tuple_view_base_impl<_element, _index>*>(ptr)->_get();
+        }
+
+    private:
+        std::shared_ptr<tuple_view_base<Tys...>> m_Ptr;
+        
+    };
+}
+
+double myfun(kaixo::tuples::tuple_view<double, int> value) {
+    return std::get<0>(value) + std::get<1>(value);
+}
+
 int main() {
     using namespace kaixo;
     using namespace tuples;
     using namespace views;
+    {
+        std::tuple<int, float, double> tuple{ 1, 2, 3 };
+        int value = myfun(tuple | erase<1> | reverse);
+        std::cout << value << '\n';
+    }
+
     {
         std::tuple<float, int, int, float, double, int> tuple{ 0.f, 1, 2, 3.f, 4.0, 5 };
         float& result = std::get<0>(tuple | take<5> | drop<1> | drop_while<std::is_integral>);

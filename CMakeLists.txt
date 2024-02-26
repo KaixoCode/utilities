@@ -57,13 +57,13 @@ add_executable(utilities_example
   "${utilities_SOURCE_DIR}/assets/data.json"
 )
 
-include(json2hpp)
+#include(json2hpp)
 
-json2hpp(utilities_example 
-	"data" 
-	"${utilities_SOURCE_DIR}/assets/data.json" 
-	"${utilities_SOURCE_DIR}/generated/data.json"
-)
+#json2hpp(utilities_example 
+#	"data" 
+#	"${utilities_SOURCE_DIR}/assets/data.json" 
+#	"${utilities_SOURCE_DIR}/generated/data.json"
+#)
 
 target_include_directories(utilities_example PUBLIC
   "${utilities_SOURCE_DIR}/generated"
