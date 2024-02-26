@@ -41,25 +41,41 @@ namespace kaixo::tuples {
 
     template<tuple_like Tpl>
     struct tuple_view_tuple {
+
+        // ------------------------------------------------
+
         constexpr virtual Tpl& _tuple() = 0;
+
+        // ------------------------------------------------
+
     };
 
-    template<class, class Ty, std::size_t I>
+    template<class, class Ty, std::size_t>
     struct tuple_view_get {
+
+        // ------------------------------------------------
+
         constexpr virtual Ty& _get() = 0;
+
+        // ------------------------------------------------
+
     };
 
-    template<tuple_like Tpl, class Ty, std::size_t I>
+    template<view Tpl, class Ty, std::size_t I>
     struct tuple_view_get<Tpl, Ty, I> : virtual tuple_view_get<void, Ty, I>,
-                                        virtual tuple_view_tuple<Tpl> 
-    {
-        constexpr virtual Ty& _get() override {
-            constexpr std::size_t size = views::all_t<Tpl>::size;
-            return std::get<size - I - 1>(this->_tuple());
-        }
+                                        virtual tuple_view_tuple<Tpl> {
+
+        // ------------------------------------------------
+
+        constexpr Ty& _get() override { return std::get<I>(this->_tuple()); }
+
+        // ------------------------------------------------
+
     };
 
-    template<class Ty, class Pack, class Indices>
+    // ------------------------------------------------
+
+    template<class Ty, class Pack, class Indices = std::make_index_sequence<pack_size<Pack>::value>>
     struct tuple_view_get_pack;
 
     template<class Ty, class ...Tys, std::size_t ...Is>
@@ -69,25 +85,26 @@ namespace kaixo::tuples {
     // ------------------------------------------------
 
     template<class, class Pack>
-    struct tuple_view_impl : tuple_view_get_pack<void, Pack, std::make_index_sequence<pack_size<Pack>::value>> {};
-
-    template<tuple_like Tpl, class Pack> requires (!view<Tpl>)
-    struct tuple_view_impl<Tpl, Pack> : tuple_view_get_pack<Tpl, Pack, std::make_index_sequence<pack_size<Pack>::value>> {
-        tuple_view_impl(Tpl& tuple) : m_Tuple(&tuple) {}
-
-        Tpl* m_Tuple;
-
-        constexpr virtual Tpl& _tuple() override { return *m_Tuple; }
-    };
+    struct tuple_view_impl : tuple_view_get_pack<void, Pack> {};
 
     template<view Tpl, class Pack>
-    struct tuple_view_impl<Tpl, Pack> : tuple_view_get_pack<Tpl, Pack, std::make_index_sequence<pack_size<Pack>::value>> {
-        tuple_view_impl(const Tpl& tuple) : m_Tuple(tuple) {}
+    struct tuple_view_impl<Tpl, Pack> : tuple_view_impl<void, Pack>, tuple_view_get_pack<Tpl, Pack> {
+
+        // ------------------------------------------------
+
         tuple_view_impl(Tpl&& tuple) : m_Tuple(std::move(tuple)) {}
 
+        // ------------------------------------------------
+
+        constexpr Tpl& _tuple() override { return m_Tuple; }
+
+        // ------------------------------------------------
+
+    private:
         Tpl m_Tuple;
 
-        constexpr virtual Tpl& _tuple() override { return m_Tuple; }
+        // ------------------------------------------------
+
     };
 
     // ------------------------------------------------
@@ -109,15 +126,9 @@ namespace kaixo::tuples {
         // ------------------------------------------------
 
         template<tuple_like Tpl>
-            requires std::same_as<pack<Tys...>, typename as_pack<views::all_t<Tpl>>::type>
-        constexpr tuple_view(Tpl& tuple)
-            : m_Ptr(std::make_shared<tuple_view_impl<Tpl, _pack>>(tuple))
-        {}
-        
-        template<view Tpl>
-            requires std::same_as<pack<Tys...>, typename as_pack<Tpl>::type>
+            requires std::same_as<_pack, typename as_pack<views::all_t<Tpl>>::type>
         constexpr tuple_view(Tpl&& tuple)
-            : m_Ptr(std::make_shared<tuple_view_impl<std::decay_t<Tpl>, _pack>>(tuple))
+            : m_Ptr(std::make_shared<tuple_view_impl<views::all_t<Tpl>, _pack>>(views::all(std::forward<Tpl>(tuple))))
         {}
 
         // ------------------------------------------------
@@ -125,15 +136,14 @@ namespace kaixo::tuples {
         template<std::size_t I>
         constexpr pack_element<I, _pack>::type& get() {
             using _element = typename pack_element<I, _pack>::type;
-            constexpr std::size_t _index = pack_size<_pack>::value - I - 1;
             auto* ptr = m_Ptr.get();
-            return dynamic_cast<tuple_view_get<void, _element, _index>*>(ptr)->_get();
+            return dynamic_cast<tuple_view_get<void, _element, I>*>(ptr)->_get();
         }
 
         // ------------------------------------------------
 
     private:
-        std::shared_ptr<tuple_view_impl<void, pack<Tys...>>> m_Ptr;
+        std::shared_ptr<tuple_view_impl<void, _pack>> m_Ptr;
 
         // ------------------------------------------------
 
