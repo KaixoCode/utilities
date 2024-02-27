@@ -44,7 +44,8 @@ double someFunction(tuple_view<int, double, int> value) {
 }
 
 void myEpicCode() {
-    std::tuple<int, int, int> values{ 1, 2, 3 };
+    int a = 1;
+    const std::tuple<int, int, int> values{ a, 2, 3 };
 
     auto pi = someFunction(values | take<2> | insert<1>(0.14159));
 
