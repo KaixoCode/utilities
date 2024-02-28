@@ -1,5 +1,4 @@
 #include <any>
-#include "utils.hpp"
 
 namespace kaixo {
     template<size_t V>
@@ -9,9 +8,20 @@ namespace kaixo {
 
     // Type linker, uses magic auto return friend function trick
     template<class ...Types>
-    struct type_group {
-        constexpr static inline size_t count = sizeof...(Types);
-        using types = std::tuple<Types...>;
+    struct type_group;
+
+    template<class Ty, class ...Types>
+    struct type_group<Ty, Types...> {
+        constexpr static inline size_t count = sizeof...(Types) + 1;
+        using types = std::tuple<Ty, Types...>;
+        using head = Ty;
+    };
+
+    template<>
+    struct type_group<> {
+        constexpr static inline size_t count = 0;
+        using types = std::tuple<>;
+        using head = void;
     };
 
     template<class> struct tag;
@@ -102,16 +112,21 @@ namespace kaixo {
             return this->emplace<Ty>(val); // Set any value
         }
 
+        template<class Ty>
+        void operator=(Ty val) { this->set(val); }
+
         template<class Ty = thing_dud, // Our own type info
                  auto Cur = [] {}, // Unique lambda to distinguish from previous gets
                  class ...Tys > // Funky unused type group for more indirection
         constexpr decltype(auto) get() {
-            using type = head_t< // Get first type from type group
-                my_type<Ty, // Our type info
+            using type = my_type<Ty, // Our type info
                         // Compiletime counter - 1, should equal the one in previous set call
                         number<incr<0, MeType, Cur>::get() - 1>, 
-                        Tys...>::types>; 
+                        Tys...>::head; // Get first type from type group
             return std::any_cast<type&>(*this); // Any cast to the retrieved type.
         }
+
     };
+
+    using dynamic = Any<>;
 }
