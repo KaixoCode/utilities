@@ -49,7 +49,6 @@ void myEpicCode() {
 
     auto pi = someFunction(values | take<2> | insert<1>(0.14159));
 
-
     std::cout << pi;
 }
 
