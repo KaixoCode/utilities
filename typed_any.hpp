@@ -119,7 +119,7 @@ namespace kaixo {
                  auto Cur = [] {}, // Unique lambda to distinguish from previous gets
                  class ...Tys > // Funky unused type group for more indirection
         constexpr decltype(auto) get() {
-            using type = my_type<Ty, // Our type info
+            using type = typename my_type<Ty, // Our type info
                         // Compiletime counter - 1, should equal the one in previous set call
                         number<incr<0, MeType, Cur>::get() - 1>, 
                         Tys...>::head; // Get first type from type group

@@ -1,7 +1,9 @@
 #pragma once
-#include "kaixo/type_utils.hpp"
 
 namespace kaixo {
+    template<class ...Tys>
+    struct info {};
+
     template<class> struct tag;
     template<class ...Input>
     struct tag<info<Input...>> {
