@@ -2,6 +2,7 @@
 // ------------------------------------------------
 
 #include <iostream>
+#include <fstream>
 #include <string>
 #include <source_location>
 #include <vector>
@@ -11,6 +12,7 @@
 #include <utility>
 #include <functional>
 #include <cassert>
+#include <set>
 #include <expected>
 #include <thread>
 #include <any>
@@ -18,169 +20,76 @@
 #include <type_traits>
 #include <concepts>
 #include <cstddef>
-#include <utility>
-#include <algorithm>
+#include <string_view>
+#include <unordered_set>
+#include <regex>
+#include <complex>
 
 // ------------------------------------------------
 
-namespace kaixo {
 
-    // ------------------------------------------------
-
-    template<std::size_t N>
-    struct template_name {
-        char m_Name[N];
-        constexpr template_name(const char(&n)[N]) {
-            std::copy_n(n, N, m_Name); 
-        }
-    };
-
-    // ------------------------------------------------
-
-    namespace detail {
-        template<class Ty>
-        concept has_depend = requires() {
-            typename Ty::depend;
-        };
-
-        template<class Ty> 
-        struct depends_impl : std::type_identity<std::tuple<>> {};
-
-        template<has_depend Ty>
-        struct depends_impl<Ty> : std::type_identity<typename Ty::depend> {};
-
-        template<class Ty>
-        concept has_define = requires() {
-            typename Ty::define;
-        };
-
-        template<class Ty> 
-        struct defines_impl : std::type_identity<std::tuple<>> {};
-
-        template<has_define Ty>
-        struct defines_impl<Ty> : std::type_identity<typename Ty::define> {};
-    }
-
+namespace detail {
     template<class Ty>
-    using depends = detail::depends_impl<std::decay_t<Ty>>::type;
-    
-    template<class Ty>
-    using defines = detail::defines_impl<std::decay_t<Ty>>::type;
-
-    // ------------------------------------------------
-
-    template<class Ty>
-    concept var = requires() {
-        typename Ty::_is_variable;
-    };
-    
-    template<class Ty>
-    concept is_named_range = requires() {
-        typename Ty::_is_named_range;
+    struct tuple_view_tuple {
+        virtual const Ty& tuple() const = 0;
     };
 
-    template<class Ty>
-    concept has_dependencies = std::tuple_size_v<depends<Ty>> != 0;
-    
-    template<class Ty>
-    concept has_definitions = std::tuple_size_v<defines<Ty>> != 0;
-
-    using std::ranges::range;
-
-    // ------------------------------------------------
-
-    template<var Var, class Ty>
-    struct named_variable {
-        using define = std::tuple<Var>;
-
-        Ty value;
+    template<std::size_t I, class T, class Ty = void>
+    struct tuple_view_get : virtual tuple_view_get<I, T>,
+        virtual tuple_view_tuple<Ty> {
+        virtual const T& get() const override { return std::get<I>(this->tuple()); }
+    };
+    template<std::size_t I, class T>
+    struct tuple_view_get<I, T, void> {
+        virtual const T& get() const = 0;
     };
 
-    // ------------------------------------------------
-
-    template<template_name>
-    struct variable {
-        using _is_variable = int;
-
-        using depends = std::tuple<variable>;
-
-        template<class Ty>
-        constexpr named_variable<variable, Ty> operator=(Ty&& value) const {
-            return { std::forward<Ty>(value) };
-        }
+    template<class, class, class...> struct tuple_view_impl;
+    template<std::size_t ...Is, class ...Ts>
+    struct tuple_view_impl<void, std::index_sequence<Is...>, Ts...> : virtual tuple_view_get<Is, Ts>... {};
+    template<class Ty, std::size_t ...Is, class ...Ts>
+    struct tuple_view_impl<Ty, std::index_sequence<Is...>, Ts...>
+         : tuple_view_impl<void, std::index_sequence<Is...>, Ts...>, virtual tuple_view_get<Is, Ts, Ty>... 
+    {
+        template<class Arg> tuple_view_impl(Arg&& tpl) : m_Tuple(std::forward<Arg>(tpl)) {}
+        virtual const Ty& tuple() const override { return m_Tuple; }
+        Ty m_Tuple;
     };
-
-    // ------------------------------------------------
-
-    template<range Range, var... Vars>
-    struct named_range : std::views::all_t<Range> {
-
-        using _is_named_range = int;
-
-        using depend = depends<Range>;
-        using define = std::tuple<Vars...>;
-
-    };
-
-    // ------------------------------------------------
-
-    template<range Range>
-    constexpr std::views::all_t<Range> operator-(Range&& range) {
-        return std::views::all(std::forward<Range>(range));
-    }
-
-    template<range Range, var Var>
-    constexpr named_range<Range, Var> operator<(Var, Range&& range) {
-        return { std::forward<Range>(range) };
-    }
-    
-    template<range Range, var ...Vars>
-    constexpr named_range<Range, Vars...> operator<(std::tuple<Vars...>, Range&& range) {
-        return { std::forward<Range>(range) };
-    }
-
-    // ------------------------------------------------
-
-    template<var A, var B>
-    constexpr std::tuple<A, B> operator,(A, B) { return {}; }
-    template<var A, var ...Bs>
-    constexpr std::tuple<A, Bs...> operator,(A, std::tuple<Bs...>) { return {}; }
-    template<var ...As, var B>
-    constexpr std::tuple<As..., B> operator,(std::tuple<As...>, B) { return {}; }
-    template<var ...As, var ...Bs>
-    constexpr std::tuple<As..., Bs...> operator,(std::tuple<As...>, std::tuple<Bs...>) { return {}; }
-
-    // ------------------------------------------------
-
-    template<class Expr, class ...Parts>
-    struct list_comprehension {
-        Expr expression;
-        std::tuple<Parts...> parts;
-    };
-
-    template<class Expr, has_definitions Part>
-    constexpr list_comprehension<std::decay_t<Expr>, std::decay_t<Part>> operator|(Expr&& expr, Part&& part) {
-        return { std::forward<Expr>(expr), std::make_tuple(std::forward<Part>(part)) };
-    }
-
-    template<class Expr, class ...Parts, class Part>
-    constexpr list_comprehension<Expr, Parts..., std::decay_t<Part>> operator,(list_comprehension<Expr, Parts...>&& lc, Part&& part) {
-        return { 
-            std::move(lc.expression), 
-            std::tuple_cat(std::move(lc.parts), std::forward_as_tuple(std::forward<Part>(part))) 
-        };
-    }
-
-    // ------------------------------------------------
-
 }
 
-// ------------------------------------------------
+template<class ...Tys>
+class tuple_view {
+public:
+    template<class Ty> tuple_view(Ty&& tuple)
+        : m_Ptr(std::make_unique<detail::tuple_view_impl<Ty, std::index_sequence_for<Tys...>, Tys...>>(std::forward<Ty>(tuple))) {}
+    template<class ...Args> tuple_view(Args&& ...args)
+        : tuple_view(std::forward_as_tuple(std::forward<Args>(args)...)) {}
+
+    template<std::size_t I> decltype(auto) get() const {
+        using T = std::tuple_element_t<I, std::tuple<Tys...>>;
+        return dynamic_cast<detail::tuple_view_get<I, T>*>(m_Ptr.get())->get();
+    }
+
+    std::unique_ptr<detail::tuple_view_impl<void, std::index_sequence_for<Tys...>, Tys...>> m_Ptr{};
+};
+
+
+
+int myFun(tuple_view<int, float> val) {
+    return val.get<0>() + val.get<1>();
+}
 
 int main() {
-    using namespace kaixo;
+    std::tuple<int, double> tuple{ 1, 2. };
+    std::pair<float, char> pair{ 1.f, 'a' };
+    std::array<int, 2> arr{ 1, 2 };
 
-    return 1;
+    auto res1 = myFun(tuple);
+    auto res2 = myFun(pair);
+    auto res3 = myFun(arr);
+    auto res4 = myFun({ 1, 2.f });
+
+    return 0;
 }
 
 // ------------------------------------------------
