@@ -578,13 +578,13 @@ namespace kaixo {
     //                  Named Range
     // ------------------------------------------------
 
-    template<class, class, class = void>
+    template<class, class, class = detail::dud>
     struct named_range;
 
     // ------------------------------------------------
 
-    template<class Vars, class Range>
-    struct named_range_base {
+    template<class Vars, class Range, class Expression>
+    struct named_range_storage {
 
         // ------------------------------------------------
 
@@ -597,47 +597,21 @@ namespace kaixo {
 
         // ------------------------------------------------
 
-    };
-
-    template<class, class, class>
-    struct named_range_storage;
-    
-    template<class Vars, class Range, unevaluated Expression>
-    struct named_range_storage<Vars, Range, Expression> : named_range_base<Vars, Range> {
-
-        // ------------------------------------------------
-
         Range range;
-        Expression expression;
+        [[no_unique_address]] Expression expression;
 
         // ------------------------------------------------
 
         template<class Self, class Arg>
         constexpr decltype(auto) transform(this Self&& self, Arg&& arg) { 
-            return kaixo::evaluate(std::forward<Self>(self).expression, named_tuple<Vars, Arg>{ std::forward<Arg>(arg) });
+            if constexpr (std::same_as<Expression, detail::dud>) return static_cast<Arg>(arg);
+            else return kaixo::evaluate(std::forward<Self>(self).expression, named_tuple<Vars, Arg>{ std::forward<Arg>(arg) });
         }
 
         // ------------------------------------------------
 
     };
     
-    template<class Vars, class Range>
-    struct named_range_storage<Vars, Range, void> : named_range_base<Vars, Range> {
-
-        // ------------------------------------------------
-
-        Range range;
-        [[no_unique_address]] detail::dud expression;
-
-        // ------------------------------------------------
-        
-        template<class Arg>
-        constexpr static Arg transform(Arg&& arg) { return std::forward<Arg>(arg); }
-
-        // ------------------------------------------------
-
-    };
-
     // ------------------------------------------------
 
     template<class Vars, std::ranges::range Range, class Expression>
@@ -802,9 +776,12 @@ int main() {
     
     std::vector<int> r1{ 1, 2, 3, 4 };
 
-    auto named = ((a, b, c) | a <- r1, b <- range(1, a), a >= b, c <- range(b, a));
+    auto named = ((a + b + c, 1, 1) | a <- r1, b <- range(1, a), a >= b, c <- range(b, a));
     
-    for (auto [a, b, c] : named) {
+    for (auto tpl : named) {
+
+        auto [a, b, c] = detail::flatten_tuple(tpl);
+
         std::println("({}, {}, {})", a, b, c);
     }
 
