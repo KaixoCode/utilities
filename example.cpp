@@ -69,8 +69,10 @@ namespace kaixo {
     // ------------------------------------------------
 
     template<std::size_t I, class Tuple>
-    constexpr auto recursive_get(Tuple&& tuple) {
-        return static_cast<std::tuple_element_t<I, decltype(detail::flatten_tuple(tuple))>>(std::get<I>(detail::flatten_tuple(tuple)));
+    constexpr auto recursive_get(Tuple&& tuple)
+        -> std::tuple_element_t<I, decltype(detail::flatten_tuple(tuple))> 
+    {
+        return std::get<I>(detail::flatten_tuple(tuple));
     }
 
     // ------------------------------------------------
@@ -102,13 +104,20 @@ namespace kaixo {
                 if constexpr (std::decay_t<Tuple>::defines::template index<Vars...> == npos) return var{};
                 else return (v.template get<Vars>(), ...);
             } else {
-                return std::forward_as_tuple(var<Vars>::evaluate(std::forward<Tuple>(v))...);
+                return std::tuple<decltype(var<Vars>::evaluate(std::forward<Tuple>(v)))...>{
+                    var<Vars>::evaluate(std::forward<Tuple>(v))...
+                };
             }
         }
 
         // ------------------------------------------------
 
     };
+
+    // ------------------------------------------------
+
+    template<class ...As, class ...Bs>
+    constexpr var<As..., Bs...> operator,(var<As...>, var<Bs...>) { return {}; }
 
     // ------------------------------------------------
 
@@ -294,30 +303,12 @@ namespace kaixo {
         return { std::forward<A>(a), std::forward<B>(b) };                                                    \
     }
 
-    KAIXO_BINARY_OP(+, add);
-    KAIXO_BINARY_OP(-, subtract);
-    KAIXO_BINARY_OP(*, multiply);
-    KAIXO_BINARY_OP(/ , divide);
-    KAIXO_BINARY_OP(%, modulo);
-    KAIXO_BINARY_OP(&, bit_and);
-    KAIXO_BINARY_OP(| , bit_or);
-    KAIXO_BINARY_OP(^, bit_xor);
-    KAIXO_BINARY_OP(&&, logic_and);
-    KAIXO_BINARY_OP(|| , logic_or);
-    KAIXO_BINARY_OP(== , equals);
-    KAIXO_BINARY_OP(!= , not_equals);
-    KAIXO_BINARY_OP(< , less_than);
-    KAIXO_BINARY_OP(> , greater_than);
-    KAIXO_BINARY_OP(<= , less_or_equals);
-    KAIXO_BINARY_OP(>= , greater_or_equals);
-    KAIXO_BINARY_OP(+=, add_assign);
-    KAIXO_BINARY_OP(-=, subtract_assign);
-    KAIXO_BINARY_OP(*=, multiply_assign);
-    KAIXO_BINARY_OP(/=, divide_assign);
-    KAIXO_BINARY_OP(%=, modulo_assign);
-    KAIXO_BINARY_OP(&=, bit_and_assign);
-    KAIXO_BINARY_OP(|=, bit_or_assign);
-    KAIXO_BINARY_OP(^=, bit_xor_assign);
+    KAIXO_BINARY_OP(+, add);      KAIXO_BINARY_OP(< , less_than);          KAIXO_BINARY_OP(| , bit_or);      KAIXO_BINARY_OP(*=, multiply_assign);
+    KAIXO_BINARY_OP(-, subtract); KAIXO_BINARY_OP(> , greater_than);       KAIXO_BINARY_OP(^, bit_xor);      KAIXO_BINARY_OP(/=, divide_assign);
+    KAIXO_BINARY_OP(*, multiply); KAIXO_BINARY_OP(<= , less_or_equals);    KAIXO_BINARY_OP(&&, logic_and);   KAIXO_BINARY_OP(%=, modulo_assign);
+    KAIXO_BINARY_OP(/ , divide);  KAIXO_BINARY_OP(>= , greater_or_equals); KAIXO_BINARY_OP(|| , logic_or);   KAIXO_BINARY_OP(&=, bit_and_assign);
+    KAIXO_BINARY_OP(%, modulo);   KAIXO_BINARY_OP(+=, add_assign);         KAIXO_BINARY_OP(== , equals);     KAIXO_BINARY_OP(|=, bit_or_assign);
+    KAIXO_BINARY_OP(&, bit_and);  KAIXO_BINARY_OP(-=, subtract_assign);    KAIXO_BINARY_OP(!= , not_equals); KAIXO_BINARY_OP(^=, bit_xor_assign);
 
     // ------------------------------------------------
 
@@ -372,12 +363,12 @@ namespace kaixo {
     //                     Range
     // ------------------------------------------------
 
-    template<class Begin, class End, class Increment = void>
+    template<class Begin, class End, class Increment = detail::dud>
     struct range;
 
     // ------------------------------------------------
 
-    template<class Begin, class End, class Increment = void>
+    template<class Begin, class End, class Increment = detail::dud>
     struct range_storage {
 
         // ------------------------------------------------
@@ -390,26 +381,10 @@ namespace kaixo {
 
         constexpr bool is_end(const Begin& value) const { return static_cast<bool>(value == endValue); }
         constexpr void do_increment(Begin& value) const {
-            if constexpr (std::invocable<Increment, Begin>) increment(value);
+            if constexpr (std::same_as<Increment, detail::dud>) ++value;
+            else if constexpr (std::invocable<Increment, Begin>) increment(value);
             else value += increment;
         }
-
-        // ------------------------------------------------
-
-    };
-
-    template<class Begin, class End>
-    struct range_storage<Begin, End, void> {
-
-        // ------------------------------------------------
-
-        Begin beginValue;
-        End endValue;
-
-        // ------------------------------------------------
-
-        constexpr bool is_end(const Begin& value) const { return static_cast<bool>(value == endValue); }
-        constexpr static void do_increment(Begin& value) { ++value; }
 
         // ------------------------------------------------
 
@@ -428,11 +403,7 @@ namespace kaixo {
 
         template<class Self, class Tuple>
         constexpr auto evaluate(this Self&& self, Tuple&& tuple) {
-            if constexpr (std::same_as<Increment, void>) return range{
-                kaixo::evaluate(std::forward<Self>(self).beginValue, std::forward<Tuple>(tuple)),
-                kaixo::evaluate(std::forward<Self>(self).endValue, std::forward<Tuple>(tuple)),
-            };
-            else return range{
+            return range{
                 kaixo::evaluate(std::forward<Self>(self).beginValue, std::forward<Tuple>(tuple)),
                 kaixo::evaluate(std::forward<Self>(self).endValue, std::forward<Tuple>(tuple)),
                 kaixo::evaluate(std::forward<Self>(self).increment, std::forward<Tuple>(tuple)),
@@ -525,6 +496,13 @@ namespace kaixo {
     range(Args&&...) -> range<std::decay_t<Args>...>;
 
     // ------------------------------------------------
+
+    constexpr struct inf_t {} inf;
+
+    constexpr bool operator==(const auto&, inf_t) { return false; }
+    constexpr bool operator==(inf_t, const auto&) { return false; }
+
+    // ------------------------------------------------
     //                  Named Range
     // ------------------------------------------------
 
@@ -569,8 +547,8 @@ namespace kaixo {
 
         // ------------------------------------------------
                 
-        using base_iterator = std::ranges::const_iterator_t<Range>;
-        using base_sentinel = std::ranges::const_sentinel_t<Range>;
+        using base_iterator = std::ranges::iterator_t<Range>;
+        using base_sentinel = std::ranges::sentinel_t<Range>;
 
         // ------------------------------------------------
         
@@ -656,9 +634,12 @@ namespace kaixo {
 
         template<class Self, class Tuple>
         constexpr auto operator()(this Self&& self, Tuple&& tuple) {
-            return std::views::transform(
-                kaixo::evaluate(std::forward<Self>(self).range, named_tuple<Vars, Tuple&&>{ std::forward<Tuple>(tuple) }),
-                [tuple = detail::store_as_tuple(std::forward<Tuple>(tuple))]<class R>(R && r) { return std::make_tuple(tuple, std::forward<R>(r)); });
+            auto evaluated = kaixo::evaluate(std::forward<Self>(self).range, named_tuple<Vars, Tuple&&>{ std::forward<Tuple>(tuple) });
+            auto combiner = [tuple = detail::store_as_tuple(std::forward<Tuple>(tuple))]<class R>(R && r) { 
+                return std::make_tuple(tuple, std::forward<R>(r));
+            };
+
+            return std::views::transform(std::move(evaluated), std::move(combiner));
         }
     };
 
@@ -699,6 +680,12 @@ namespace kaixo {
     }
 
     // ------------------------------------------------
+    //                     Zip
+    // ------------------------------------------------
+
+
+
+    // ------------------------------------------------
 
 }
 
@@ -723,8 +710,13 @@ int main() {
     constexpr named_tuple<var<D, E>, std::tuple<int, float>> values2{ { 4, 5 } };
     
     std::vector<int> r1{ 1, 2, 3, 4 };
+    std::map<int, int> r2{ { 1, 2 }, { 3, 4 } };
 
-    auto named = ((a + b + c, 1, 1) | a <- r1, b <- range(1, a), a >= b, c <- range(b, a));
+    for (auto [a, b, c] : (a, b, c) | (a, b) <- r2, c <- r1) {
+        std::println("({}, {}, {})", a, b, c);
+    }
+
+    auto named = ((a, b, c) | a <- range(1, inf), b <- range(1, a), c <- range(1, b), a * a - b * b == c * c);
     
     for (auto tpl : named) {
 
@@ -737,3 +729,66 @@ int main() {
 }
 
 // ------------------------------------------------
+
+
+/*
+named_range<
+    var<A, B, C>,
+    std::ranges::filter_view<
+        std::ranges::join_view<
+            std::ranges::transform_view<
+                std::ranges::join_view<
+                    std::ranges::transform_view<
+                        std::ranges::owning_view<range<int, inf_t>>,
+                        range_evaluator<var<A>, range<int, var<A>>>
+                    >
+                >,
+                range_evaluator<var<A, B>, range<int, var<B>>>
+            >
+        >,
+        range_filter<
+            var<A, B, C>,
+            binary_operation<
+                binary_operation<
+                    binary_operation<var<A>, var<A>, multiply_operator>,
+                    binary_operation<var<B>, var<B>, multiply_operator>,
+                    subtract_operator
+                >,
+                binary_operation<var<C>, var<C>, multiply_operator>,
+                equals_operator
+            >
+        >
+    >,
+    tuple_operation<var<A>, var<B>, var<C>>
+>
+
+named_range<
+    var<A, B, C>,
+    std::ranges::filter_view<
+        std::ranges::join_view<
+            std::ranges::transform_view<
+                std::ranges::cartesian_product_view<
+                    std::ranges::owning_view<range<int, inf_t>>,
+                    std::ranges::ref_view<std::vector<int>>
+                >,
+                range_evaluator<var<A, B>, range<int, var<B>>>
+            >
+        >,
+        range_filter<
+            var<A, B, C>,
+            binary_operation<
+                binary_operation<
+                    binary_operation<var<A>, var<A>, multiply_operator>,
+                    binary_operation<var<B>, var<B>, multiply_operator>,
+                    subtract_operator
+                >,
+                binary_operation<var<C>, var<C>, multiply_operator>,
+                equals_operator
+            >
+        >
+    >,
+    tuple_operation<var<A>, var<B>, var<C>>
+>
+
+
+*/
