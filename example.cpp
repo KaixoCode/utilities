@@ -730,6 +730,55 @@ namespace kaixo {
     }
 
     // ------------------------------------------------
+    //                   Break
+    // ------------------------------------------------
+    
+    template<class Vars, unevaluated Break>
+    struct break_point {
+
+        // ------------------------------------------------
+
+        Break expression{};
+
+        // ------------------------------------------------
+
+        template<class Self, class Tuple>
+        constexpr bool operator()(this Self&& self, Tuple&& tuple) {
+            return !static_cast<bool>(kaixo::evaluate(std::forward<Self>(self).expression, named_tuple<Vars, Tuple&&>{ std::forward<Tuple>(tuple) }));
+        }
+
+        // ------------------------------------------------
+
+    };
+
+    // ------------------------------------------------
+
+    constexpr struct break_t {
+
+        // ------------------------------------------------
+
+        template<unevaluated Break>
+        constexpr break_point<var<>, Break> operator=(Break&& e) const {
+            return { std::forward<Break>(e) };
+        }
+
+        // ------------------------------------------------
+
+    } brk;
+
+    // ------------------------------------------------
+
+    template<class Vars, std::ranges::range Range, class Expression, unevaluated Break>
+    constexpr auto operator,(named_range<Vars, Range, Expression>&& r, break_point<var<>, Break>&& b) 
+        -> named_range<Vars, std::ranges::take_while_view<Range, break_point<Vars, Break>>, Expression> {
+        using break_t = std::ranges::take_while_view<Range, break_point<Vars, Break>>;
+        return { {
+            .range = break_t{ std::move(r.range), break_point<Vars, Break>{ std::move(b.expression) } },
+            .expression = std::move(r.expression),
+        } };
+    }
+    
+    // ------------------------------------------------
 
 }
 
@@ -756,6 +805,10 @@ int main() {
     std::vector<int> r1{ 1, 2, 3, 4 };
     std::map<int, int> r2{ { 1, 2 }, { 3, 4 } };
 
+    for (auto a : a | a <- range(0, inf), brk = a == 10) {
+        std::println("({})", a);
+    }
+    
     for (auto [a, b, c] : ((a, b, c) | a <- range(1, 10), (b, c) <- (r1, range(1, a)))) {
         std::println("({}, {}, {})", a, b, c);
     }
