@@ -683,7 +683,51 @@ namespace kaixo {
     //                     Zip
     // ------------------------------------------------
 
+    template<class ...Ranges>
+    struct zip_range;
 
+    template<std::ranges::range ...Ranges>
+    struct zip_range<Ranges...> : std::ranges::zip_view<std::views::all_t<Ranges>...> {
+        using std::ranges::zip_view<std::views::all_t<Ranges>...>::zip_view;
+    };
+    
+    template<class ...Ranges>   
+        requires (unevaluated_range<Ranges> || ...)
+    struct zip_range<Ranges...> : std::tuple<Ranges...> {
+
+        // ------------------------------------------------
+        
+        using defines = var<>;
+        using depends = unique_t<concat_t<depends_t<Ranges>...>>;
+
+        // ------------------------------------------------
+
+        using is_range = int;
+
+        // ------------------------------------------------
+
+        using std::tuple<Ranges...>::tuple;
+
+        // ------------------------------------------------
+
+        template<class Self, class Tuple>
+        constexpr auto evaluate(this Self&& self, Tuple&& tuple) {
+            return std::apply([&]<class ...Args>(Args&& ...args) {
+                return (kaixo::evaluate(std::forward<Args>(args), tuple), ...);
+            }, static_cast<const std::tuple<Ranges...>&>(self));
+        }
+
+        // ------------------------------------------------
+
+    };
+
+    // ------------------------------------------------
+    
+    template<class A, class B>
+        requires ((unevaluated_range<A> || std::ranges::range<A>) && (unevaluated_range<B> || std::ranges::range<B>))
+    constexpr zip_range<A, B> operator,(A&& a, B&& b) {
+        return zip_range<A, B>{ std::forward<A>(a), std::forward<B>(b) };
+    }
 
     // ------------------------------------------------
 
@@ -712,11 +756,15 @@ int main() {
     std::vector<int> r1{ 1, 2, 3, 4 };
     std::map<int, int> r2{ { 1, 2 }, { 3, 4 } };
 
+    for (auto [a, b, c] : ((a, b, c) | a <- range(1, 10), (b, c) <- (r1, range(1, a)))) {
+        std::println("({}, {}, {})", a, b, c);
+    }
+    
     for (auto [a, b, c] : (a, b, c) | (a, b) <- r2, c <- r1) {
         std::println("({}, {}, {})", a, b, c);
     }
 
-    auto named = ((a, b, c) | a <- range(1, inf), b <- range(1, a), c <- range(1, b), a * a - b * b == c * c);
+    auto named = ((a, b, c) | a <- range(1, 100), b <- range(1, a), c <- range(1, b), a * a - b * b == c * c);
     
     for (auto tpl : named) {
 
