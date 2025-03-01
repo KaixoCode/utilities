@@ -31,189 +31,781 @@
 namespace kaixo {
 
     // ------------------------------------------------
-    
+    //                     Utils
+    // ------------------------------------------------
+
     constexpr std::size_t npos = static_cast<std::size_t>(-1);
 
     // ------------------------------------------------
-    
-    template<class Ty>
-    constexpr std::tuple<Ty&> flatten_tuple(Ty& t) { return { t }; }
-    template<class A, class B>
-    constexpr std::tuple<A&, B&> flatten_tuple(std::pair<A, B>& t) { return { t.first, t.second }; }
-    template<class A, class B>
-    constexpr std::tuple<const A&, const B&> flatten_tuple(const std::pair<A, B>& t) { return { t.first, t.second }; }
-    
-    template<class ...Tys>
-    constexpr auto flatten_tuple(std::tuple<Tys...>& t) {
-        return std::apply([]<class ...As>(As&& ...v) { return std::tuple_cat(flatten_tuple(v)...);  }, t);
-    }
-    
-    template<class ...Tys>
-    constexpr auto flatten_tuple(const std::tuple<Tys...>& t) {
-        return std::apply([]<class ...As>(As&& ...v) { return std::tuple_cat(flatten_tuple(v)...); }, t);
+
+    namespace detail {
+
+        // ------------------------------------------------
+        
+        struct dud {};
+
+        // ------------------------------------------------
+
+        template<class Ty>
+        constexpr std::tuple<Ty> store_as_tuple(Ty&& t) { return { std::forward<Ty>(t) }; }
+        template<class ...Tys>
+        constexpr std::tuple<Tys...> store_as_tuple(std::tuple<Tys...>&& t) { return std::move(t); }
+
+        // ------------------------------------------------
+        
+        template<class Ty>
+        constexpr std::tuple<Ty> flatten_tuple(Ty&& t) { return { std::forward<Ty>(t) }; }
+
+        template<class Tuple>
+        concept tuple_like = requires () { typename std::tuple_size<std::decay_t<Tuple>>::type; };
+
+        template<tuple_like Tuple>
+        constexpr auto flatten_tuple(Tuple&& t) {
+            return [&]<std::size_t ...Is>(std::index_sequence<Is...>) {
+                return std::tuple_cat(flatten_tuple(static_cast<std::tuple_element_t<Is, std::decay_t<Tuple>>&&>(std::get<Is>(t)))...);
+            }(std::make_index_sequence<std::tuple_size_v<std::decay_t<Tuple>>>{});
+        }
+
+        // ------------------------------------------------
+
     }
 
     // ------------------------------------------------
 
     template<std::size_t I, class Tuple>
-    constexpr decltype(auto) recursive_get(Tuple&& tuple) { return std::get<I>(flatten_tuple(tuple)); }
+    constexpr auto recursive_get(Tuple&& tuple) 
+        -> std::tuple_element_t<I, decltype(detail::flatten_tuple(tuple))> {
+        return std::get<I>(detail::flatten_tuple(tuple));
+    }
+
+    // ------------------------------------------------
+    //                     Var
+    // ------------------------------------------------
+
+    template<class... Vars>
+    struct var {
+
+        // ------------------------------------------------
+
+        using defines = var<>;
+        using depends = var;
+
+        // ------------------------------------------------
+
+        constexpr static std::size_t size = sizeof...(Vars);
+
+        template<class Find>
+        constexpr static std::size_t index = [](std::size_t i = 0) {
+            return ((i++, std::same_as<Find, Vars>) || ...) ? i - 1 : npos;
+        }();
+
+        // ------------------------------------------------
+
+        template<class Tuple>
+        constexpr static decltype(auto) evaluate(Tuple&& v) {
+            if constexpr (size == 1) {
+                if constexpr (std::decay_t<Tuple>::defines::template index<Vars...> == npos) return var{};
+                else return (v.template get<Vars>(), ...);
+            } else {
+                return std::forward_as_tuple(var<Vars>::evaluate(std::forward<Tuple>(v))...);
+            }
+        }
+
+        // ------------------------------------------------
+
+    };
+
+    // ------------------------------------------------
+
+    template<class In, class Out = var<>> 
+    struct unique;
+
+    template<class ...Bs>
+    struct unique<var<>, var<Bs...>> : std::type_identity<var<Bs...>> {};
+
+    template<class A, class ...As, class... Bs> 
+        requires (!(std::same_as<A, Bs> || ...))
+    struct unique<var<A, As...>, var<Bs...>> : unique<var<As...>, var<Bs..., A>> {};
+
+    template<class A, class ...As, class... Bs>
+        requires (std::same_as<A, Bs> || ...)
+    struct unique<var<A, As...>, var<Bs...>> : unique<var<As...>, var<Bs...>> {};
+
+    template<class ...Vars> 
+    using unique_t = typename unique<Vars...>::type;
 
     // ------------------------------------------------
 
     template<class...> 
-    struct var {};
+    struct concat;
 
-    template<class, class, std::size_t = 0> 
-    struct find_var : std::integral_constant<std::size_t, npos> {};
+    template<class ...As, class ...Bs, class ...Cs>
+    struct concat<var<As...>, var<Bs...>, Cs...> : concat<var<As..., Bs...>, Cs...> {};
 
-    template<class Find, class Var, class ...Vars, std::size_t N> 
-    struct find_var<Find, var<Var, Vars...>, N> : find_var<Find, var<Vars...>, N + 1> {};
+    template<class ...As>
+    struct concat<var<As...>> : std::type_identity<var<As...>> {};
 
-    template<class Find, class ...Vars, std::size_t N>
-    struct find_var<Find, var<Find, Vars...>, N> : std::integral_constant<std::size_t, N> {};
-
-    template<class, class> 
-    struct contains_all : std::false_type {};
-
-    template<class ...Contains, class Vars> 
-    struct contains_all<var<Contains...>, Vars> : std::bool_constant<((find_var<Contains, Vars>::value != npos) && ...)> {};
+    template<class ...Vars> 
+    using concat_t = typename concat<Vars...>::type;
 
     // ------------------------------------------------
-    
-    template<class> 
-    struct depends : std::type_identity<var<>> {};
+    //                 Defines/Depends
+    // ------------------------------------------------
 
-    template<class ...Vars>
-    struct depends<var<Vars...>> : std::type_identity<var<Vars...>> {};
+    template<class> struct depends : std::type_identity<var<>> {};
+    template<class> struct defines : std::type_identity<var<>> {};
 
-    template<class> 
-    struct defines : std::type_identity<var<>> {};
+    template<class Ty> using depends_t = typename depends<Ty>::type;
+    template<class Ty> using defines_t = typename defines<Ty>::type;
 
+    template<class ...Tys> struct defines<std::tuple<Tys...>> : unique<concat_t<defines_t<std::decay_t<Tys>>...>> {};
+    template<class ...Tys> struct depends<std::tuple<Tys...>> : unique<concat_t<depends_t<std::decay_t<Tys>>...>> {};
+
+    template<class Ty>
+        requires requires () { typename std::decay_t<Ty>::depends; }
+    struct depends<Ty> : std::type_identity<typename std::decay_t<Ty>::depends> {};
+
+    template<class Ty>
+        requires requires () { typename std::decay_t<Ty>::defines; }
+    struct defines<Ty> : std::type_identity<typename std::decay_t<Ty>::defines> {};
+
+    // ------------------------------------------------
+    //                    Evaluate
+    // ------------------------------------------------
+
+    template<class Ty>
+    concept unevaluated = depends_t<std::decay_t<Ty>>::size != 0;
+
+    template<class Tuple, class Ty>
+        requires (!unevaluated<Ty>)
+    constexpr Ty evaluate(Ty&& o, Tuple&&) { return std::forward<Ty>(o); }
+
+    template<class Tuple, class Ty>
+        requires (unevaluated<Ty>&& requires (Ty&& o, Tuple&& v) { { o.evaluate(v) }; })
+    constexpr decltype(auto) evaluate(Ty&& o, Tuple&& v) {
+        return std::forward<Ty>(o).evaluate(std::forward<Tuple>(v));
+    }
+
+    template<class Ty, class Tuple>
+    using evaluate_result_t = decltype(kaixo::evaluate(std::declval<Ty>(), std::declval<Tuple>()));
+
+    // ------------------------------------------------
+    //                  Named Tuple
     // ------------------------------------------------
 
     template<class Vars, class Tuple>
-    struct named_tuple : Tuple {
-        template<class Find> 
-        constexpr decltype(auto) get() const { 
-            return recursive_get<find_var<Find, Vars>::value>(static_cast<const Tuple&>(*this));
+    struct named_tuple {
+
+        // ------------------------------------------------
+
+        using depends = var<>;
+        using defines = Vars;
+
+        // ------------------------------------------------
+
+        Tuple tuple{};
+
+        // ------------------------------------------------
+
+        template<class Find, class Self>
+        constexpr decltype(auto) get(this Self&& self) {
+            return recursive_get<Vars::template index<Find>>(std::forward<Self>(self).tuple);
         }
+
+        // ------------------------------------------------
+
+    };
+
+    // ------------------------------------------------
+    //                  Expressions
+    // ------------------------------------------------
+
+    template<class Ty>
+    concept unevaluated_range = unevaluated<Ty> && requires() { typename std::decay_t<Ty>::is_range; };
+
+    template<class ...As>
+    concept valid_expression_arguments = (unevaluated<As> || ...) && (!unevaluated_range<As> && ...) && (!std::ranges::range<As> && ...);
+
+    // ------------------------------------------------
+
+    template<class ...Args>
+        requires valid_expression_arguments<Args...>
+    struct tuple_operation {
+
+        // ------------------------------------------------
+
+        using defines = var<>;
+        using depends = unique_t<concat_t<depends_t<Args>...>>;
+
+        // ------------------------------------------------
+
+        std::tuple<Args...> args{};
+
+        // ------------------------------------------------
+
+        template<class Self, class Tuple>
+        constexpr auto evaluate(this Self&& self, Tuple&& v) {
+            return std::apply([&]<class ...Tys>(Tys&& ...tys) {
+                if constexpr ((unevaluated<evaluate_result_t<Tys, Tuple>> || ...)) {
+                    return tuple_operation<evaluate_result_t<Tys, Tuple>...>{
+                        { kaixo::evaluate(std::forward<Tys>(tys), std::forward<Tuple>(v))... }
+                    };
+                } else {
+                    return std::tuple<evaluate_result_t<Tys, Tuple>...>{ kaixo::evaluate(std::forward<Tys>(tys), std::forward<Tuple>(v))... };
+                }
+            }, std::forward<Self>(self).args);
+        }
+
+        // ------------------------------------------------
+
     };
 
     // ------------------------------------------------
 
-    template<class ...As, class Vars, class Tuple>
-    constexpr decltype(auto) evaluate_expression(var<As...>, const named_tuple<Vars, Tuple>& v) {
-        if constexpr (sizeof...(As) == 1) return (v.template get<As>(), ...);
-        else return std::forward_as_tuple(v.template get<As>()...);
+    template<class A, class B>
+        requires valid_expression_arguments<A, B>
+    constexpr tuple_operation<std::decay_t<A>, std::decay_t<B>> operator,(A&& a, B&& b) {
+        return { { std::forward<A>(a), std::forward<B>(b) } };
+    }
+
+    template<class ...Args, class B>
+        requires valid_expression_arguments<Args..., B>
+    constexpr tuple_operation<Args..., std::decay_t<B>> operator,(tuple_operation<Args...>&& a, B&& b) {
+        return { { std::tuple_cat(std::move(a).args, std::forward_as_tuple(std::forward<B>(b))) } };
+    }
+
+    // ------------------------------------------------
+
+    template<class A, class B, class Op>
+        requires valid_expression_arguments<A, B>
+    struct binary_operation {
+
+        // ------------------------------------------------
+
+        using defines = var<>;
+        using depends = unique_t<concat_t<depends_t<A>, depends_t<B>>>;
+
+        // ------------------------------------------------
+
+        [[no_unique_address]] A a{};
+        [[no_unique_address]] B b{};
+        [[no_unique_address]] Op operation{};
+
+        // ------------------------------------------------
+
+        template<class Self, class Tuple>
+        constexpr decltype(auto) evaluate(this Self&& self, Tuple&& v) {
+            return std::forward<Self>(self).operation(
+                kaixo::evaluate(std::forward<Self>(self).a, std::forward<Tuple>(v)),
+                kaixo::evaluate(std::forward<Self>(self).b, std::forward<Tuple>(v)));
+        }
+
+        // ------------------------------------------------
+
+    };
+
+    // ------------------------------------------------
+
+#define KAIXO_BINARY_OP(op, name)                                                                             \
+    struct name##_operator {                                                                                  \
+        template<class A, class B>                                                                            \
+        constexpr decltype(auto) operator()(A&& a, B&& b) const {                                             \
+            return std::forward<A>(a) op std::forward<B>(b);                                                  \
+        }                                                                                                     \
+    };                                                                                                        \
+                                                                                                              \
+    template<class A, class B>                                                                                \
+        requires valid_expression_arguments<A, B>                                                             \
+    constexpr binary_operation<std::decay_t<A>, std::decay_t<B>, name##_operator> operator op(A&& a, B&& b) { \
+        return { std::forward<A>(a), std::forward<B>(b) };                                                    \
+    }
+
+    KAIXO_BINARY_OP(+, add);
+    KAIXO_BINARY_OP(-, subtract);
+    KAIXO_BINARY_OP(*, multiply);
+    KAIXO_BINARY_OP(/ , divide);
+    KAIXO_BINARY_OP(%, modulo);
+    KAIXO_BINARY_OP(&, bit_and);
+    KAIXO_BINARY_OP(| , bit_or);
+    KAIXO_BINARY_OP(^, bit_xor);
+    KAIXO_BINARY_OP(&&, logic_and);
+    KAIXO_BINARY_OP(|| , logic_or);
+    KAIXO_BINARY_OP(== , equals);
+    KAIXO_BINARY_OP(!= , not_equals);
+    KAIXO_BINARY_OP(< , less_than);
+    KAIXO_BINARY_OP(> , greater_than);
+    KAIXO_BINARY_OP(<= , less_or_equals);
+    KAIXO_BINARY_OP(>= , greater_or_equals);
+    KAIXO_BINARY_OP(+=, add_assign);
+    KAIXO_BINARY_OP(-=, subtract_assign);
+    KAIXO_BINARY_OP(*=, multiply_assign);
+    KAIXO_BINARY_OP(/=, divide_assign);
+    KAIXO_BINARY_OP(%=, modulo_assign);
+    KAIXO_BINARY_OP(&=, bit_and_assign);
+    KAIXO_BINARY_OP(|=, bit_or_assign);
+    KAIXO_BINARY_OP(^=, bit_xor_assign);
+
+    // ------------------------------------------------
+
+    template<class A, class Op>
+        requires valid_expression_arguments<A>
+    struct unary_operation {
+
+        // ------------------------------------------------
+
+        using defines = var<>;
+        using depends = depends_t<A>;
+
+        // ------------------------------------------------
+
+        [[no_unique_address]] A a{};
+        [[no_unique_address]] Op operation{};
+
+        // ------------------------------------------------
+
+        template<class Self, class Tuple>
+        constexpr decltype(auto) evaluate(this Self&& self, Tuple&& v) {
+            return std::forward<Self>(self).operation(
+                kaixo::evaluate(std::forward<Self>(self).a, std::forward<Tuple>(v)));
+        }
+
+        // ------------------------------------------------
+
+    };
+
+    // ------------------------------------------------
+
+#define KAIXO_UNARY_OP(op, name)                                                     \
+    struct name##_operator {                                                         \
+        template<class A>                                                            \
+        constexpr decltype(auto) operator()(A&& a) const {                           \
+            return op std::forward<A>(a);                                            \
+        }                                                                            \
+    };                                                                               \
+                                                                                     \
+    template<class A>                                                                \
+        requires valid_expression_arguments<A>                                       \
+    constexpr unary_operation<std::decay_t<A>, name##_operator> operator op(A&& a) { \
+        return { std::forward<A>(a) };                                               \
+    }
+
+    KAIXO_UNARY_OP(++, increment);
+    KAIXO_UNARY_OP(--, decrement);
+    KAIXO_UNARY_OP(-, negate);
+    KAIXO_UNARY_OP(!, logic_not);
+    KAIXO_UNARY_OP(&, pointer);
+    KAIXO_UNARY_OP(*, dereference);
+
+    // ------------------------------------------------
+    //                     Range
+    // ------------------------------------------------
+
+    template<class Begin, class End, class Increment = void>
+    struct range;
+
+    // ------------------------------------------------
+
+    template<class Begin, class End, class Increment = void>
+    struct range_storage {
+
+        // ------------------------------------------------
+
+        Begin beginValue;
+        End endValue;
+        Increment increment;
+
+        // ------------------------------------------------
+
+        constexpr bool is_end(const Begin& value) const {
+            if constexpr (requires (const Begin & a, const End & b) { { a == b } -> std::convertible_to<bool>; }) {
+                return static_cast<bool>(value == endValue);
+            } else {
+                static_assert(std::conditional_t<false, std::false_type, Begin>::value, "Invalid end type");
+            }
+        }
+
+        constexpr void do_increment(Begin& value) const {
+            if constexpr (std::invocable<Increment, Begin>) {
+                increment(value);
+            } else if constexpr (requires (Begin & a, Increment b) { { a += b } -> std::same_as<Begin&>; }) {
+                value += increment;
+            } else {
+                static_assert(std::conditional_t<false, std::false_type, Begin>::value, "Invalid increment type");
+            }
+        }
+
+        // ------------------------------------------------
+
+    };
+
+    template<class Begin, class End>
+    struct range_storage<Begin, End, void> {
+
+        // ------------------------------------------------
+
+        Begin beginValue;
+        End endValue;
+
+        // ------------------------------------------------
+
+        constexpr bool is_end(const Begin& value) const {
+            if constexpr (requires (const Begin & a, const End & b) { { a == b } -> std::convertible_to<bool>; }) {
+                return static_cast<bool>(value == endValue);
+            } else {
+                static_assert(std::conditional_t<false, std::false_type, Begin>::value, "Invalid end type");
+            }
+        }
+
+        constexpr static void do_increment(Begin& value) { ++value; }
+
+        // ------------------------------------------------
+
+    };
+
+    // ------------------------------------------------
+
+    template<class, class, class = void>
+    struct range_implementation;
+
+    template<class Begin, class End, class Increment>
+        requires (unevaluated<Begin> || unevaluated<End> || unevaluated<Increment>)
+    struct range_implementation<Begin, End, Increment> : range_storage<Begin, End, Increment> {
+
+        // ------------------------------------------------
+
+        template<class Self, class Tuple>
+        constexpr auto evaluate(this Self&& self, Tuple&& tuple) {
+            if constexpr (std::same_as<Increment, void>) {
+                return range{
+                    kaixo::evaluate(std::forward<Self>(self).beginValue, std::forward<Tuple>(tuple)),
+                    kaixo::evaluate(std::forward<Self>(self).endValue, std::forward<Tuple>(tuple)),
+                };
+            } else {
+                return range{
+                    kaixo::evaluate(std::forward<Self>(self).beginValue, std::forward<Tuple>(tuple)),
+                    kaixo::evaluate(std::forward<Self>(self).endValue, std::forward<Tuple>(tuple)),
+                    kaixo::evaluate(std::forward<Self>(self).increment, std::forward<Tuple>(tuple)),
+                };
+            }
+        }
+
+        // ------------------------------------------------
+
+    };
+
+    template<class Begin, class End, class Increment>
+        requires (!unevaluated<Begin> && !unevaluated<End> && !unevaluated<Increment>)
+    struct range_implementation<Begin, End, Increment> : range_storage<Begin, End, Increment> {
+
+        // ------------------------------------------------
+
+        struct sentinel {};
+        struct iterator {
+
+            // ------------------------------------------------
+
+            using value_type = Begin;
+            using difference_type = std::ptrdiff_t;
+
+            // ------------------------------------------------
+
+            const range_storage<Begin, End, Increment>* self;
+            Begin value;
+
+            // ------------------------------------------------
+
+            constexpr iterator& operator++() {
+                self->do_increment(value);
+                return *this;
+            }
+
+            constexpr iterator operator++(int) {
+                iterator copy = *this;
+                self->do_increment(value);
+                return copy;
+            }
+
+            constexpr Begin operator*() const { return value; }
+
+            // ------------------------------------------------
+
+            constexpr bool operator==(const iterator& o) const { return value == o.value; }
+            constexpr bool operator==(sentinel) const { return self->is_end(value); }
+
+            // ------------------------------------------------
+
+        };
+
+        // ------------------------------------------------
+
+        constexpr iterator begin() const { return { this, this->beginValue }; }
+        constexpr sentinel end() const { return {}; }
+
+        // ------------------------------------------------
+
+    };
+
+    // ------------------------------------------------
+
+    template<class Begin, class End, class Increment>
+    struct range : range_implementation<Begin, End, Increment> {
+
+        // ------------------------------------------------
+
+        using defines = var<>;
+        using depends = unique_t<concat_t<depends_t<Begin>, depends_t<End>, depends_t<Increment>>>;
+
+        // ------------------------------------------------
+
+        using is_range = int;
+
+        // ------------------------------------------------
+
+        template<class ...Args>
+            requires (sizeof...(Args) == 2 || sizeof...(Args) == 3)
+        constexpr range(Args&& ...args)
+            : range_implementation<Begin, End, Increment>{ std::forward<Args>(args)... }
+        {}
+
+        // ------------------------------------------------
+
+    };
+
+    template<class ...Args>
+    range(Args&&...) -> range<std::decay_t<Args>...>;
+
+    // ------------------------------------------------
+    //                  Named Range
+    // ------------------------------------------------
+
+    template<class, class, class = void>
+    struct named_range;
+
+    // ------------------------------------------------
+
+    template<class Vars, class Range>
+    struct named_range_base {
+
+        // ------------------------------------------------
+
+        using defines = Vars;
+        using depends = depends_t<Range>;
+
+        // ------------------------------------------------
+
+        using is_range = int;
+
+        // ------------------------------------------------
+
+    };
+
+    template<class, class, class>
+    struct named_range_storage;
+    
+    template<class Vars, class Range, unevaluated Expression>
+    struct named_range_storage<Vars, Range, Expression> : named_range_base<Vars, Range> {
+
+        // ------------------------------------------------
+
+        Range range;
+        Expression expression;
+
+        // ------------------------------------------------
+
+        template<class Self, class Arg>
+        constexpr decltype(auto) transform(this Self&& self, Arg&& arg) { 
+            return kaixo::evaluate(std::forward<Self>(self).expression, named_tuple<Vars, Arg>{ std::forward<Arg>(arg) });
+        }
+
+        // ------------------------------------------------
+
+    };
+    
+    template<class Vars, class Range>
+    struct named_range_storage<Vars, Range, void> : named_range_base<Vars, Range> {
+
+        // ------------------------------------------------
+
+        Range range;
+        [[no_unique_address]] detail::dud expression;
+
+        // ------------------------------------------------
+        
+        template<class Arg>
+        constexpr static Arg transform(Arg&& arg) { return std::forward<Arg>(arg); }
+
+        // ------------------------------------------------
+
+    };
+
+    // ------------------------------------------------
+
+    template<class Vars, std::ranges::range Range, class Expression>
+    struct named_range<Vars, Range, Expression> : named_range_storage<Vars, Range, Expression> {
+
+        // ------------------------------------------------
+                
+        using base_iterator = std::ranges::const_iterator_t<Range>;
+        using base_sentinel = std::ranges::const_sentinel_t<Range>;
+        using base_reference_t = std::ranges::range_reference_t<Range>;
+
+        
+        // ------------------------------------------------
+        
+        struct iterator : base_iterator {
+            named_range<Vars, Range, Expression>* self = nullptr;
+        
+            constexpr decltype(auto) operator*() {
+                return self->transform(base_iterator::operator*());
+            }
+        
+            constexpr decltype(auto) operator[](std::size_t i) requires std::ranges::random_access_range<Range> {
+                return self->transform(base_iterator::operator[](i));
+            }
+        };
+        
+        // ------------------------------------------------
+
+        constexpr iterator begin() { return { std::ranges::begin(this->range), this }; }
+        constexpr base_sentinel end() { return std::ranges::end(this->range); }
+
+        // ------------------------------------------------
+
+        constexpr decltype(auto) operator[](std::size_t i) requires std::ranges::random_access_range<Range> {
+            return this->transform(this->range[i]);
+        }
+
+        // ------------------------------------------------
+
+    };
+    
+    template<class Vars, unevaluated_range Range, class Expression>
+    struct named_range<Vars, Range, Expression> : named_range_storage<Vars, Range, Expression> {};
+
+    // ------------------------------------------------
+    
+    // Construct named range
+    template<std::ranges::range Range>
+    constexpr std::views::all_t<Range> operator-(Range&& range) {
+        return std::views::all(std::forward<Range>(range));
+    }
+    
+    template<unevaluated_range Range>
+    constexpr Range&& operator-(Range&& range) { return std::forward<Range>(range); }
+    
+    template<class ...Vars, class Range>
+        requires (std::ranges::range<Range> || unevaluated_range<Range>)
+    constexpr named_range<var<Vars...>, std::decay_t<Range>> operator<(var<Vars...>, Range&& range) {
+        return { { 
+            .range = std::forward<Range>(range) 
+        } };
     }
 
     // ------------------------------------------------
     
-    template<class Vars, std::ranges::range Range, class Expression = int>
-    struct named_range_storage {
-        Range range{};
-        Expression expression{};
-    };
+    template<unevaluated Expression, class Vars, class Range>
+    constexpr named_range<Vars, Range, std::decay_t<Expression>> operator|(Expression&& e, named_range<Vars, Range>&& r) {
+        return { { 
+            .range = std::move(r.range),
+            .expression = std::forward<Expression>(e) 
+        } };
+    }
 
-    template<class, std::ranges::range, class = int> 
-    struct named_range;
+    // ------------------------------------------------
+    
+    // Combine complete named ranges
+    template<class ...V1s, std::ranges::range Range1, class Expression, class ...V2s, std::ranges::range Range2>
+    constexpr auto operator,(named_range<var<V1s...>, Range1, Expression>&& r1, named_range<var<V2s...>, Range2>&& r2)
+        -> named_range<var<V1s..., V2s...>, std::ranges::cartesian_product_view<Range1, Range2>, Expression> 
+    {
+        using combined_t = std::ranges::cartesian_product_view<Range1, Range2>;
+        return { {
+            .range = combined_t{ std::forward<Range1>(r1.range), std::forward<Range2>(r2.range) },
+            .expression = std::move(r1.expression)
+        } };
+    }
 
-    template<class Vars, std::ranges::range Range, class Expression>
-        requires (!contains_all<typename depends<Expression>::type, Vars>::value)
-    struct named_range<Vars, Range, Expression> : named_range_storage<Vars, Range, Expression> {};
+    // ------------------------------------------------
 
-    template<class Vars, std::ranges::range Range, class Expression> 
-        requires (contains_all<typename depends<Expression>::type, Vars>::value)
-    struct named_range<Vars, Range, Expression> : named_range_storage<Vars, Range, Expression> {
-        using base_iterator = std::ranges::iterator_t<Range>;
-        using base_reference_t = std::ranges::range_reference_t<Range>;
+    // Combine complete with unevaluated range
+    template<class Vars, unevaluated_range Range>
+    struct range_evaluator {
+        Range range;
 
-        struct iterator : base_iterator {
-            const named_range<Vars, Range, Expression>* self = nullptr;
-
-            constexpr decltype(auto) operator*() {
-                return evaluate_expression(self->expression, named_tuple<Vars, base_reference_t>{ base_iterator::operator*() });
-            }
-
-            constexpr decltype(auto) operator[](std::size_t i) requires std::ranges::random_access_range<Range> {
-                return evaluate_expression(self->expression, named_tuple<Vars, base_reference_t>{ base_iterator::operator[](i) });
-            }
-        };
-
-        constexpr iterator begin() const { return { std::ranges::begin(this->range), this }; }
-        constexpr iterator end() const { return { std::ranges::end(this->range), this }; }
-        constexpr iterator cbegin() const { return { std::ranges::cbegin(this->range), this }; }
-        constexpr iterator cend() const { return { std::ranges::cend(this->range), this }; }
-
-        constexpr decltype(auto) operator[](std::size_t i) requires std::ranges::random_access_range<Range> {
-            return evaluate_expression(this->expression, named_tuple<Vars, base_iterator>{ this->range[i] });
+        template<class Self, class Tuple>
+        constexpr auto operator()(this Self&& self, Tuple&& tuple) {
+            return std::views::transform(
+                kaixo::evaluate(std::forward<Self>(self).range, named_tuple<Vars, Tuple&&>{ std::forward<Tuple>(tuple) }),
+                [tuple = detail::store_as_tuple(std::forward<Tuple>(tuple))]<class R>(R && r) { return std::make_tuple(tuple, std::forward<R>(r)); });
         }
     };
 
-    template<class Vars, std::ranges::range Range, class Expression>
-    struct defines<named_range<Vars, Range, Expression>> : std::type_identity<Vars> {};
+    template<class ...V1s, std::ranges::range Range1, class Expression, class ...V2s, unevaluated_range Range2>
+    constexpr auto operator,(named_range<var<V1s...>, Range1, Expression>&& r1, named_range<var<V2s...>, Range2>&& r2)
+        -> named_range<var<V1s..., V2s...>, std::ranges::join_view<std::ranges::transform_view<Range1, range_evaluator<var<V1s...>, Range2>>>, Expression>
+    {
+        using evaluated_t = std::ranges::transform_view<Range1, range_evaluator<var<V1s...>, Range2>>;
+        using joined_t = std::ranges::join_view<evaluated_t>;
+        return { {
+            .range = joined_t{ evaluated_t{ std::move(r1.range), { std::move(r2.range) } } },
+            .expression = std::move(r1.expression),
+        } };
+    }
 
     // ------------------------------------------------
 
-    template<class> 
-    struct range_result_size : std::integral_constant<std::size_t, 1> {};
+    // Add range filter
+    template<class Vars, class Condition>
+    struct range_filter {
+        Condition condition;
 
-    template<class ...Tys>
-    struct range_result_size<std::tuple<Tys...>> : std::integral_constant<std::size_t, sizeof...(Tys)> {};
+        template<class Tuple>
+        constexpr bool operator()(Tuple&& tuple) const {
+            return kaixo::evaluate(condition, named_tuple<Vars, Tuple&&>{ std::forward<Tuple>(tuple) });
+        }
+    };
 
-    template<class A, class B>
-    struct range_result_size<std::pair<A, B>> : std::integral_constant<std::size_t, 2> {};
-
-    // ------------------------------------------------
-
-    template<class ...As, class ...Bs>
-    constexpr var<As..., Bs...> operator,(var<As...>, var<Bs...>) { return {}; }
-
-    template<std::ranges::range Range>
-    constexpr std::views::all_t<Range> operator-(Range&& r) { return std::views::all(std::forward<Range>(r)); }
-
-    template<class ...Vs, std::ranges::range Range>
-        requires (range_result_size<std::ranges::range_value_t<Range>>::value == sizeof...(Vs))
-    constexpr named_range<var<Vs...>, Range> operator<(var<Vs...>, Range&& r) { return { std::forward<Range>(r) }; }
-
-    template<std::ranges::range A, std::ranges::range B>
-    constexpr auto operator,(A&& a, B&& b) 
-        -> std::ranges::zip_view<std::views::all_t<A>, std::views::all_t<B>> {
-        return std::ranges::zip_view{ std::forward<A>(a), std::forward<B>(b) };
+    template<class Vars, std::ranges::range Range, class Expression, valid_expression_arguments Condition>
+    constexpr auto operator,(named_range<Vars, Range, Expression>&& r1, Condition&& c)
+        -> named_range<Vars, std::ranges::filter_view<Range, range_filter<Vars, Condition>>, Expression> 
+    {
+        using filtered_t = std::ranges::filter_view<Range, range_filter<Vars, Condition>>;
+        return { {
+            .range = filtered_t{ std::move(r1.range), { std::forward<Condition>(c) } },
+            .expression = std::move(r1.expression),
+        } };
     }
-
-    template<class ...As, class Expression, std::ranges::range A, class ...Bs, std::ranges::range B>
-    constexpr auto operator,(named_range<var<As...>, A, Expression>&& a, named_range<var<Bs...>, B>&& b)
-        -> named_range<var<As..., Bs...>, std::ranges::cartesian_product_view<A, B>, Expression> {
-        return { std::ranges::cartesian_product_view<A, B>(std::move(a.range), std::move(b.range)), std::move(a.expression) };
-    }
-
-    template<class ...Vs, class ...As, std::ranges::range A>
-    constexpr auto operator|(var<Vs...>, named_range<var<As...>, A>&& a) 
-        -> named_range<var<As...>, A, var<Vs...>> { return { a.range }; }
 
     // ------------------------------------------------
 
 }
 
+// ------------------------------------------------
+
+struct A {};
+struct B {};
+struct C {};
+struct D {};
+struct E {};
+
 int main() {
     using namespace kaixo;
 
-    constexpr var<struct A> a;
-    constexpr var<struct B> b;
-    constexpr var<struct C> c;
-    constexpr var<struct D> d;
-    constexpr var<struct E> e;
+    constexpr var<A> a;
+    constexpr var<B> b;
+    constexpr var<C> c;
+    constexpr var<D> d;
+    constexpr var<E> e;
 
-    const std::vector<int> as{ 1, 2, 3 };
-    std::vector<char> bs{ 1, 2, 3 };
-    std::vector<long long> cs{ 1, 2, 3 };
-    std::map<float, double> map{ { 1, 2 }, { 2, 3 } };
+    constexpr named_tuple<var<A, B, C>, std::tuple<std::tuple<int, float>, double>> values{ { { 1, 2 }, 3 } };
+    constexpr named_tuple<var<D, E>, std::tuple<int, float>> values2{ { 4, 5 } };
+    
+    std::vector<int> r1{ 1, 2, 3, 4 };
 
-    auto lc = ((a, b, c, d, e) | (a, b) <- (as, bs), c <- cs, (d, e) <- map);
-
-    for (auto [a, b, c, d, e] : lc) {
-        std::println("({}, {}, {}, {}, {})", a, b, c, d, e);
+    auto named = ((a, b, c) | a <- r1, b <- range(1, a), a >= b, c <- range(b, a));
+    
+    for (auto [a, b, c] : named) {
+        std::println("({}, {}, {})", a, b, c);
     }
 
     return 0;
