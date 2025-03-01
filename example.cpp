@@ -54,16 +54,12 @@ namespace kaixo {
         // ------------------------------------------------
         
         template<class Ty>
-        constexpr std::tuple<Ty> flatten_tuple(Ty&& t) { return { std::forward<Ty>(t) }; }
-
-        template<class Tuple>
-        concept tuple_like = requires () { typename std::tuple_size<std::decay_t<Tuple>>::type; };
-
-        template<tuple_like Tuple>
-        constexpr auto flatten_tuple(Tuple&& t) {
-            return [&]<std::size_t ...Is>(std::index_sequence<Is...>) {
-                return std::tuple_cat(flatten_tuple(static_cast<std::tuple_element_t<Is, std::decay_t<Tuple>>&&>(std::get<Is>(t)))...);
-            }(std::make_index_sequence<std::tuple_size_v<std::decay_t<Tuple>>>{});
+        constexpr auto flatten_tuple(Ty&& t) {
+            if constexpr (requires { typename std::tuple_size<std::decay_t<Ty>>::type; }) {
+                return[&]<std::size_t ...Is>(std::index_sequence<Is...>) {
+                    return std::tuple_cat(flatten_tuple(static_cast<std::tuple_element_t<Is, std::decay_t<Ty>>&&>(std::get<Is>(t)))...);
+                }(std::make_index_sequence<std::tuple_size_v<std::decay_t<Ty>>>{});
+            } else return std::tuple<Ty>{ std::forward<Ty>(t) };
         }
 
         // ------------------------------------------------
@@ -73,9 +69,8 @@ namespace kaixo {
     // ------------------------------------------------
 
     template<std::size_t I, class Tuple>
-    constexpr auto recursive_get(Tuple&& tuple) 
-        -> std::tuple_element_t<I, decltype(detail::flatten_tuple(tuple))> {
-        return std::get<I>(detail::flatten_tuple(tuple));
+    constexpr auto recursive_get(Tuple&& tuple) {
+        return static_cast<std::tuple_element_t<I, decltype(detail::flatten_tuple(tuple))>>(std::get<I>(detail::flatten_tuple(tuple)));
     }
 
     // ------------------------------------------------
@@ -117,36 +112,23 @@ namespace kaixo {
 
     // ------------------------------------------------
 
-    template<class In, class Out = var<>> 
-    struct unique;
-
+    template<class In, class Out = var<>> struct unique;
     template<class ...Bs>
     struct unique<var<>, var<Bs...>> : std::type_identity<var<Bs...>> {};
-
-    template<class A, class ...As, class... Bs> 
-        requires (!(std::same_as<A, Bs> || ...))
+    template<class A, class ...As, class... Bs> requires (!(std::same_as<A, Bs> || ...))
     struct unique<var<A, As...>, var<Bs...>> : unique<var<As...>, var<Bs..., A>> {};
-
-    template<class A, class ...As, class... Bs>
-        requires (std::same_as<A, Bs> || ...)
+    template<class A, class ...As, class... Bs> requires (std::same_as<A, Bs> || ...)
     struct unique<var<A, As...>, var<Bs...>> : unique<var<As...>, var<Bs...>> {};
-
-    template<class ...Vars> 
-    using unique_t = typename unique<Vars...>::type;
+    template<class ...Vars> using unique_t = typename unique<Vars...>::type;
 
     // ------------------------------------------------
 
-    template<class...> 
-    struct concat;
-
+    template<class...> struct concat;
     template<class ...As, class ...Bs, class ...Cs>
     struct concat<var<As...>, var<Bs...>, Cs...> : concat<var<As..., Bs...>, Cs...> {};
-
     template<class ...As>
     struct concat<var<As...>> : std::type_identity<var<As...>> {};
-
-    template<class ...Vars> 
-    using concat_t = typename concat<Vars...>::type;
+    template<class ...Vars> using concat_t = typename concat<Vars...>::type;
 
     // ------------------------------------------------
     //                 Defines/Depends
@@ -161,12 +143,10 @@ namespace kaixo {
     template<class ...Tys> struct defines<std::tuple<Tys...>> : unique<concat_t<defines_t<std::decay_t<Tys>>...>> {};
     template<class ...Tys> struct depends<std::tuple<Tys...>> : unique<concat_t<depends_t<std::decay_t<Tys>>...>> {};
 
-    template<class Ty>
-        requires requires () { typename std::decay_t<Ty>::depends; }
+    template<class Ty> requires requires { typename std::decay_t<Ty>::depends; }
     struct depends<Ty> : std::type_identity<typename std::decay_t<Ty>::depends> {};
 
-    template<class Ty>
-        requires requires () { typename std::decay_t<Ty>::defines; }
+    template<class Ty> requires requires { typename std::decay_t<Ty>::defines; }
     struct defines<Ty> : std::type_identity<typename std::decay_t<Ty>::defines> {};
 
     // ------------------------------------------------
@@ -176,12 +156,10 @@ namespace kaixo {
     template<class Ty>
     concept unevaluated = depends_t<std::decay_t<Ty>>::size != 0;
 
-    template<class Tuple, class Ty>
-        requires (!unevaluated<Ty>)
+    template<class Tuple, class Ty> requires (!unevaluated<Ty>)
     constexpr Ty evaluate(Ty&& o, Tuple&&) { return std::forward<Ty>(o); }
 
-    template<class Tuple, class Ty>
-        requires (unevaluated<Ty>&& requires (Ty&& o, Tuple&& v) { { o.evaluate(v) }; })
+    template<class Tuple, unevaluated Ty> requires requires (Ty&& o, Tuple&& v) { { o.evaluate(v) }; }
     constexpr decltype(auto) evaluate(Ty&& o, Tuple&& v) {
         return std::forward<Ty>(o).evaluate(std::forward<Tuple>(v));
     }
@@ -262,22 +240,19 @@ namespace kaixo {
 
     // ------------------------------------------------
 
-    template<class A, class B>
-        requires valid_expression_arguments<A, B>
+    template<class A, class B> requires valid_expression_arguments<A, B>
     constexpr tuple_operation<std::decay_t<A>, std::decay_t<B>> operator,(A&& a, B&& b) {
         return { { std::forward<A>(a), std::forward<B>(b) } };
     }
 
-    template<class ...Args, class B>
-        requires valid_expression_arguments<Args..., B>
+    template<class ...Args, class B> requires valid_expression_arguments<Args..., B>
     constexpr tuple_operation<Args..., std::decay_t<B>> operator,(tuple_operation<Args...>&& a, B&& b) {
         return { { std::tuple_cat(std::move(a).args, std::forward_as_tuple(std::forward<B>(b))) } };
     }
 
     // ------------------------------------------------
 
-    template<class A, class B, class Op>
-        requires valid_expression_arguments<A, B>
+    template<class A, class B, class Op> requires valid_expression_arguments<A, B>
     struct binary_operation {
 
         // ------------------------------------------------
@@ -314,8 +289,7 @@ namespace kaixo {
         }                                                                                                     \
     };                                                                                                        \
                                                                                                               \
-    template<class A, class B>                                                                                \
-        requires valid_expression_arguments<A, B>                                                             \
+    template<class A, class B> requires valid_expression_arguments<A, B>                                      \
     constexpr binary_operation<std::decay_t<A>, std::decay_t<B>, name##_operator> operator op(A&& a, B&& b) { \
         return { std::forward<A>(a), std::forward<B>(b) };                                                    \
     }
@@ -347,8 +321,7 @@ namespace kaixo {
 
     // ------------------------------------------------
 
-    template<class A, class Op>
-        requires valid_expression_arguments<A>
+    template<valid_expression_arguments A, class Op>
     struct unary_operation {
 
         // ------------------------------------------------
@@ -383,8 +356,7 @@ namespace kaixo {
         }                                                                            \
     };                                                                               \
                                                                                      \
-    template<class A>                                                                \
-        requires valid_expression_arguments<A>                                       \
+    template<valid_expression_arguments A>                                           \
     constexpr unary_operation<std::decay_t<A>, name##_operator> operator op(A&& a) { \
         return { std::forward<A>(a) };                                               \
     }
@@ -416,22 +388,10 @@ namespace kaixo {
 
         // ------------------------------------------------
 
-        constexpr bool is_end(const Begin& value) const {
-            if constexpr (requires (const Begin & a, const End & b) { { a == b } -> std::convertible_to<bool>; }) {
-                return static_cast<bool>(value == endValue);
-            } else {
-                static_assert(std::conditional_t<false, std::false_type, Begin>::value, "Invalid end type");
-            }
-        }
-
+        constexpr bool is_end(const Begin& value) const { return static_cast<bool>(value == endValue); }
         constexpr void do_increment(Begin& value) const {
-            if constexpr (std::invocable<Increment, Begin>) {
-                increment(value);
-            } else if constexpr (requires (Begin & a, Increment b) { { a += b } -> std::same_as<Begin&>; }) {
-                value += increment;
-            } else {
-                static_assert(std::conditional_t<false, std::false_type, Begin>::value, "Invalid increment type");
-            }
+            if constexpr (std::invocable<Increment, Begin>) increment(value);
+            else value += increment;
         }
 
         // ------------------------------------------------
@@ -448,14 +408,7 @@ namespace kaixo {
 
         // ------------------------------------------------
 
-        constexpr bool is_end(const Begin& value) const {
-            if constexpr (requires (const Begin & a, const End & b) { { a == b } -> std::convertible_to<bool>; }) {
-                return static_cast<bool>(value == endValue);
-            } else {
-                static_assert(std::conditional_t<false, std::false_type, Begin>::value, "Invalid end type");
-            }
-        }
-
+        constexpr bool is_end(const Begin& value) const { return static_cast<bool>(value == endValue); }
         constexpr static void do_increment(Begin& value) { ++value; }
 
         // ------------------------------------------------
@@ -475,18 +428,15 @@ namespace kaixo {
 
         template<class Self, class Tuple>
         constexpr auto evaluate(this Self&& self, Tuple&& tuple) {
-            if constexpr (std::same_as<Increment, void>) {
-                return range{
-                    kaixo::evaluate(std::forward<Self>(self).beginValue, std::forward<Tuple>(tuple)),
-                    kaixo::evaluate(std::forward<Self>(self).endValue, std::forward<Tuple>(tuple)),
-                };
-            } else {
-                return range{
-                    kaixo::evaluate(std::forward<Self>(self).beginValue, std::forward<Tuple>(tuple)),
-                    kaixo::evaluate(std::forward<Self>(self).endValue, std::forward<Tuple>(tuple)),
-                    kaixo::evaluate(std::forward<Self>(self).increment, std::forward<Tuple>(tuple)),
-                };
-            }
+            if constexpr (std::same_as<Increment, void>) return range{
+                kaixo::evaluate(std::forward<Self>(self).beginValue, std::forward<Tuple>(tuple)),
+                kaixo::evaluate(std::forward<Self>(self).endValue, std::forward<Tuple>(tuple)),
+            };
+            else return range{
+                kaixo::evaluate(std::forward<Self>(self).beginValue, std::forward<Tuple>(tuple)),
+                kaixo::evaluate(std::forward<Self>(self).endValue, std::forward<Tuple>(tuple)),
+                kaixo::evaluate(std::forward<Self>(self).increment, std::forward<Tuple>(tuple)),
+            };
         }
 
         // ------------------------------------------------
@@ -621,9 +571,7 @@ namespace kaixo {
                 
         using base_iterator = std::ranges::const_iterator_t<Range>;
         using base_sentinel = std::ranges::const_sentinel_t<Range>;
-        using base_reference_t = std::ranges::range_reference_t<Range>;
 
-        
         // ------------------------------------------------
         
         struct iterator : base_iterator {
@@ -671,7 +619,7 @@ namespace kaixo {
         requires (std::ranges::range<Range> || unevaluated_range<Range>)
     constexpr named_range<var<Vars...>, std::decay_t<Range>> operator<(var<Vars...>, Range&& range) {
         return { { 
-            .range = std::forward<Range>(range) 
+            .range = std::forward<Range>(range),
         } };
     }
 
@@ -681,7 +629,7 @@ namespace kaixo {
     constexpr named_range<Vars, Range, std::decay_t<Expression>> operator|(Expression&& e, named_range<Vars, Range>&& r) {
         return { { 
             .range = std::move(r.range),
-            .expression = std::forward<Expression>(e) 
+            .expression = std::forward<Expression>(e),
         } };
     }
 
@@ -695,7 +643,7 @@ namespace kaixo {
         using combined_t = std::ranges::cartesian_product_view<Range1, Range2>;
         return { {
             .range = combined_t{ std::forward<Range1>(r1.range), std::forward<Range2>(r2.range) },
-            .expression = std::move(r1.expression)
+            .expression = std::move(r1.expression),
         } };
     }
 
