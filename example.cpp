@@ -478,7 +478,13 @@ namespace kaixo {
             using reference = decltype(std::declval<named_range_storage<Vars, Range, Expression>&>().transform(std::declval<std::iter_reference_t<base_iterator>>()));
             using value_type = std::decay_t<reference>;
             using difference_type = std::iter_difference_t<base_iterator>;
-            using iterator_category = std::conditional_t<std::forward_iterator<base_iterator>, std::forward_iterator_tag, std::input_iterator_tag>;
+            using iterator_category = std::conditional_t<
+                std::random_access_iterator<base_iterator>, 
+                std::random_access_iterator_tag, 
+                std::conditional_t<
+                    std::forward_iterator<base_iterator>, 
+                    std::forward_iterator_tag, 
+                    std::input_iterator_tag>>;
 
             // ------------------------------------------------
 
@@ -497,15 +503,71 @@ namespace kaixo {
                 ++base;
                 return copy;
             }
+            
+            constexpr iterator& operator--() requires std::bidirectional_iterator<base_iterator> {
+                --base;
+                return *this;
+            }
+
+            constexpr iterator operator--(int) requires std::bidirectional_iterator<base_iterator> {
+                iterator copy = *this;
+                --base;
+                return copy;
+            }
+
+            // ------------------------------------------------
 
             template<class Self>
             constexpr reference operator*(this Self&& me) {
                 return std::forward<Self>(me).self->transform(*std::forward<Self>(me).base);
             }
 
-            constexpr reference operator[](std::size_t i) requires std::ranges::random_access_range<Range> {
+            // ------------------------------------------------
+
+            constexpr static friend iterator operator+(const iterator& s, difference_type i) 
+                requires std::ranges::random_access_range<Range> { return iterator{ s.base + i, s.self }; }
+            
+            constexpr static friend iterator operator+(difference_type i, const iterator& s) 
+                requires std::ranges::random_access_range<Range> { return iterator{ i + s.base, s.self }; }
+            
+            constexpr static friend iterator operator-(const iterator& s, difference_type i) 
+                requires std::ranges::random_access_range<Range> { return iterator{ s.base - i, s.self }; }
+            
+            constexpr static friend iterator operator-(difference_type i, const iterator& s) 
+                requires std::ranges::random_access_range<Range> { return iterator{ i - s.base, s.self }; }
+
+            // ------------------------------------------------
+
+            constexpr iterator& operator+=(difference_type i) requires std::ranges::random_access_range<Range> {
+                base += i;
+                return *this;
+            }
+
+            constexpr iterator& operator-=(difference_type i) requires std::ranges::random_access_range<Range> {
+                base -= i;
+                return *this;
+            }
+
+            // ------------------------------------------------
+
+            constexpr friend difference_type operator-(const iterator& i, const iterator& s) requires std::ranges::random_access_range<Range> {
+                return i.base + s.base;
+            }
+
+            // ------------------------------------------------
+
+            constexpr bool operator<(const iterator& o) const requires std::ranges::random_access_range<Range> { return base < o.base; }
+            constexpr bool operator<=(const iterator& o) const requires std::ranges::random_access_range<Range> { return base <= o.base; }
+            constexpr bool operator>(const iterator& o) const requires std::ranges::random_access_range<Range> { return base > o.base; }
+            constexpr bool operator>=(const iterator& o) const requires std::ranges::random_access_range<Range> { return base >= o.base; }
+
+            // ------------------------------------------------
+
+            constexpr reference operator[](difference_type i) const requires std::ranges::random_access_range<Range> {
                 return self->transform(base[i]);
             }
+
+            // ------------------------------------------------
 
             constexpr bool operator==(const auto& o) const { return base == o; }
 
@@ -584,7 +646,7 @@ namespace kaixo {
 
     // ------------------------------------------------
     
-    // Combine evaluated named ranges, just applies a cartesian product
+    // Handles main case for combining 2 ranges, adds them to a cartesian_product_view.
     template<class ...V1s, evaluated_range Range1, class Expression, class ...V2s, evaluated_range Range2>
     constexpr auto operator,(named_range<var<V1s...>, Range1, Expression>&& r1, named_range<var<V2s...>, Range2>&& r2)
         -> named_range<var<V1s..., V2s...>, std::ranges::cartesian_product_view<std::views::all_t<Range1&&>, std::views::all_t<Range2&&>>, Expression> 
@@ -1076,6 +1138,8 @@ int main() {
     constexpr var<detail::dud> _;
 
     std::vector<int> primes{};
+    auto aeona = (a | a <- primes);
+
     for (auto a : a <- range(2, inf), is_empty((b <- primes, b < a, a % b == 0)), primes << a) {
         (void)a;
     }
