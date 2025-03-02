@@ -75,6 +75,9 @@ namespace kaixo {
         return std::get<I>(detail::flatten_tuple(tuple));
     }
 
+    template<std::size_t I, class Tuple>
+    using recursive_tuple_element_t = std::tuple_element_t<I, decltype(detail::flatten_tuple(std::declval<Tuple>()))>;
+
     // ------------------------------------------------
     //                      Var
     // ------------------------------------------------
@@ -100,14 +103,17 @@ namespace kaixo {
 
         template<class Tuple>
         constexpr static decltype(auto) evaluate(Tuple&& v) {
+            using defines = std::decay_t<Tuple>::defines;
             if constexpr (size == 1) {
                 if constexpr (std::same_as<Vars..., detail::dud>) return detail::dud{};
-                else if constexpr (std::decay_t<Tuple>::defines::template index<Vars...> == npos) return var{};
-                else return (v.template get<Vars>(), ...);
-            } else {
+                else if constexpr (defines::template index<Vars...> == npos) return var{};
+                else return v.template get<Vars...>();
+            } else if constexpr (((defines::template index<Vars> != npos) && ...)) {
                 return std::tuple<decltype(var<Vars>::evaluate(std::forward<Tuple>(v)))...>{
                     var<Vars>::evaluate(std::forward<Tuple>(v))...
                 };
+            } else {
+                return (var<Vars>::evaluate(std::forward<Tuple>(v)), ...);
             }
         }
 
@@ -194,7 +200,9 @@ namespace kaixo {
     constexpr Ty evaluate(Ty&& o, Tuple&&) { return std::forward<Ty>(o); }
 
     template<class Tuple, unevaluated Ty> requires requires (Ty&& o, Tuple&& v) { { o.evaluate(v) }; }
-    constexpr decltype(auto) evaluate(Ty&& o, Tuple&& v) {
+    constexpr auto evaluate(Ty&& o, Tuple&& v) 
+        -> decltype(std::declval<Ty&&>().evaluate(std::declval<Tuple&&>()))
+    {
         return std::forward<Ty>(o).evaluate(v);
     }
 
@@ -225,7 +233,7 @@ namespace kaixo {
         // ------------------------------------------------
 
         template<class Find, class Self>
-        constexpr decltype(auto) get(this Self&& self) {
+        constexpr recursive_tuple_element_t<Vars::template index<Find>, Tuple&&> get(this Self&& self) {
             return recursive_get<Vars::template index<Find>>(std::forward<Self>(self).tuple);
         }
 
@@ -277,13 +285,15 @@ namespace kaixo {
 
         template<class Self, class Tuple>
         constexpr auto evaluate(this Self&& self, Tuple&& v) {
-            return std::apply([&]<class ...Tys>(const Tys& ...tys) {
-                if constexpr ((unevaluated<evaluate_result_t<Tys, Tuple>> || ...)) {
-                    return tuple_operation<evaluate_result_t<Tys, Tuple>...>{
-                        { kaixo::evaluate(tys, v)... }
+            return std::apply([&]<class ...Tys>(Tys&& ...tys) {
+                if constexpr ((unevaluated<evaluate_result_t<Tys&&, Tuple>> || ...)) {
+                    return tuple_operation<evaluate_result_t<Tys&&, Tuple>...>{
+                        { kaixo::evaluate(std::forward<Tys>(tys), v)... }
                     };
                 } else {
-                    return std::tuple<evaluate_result_t<Tys, Tuple>...>{ kaixo::evaluate(tys, v)... };
+                    return std::tuple<evaluate_result_t<Tys&&, Tuple>...>{ 
+                        kaixo::evaluate(std::forward<Tys>(tys), v)...
+                    };
                 }
             }, std::forward<Self>(self).args);
         }
@@ -324,7 +334,7 @@ namespace kaixo {
         // ------------------------------------------------
 
         template<class Self, class Tuple>
-        constexpr decltype(auto) evaluate(this Self&& self, Tuple&& v) {
+        constexpr auto evaluate(this Self&& self, Tuple&& v) {
             return std::forward<Self>(self).operation(
                 kaixo::evaluate(std::forward<Self>(self).a, v),
                 kaixo::evaluate(std::forward<Self>(self).b, v));
@@ -375,7 +385,7 @@ namespace kaixo {
         // ------------------------------------------------
 
         template<class Self, class Tuple>
-        constexpr decltype(auto) evaluate(this Self&& self, Tuple&& v) {
+        constexpr auto evaluate(this Self&& self, Tuple&& v) {
             return std::forward<Self>(self).operation(
                 kaixo::evaluate(std::forward<Self>(self).a, v));
         }
@@ -465,6 +475,13 @@ namespace kaixo {
 
             // ------------------------------------------------
 
+            using reference = decltype(std::declval<named_range_storage<Vars, Range, Expression>&>().transform(std::declval<std::iter_reference_t<base_iterator>>()));
+            using value_type = std::decay_t<reference>;
+            using difference_type = std::iter_difference_t<base_iterator>;
+            using iterator_category = std::conditional_t<std::forward_iterator<base_iterator>, std::forward_iterator_tag, std::input_iterator_tag>;
+
+            // ------------------------------------------------
+
             base_iterator base;
             named_range<Vars, Range, Expression>* self = nullptr;
 
@@ -482,22 +499,15 @@ namespace kaixo {
             }
 
             template<class Self>
-            constexpr decltype(auto) operator*(this Self&& me) {
+            constexpr reference operator*(this Self&& me) {
                 return std::forward<Self>(me).self->transform(*std::forward<Self>(me).base);
             }
 
-            constexpr decltype(auto) operator[](std::size_t i) requires std::ranges::random_access_range<Range> {
+            constexpr reference operator[](std::size_t i) requires std::ranges::random_access_range<Range> {
                 return self->transform(base[i]);
             }
 
             constexpr bool operator==(const auto& o) const { return base == o; }
-
-            // ------------------------------------------------
-
-            using value_type = decltype(std::declval<named_range_storage<Vars, Range, Expression>>().transform(std::declval<std::iter_reference_t<base_iterator>>()));
-            using reference = value_type;
-            using difference_type = std::iter_difference_t<base_iterator>;
-            using iterator_category = std::conditional_t<std::forward_iterator<base_iterator>, std::forward_iterator_tag, std::input_iterator_tag>;
 
             // ------------------------------------------------
 
@@ -526,10 +536,13 @@ namespace kaixo {
         template<class Self, class Tuple, class evaluated_t = decltype(kaixo::evaluate(std::declval<Self&&>().range, std::declval<Tuple&&>()))>
         constexpr auto evaluate(this Self&& self, Tuple&& tuple) {
             auto evaluated = kaixo::evaluate(std::forward<Self>(self).range, tuple);
+            // First case, result is still not fully evaluated
             if constexpr (unevaluated_range<evaluated_t>) return named_range<Vars, evaluated_t, Expression> { {
                 .range = std::move(evaluated),
                 .expression = std::forward<Self>(self).expression,
             } };
+            // Second case, result is fully evaluated, wrap in an 'all_t', which will store 
+            // it as either an owning_view or a ref_view.
             else return named_range<Vars, std::views::all_t<evaluated_t&&>, Expression> { {
                 .range = std::views::all(std::move(evaluated)),
                 .expression = std::forward<Self>(self).expression,
@@ -594,27 +607,20 @@ namespace kaixo {
     template<class Vars, unevaluated_range Range>
         requires has_all_defines_for<Vars, Range>
     struct range_evaluator {
-
-        // ------------------------------------------------
-
         Range range;
 
-        // ------------------------------------------------
-
-        template<class Tuple>
-        constexpr auto operator()(Tuple&& tuple) {
+        template<class Self, class Tuple>
+        constexpr auto operator()(this Self&& self, Tuple&& tuple) {
             return std::views::transform(
-                std::views::all(kaixo::evaluate(range, named_tuple<Vars, Tuple&&>{ std::forward<Tuple>(tuple) })), 
+                std::views::all(kaixo::evaluate(std::forward<Self>(self).range, named_tuple<Vars, Tuple&&>{ std::forward<Tuple>(tuple) })), 
                 [tuple = detail::store_as_tuple(std::forward<Tuple>(tuple))]<class R>(R && r) {
                     return std::make_tuple(tuple, std::forward<R>(r));
                 }
             );
         }
-
-        // ------------------------------------------------
-
     };
 
+    // Handles default case for evaluation of consecutive ranges
     template<class ...V1s, evaluated_range Range1, class Expression, class ...V2s, unevaluated_range Range2>
         requires has_all_defines_for<var<V1s...>, Range2>
     constexpr auto operator,(named_range<var<V1s...>, Range1, Expression>&& r1, named_range<var<V2s...>, Range2>&& r2)
@@ -630,13 +636,12 @@ namespace kaixo {
     
     // ------------------------------------------------
     
-    // Combine unevaluated range with a complete or unevaluated range
     // This caches every named range starting from the first unevaluated
     // one, and it will evaluate once all dependencies are present using
     // the default comma operators.
-    template<class A, class B> // A and B are of type 'named_range', or a valid part
+    template<class A, class B>
         requires (unevaluated<A> || unevaluated<B>)
-    struct unevaluated_named_range_cache {
+    struct unevaluated_cache {
 
         // ------------------------------------------------
         
@@ -654,33 +659,30 @@ namespace kaixo {
 
         // ------------------------------------------------
 
-        template<class Tuple>
-        constexpr auto evaluate(Tuple&& tuple) {
-            return (kaixo::evaluate(std::move(a), tuple), // << Comma operator overload
-                    kaixo::evaluate(std::move(b), tuple));
+        constexpr static auto&& copy_if_reference(auto&& value) { return std::move(value); }
+        constexpr static auto copy_if_reference(auto& value) { return value; }
+
+        template<class Self, class Tuple>
+        constexpr auto evaluate(this Self&& self, Tuple&& tuple) {
+            return operator,(
+                copy_if_reference(kaixo::evaluate(std::forward<Self>(self).a, tuple)),
+                copy_if_reference(kaixo::evaluate(std::forward<Self>(self).b, tuple)));
         }
 
         // ------------------------------------------------
 
     };
 
+    // Handles 2 cases for later evaluation:
+    //  - Continue building upon an unevaluated range, need to cache all ranges
+    //  - Encounters unevaluated range which can not be evaluated using V1s...
     template<class ...V1s, unevaluated_range Range1, class Expression, class ...V2s, any_range Range2>
+        requires (unevaluated_range<Range1> && any_range<Range2>
+               || evaluated_range<Range1> && unevaluated_range<Range2> && !has_all_defines_for<var<V1s...>, Range2>)
     constexpr auto operator,(named_range<var<V1s...>, Range1, Expression>&& r1, named_range<var<V2s...>, Range2>&& r2)
-        -> named_range<var<V1s..., V2s...>, unevaluated_named_range_cache<named_range<var<V1s...>, Range1>, named_range<var<V2s...>, Range2>>, Expression>
+        -> named_range<var<V1s..., V2s...>, unevaluated_cache<named_range<var<V1s...>, Range1>, named_range<var<V2s...>, Range2>>, Expression>
     {
-        using product_t = unevaluated_named_range_cache<named_range<var<V1s...>, Range1>, named_range<var<V2s...>, Range2>>;
-        return { {
-            .range = product_t{ { std::move(r1.range) }, std::move(r2) },
-            .expression = std::move(r1.expression),
-        } };
-    }
-    
-    template<class ...V1s, evaluated_range Range1, class Expression, class ...V2s, unevaluated_range Range2>
-        requires (!has_all_defines_for<var<V1s...>, Range2>)
-    constexpr auto operator,(named_range<var<V1s...>, Range1, Expression>&& r1, named_range<var<V2s...>, Range2>&& r2)
-        -> named_range<var<V1s..., V2s...>, unevaluated_named_range_cache<named_range<var<V1s...>, Range1>, named_range<var<V2s...>, Range2>>, Expression>
-    {
-        using product_t = unevaluated_named_range_cache<named_range<var<V1s...>, Range1>, named_range<var<V2s...>, Range2>>;
+        using product_t = unevaluated_cache<named_range<var<V1s...>, Range1>, named_range<var<V2s...>, Range2>>;
         return { {
             .range = product_t{ { std::move(r1.range) }, std::move(r2) },
             .expression = std::move(r1.expression),
@@ -692,38 +694,36 @@ namespace kaixo {
     // Add range filter
     template<class Vars, class Condition>
     struct range_filter {
-
-        // ------------------------------------------------
-
         Condition condition;
 
-        // ------------------------------------------------
-
-        template<class Tuple>
-        constexpr bool operator()(Tuple&& tuple) const {
-            return kaixo::evaluate(condition, named_tuple<Vars, Tuple&&>{ std::forward<Tuple>(tuple) });
+        template<class Self, class Tuple>
+        constexpr bool operator()(this Self&& self, Tuple&& tuple) {
+            return kaixo::evaluate(std::forward<Self>(self).condition, named_tuple<Vars, Tuple&&>{ std::forward<Tuple>(tuple) });
         }
-
-        // ------------------------------------------------
-
     };
 
+    // Handles default case for a range filter
     template<class Vars, evaluated_range Range, class Expression, valid_expression_arguments Condition>
-    constexpr auto operator,(named_range<Vars, Range, Expression>&& r1, Condition&& c)
+        requires has_all_defines_for<Vars, Condition>
+    constexpr auto operator,(named_range<Vars, Range, Expression>&& r, Condition&& c)
         -> named_range<Vars, std::ranges::filter_view<Range, range_filter<Vars, Condition>>, Expression> 
     {
         using filtered_t = std::ranges::filter_view<Range, range_filter<Vars, Condition>>;
         return { {
-            .range = filtered_t{ std::move(r1.range), { std::forward<Condition>(c) } },
-            .expression = std::move(r1.expression),
+            .range = filtered_t{ std::move(r.range), { std::forward<Condition>(c) } },
+            .expression = std::move(r.expression),
         } };
     }
     
-    template<class Vars, unevaluated_range Range, class Expression, valid_expression_arguments Condition>
+    // Handles 2 cases for later evaluation:
+    //  - Continues building upon an unevaluated range, need to cache all parts
+    //  - Encounters Condition which can not be evaluated using Vars
+    template<class Vars, class Range, class Expression, valid_expression_arguments Condition>
+        requires (unevaluated_range<Range> || evaluated_range<Range> && !has_all_defines_for<Vars, Condition>)
     constexpr auto operator,(named_range<Vars, Range, Expression>&& r, Condition&& c)
-        -> named_range<Vars, unevaluated_named_range_cache<named_range<Vars, Range>, Condition>, Expression>
+        -> named_range<Vars, unevaluated_cache<named_range<Vars, Range>, Condition>, Expression>
     {
-        using product_t = unevaluated_named_range_cache<named_range<Vars, Range>, Condition>;
+        using product_t = unevaluated_cache<named_range<Vars, Range>, Condition>;
         return { {
             .range = product_t{ { std::move(r.range) }, std::forward<Condition>(c) },
             .expression = std::move(r.expression),
@@ -785,38 +785,28 @@ namespace kaixo {
     // ------------------------------------------------
     //                    Break
     // ------------------------------------------------
+    //  Adds a condition, that when met, it will stop
+    //  generating output. It does this by using the
+    //  take_while_view.
+    // ------------------------------------------------
     
     template<class Vars, unevaluated Break>
     struct break_point {
-
-        // ------------------------------------------------
-
         Break expression{};
-
-        // ------------------------------------------------
 
         template<class Self, class Tuple>
         constexpr bool operator()(this Self&& self, Tuple&& tuple) {
             return !static_cast<bool>(kaixo::evaluate(std::forward<Self>(self).expression, named_tuple<Vars, Tuple&&>{ std::forward<Tuple>(tuple) }));
         }
-
-        // ------------------------------------------------
-
     };
 
     // ------------------------------------------------
 
     constexpr struct break_t {
-
-        // ------------------------------------------------
-
         template<unevaluated Break>
         constexpr break_point<var<>, Break> operator=(Break&& e) const {
             return { std::forward<Break>(e) };
         }
-
-        // ------------------------------------------------
-
     } brk;
 
     // ------------------------------------------------
@@ -834,15 +824,53 @@ namespace kaixo {
     
     template<class Vars, unevaluated_range Range, class Expression, unevaluated Break>
     constexpr auto operator,(named_range<Vars, Range, Expression>&& r, break_point<var<>, Break>&& b) 
-        -> named_range<Vars, unevaluated_named_range_cache<named_range<Vars, Range>, break_point<Vars, Break>>, Expression>
+        -> named_range<Vars, unevaluated_cache<named_range<Vars, Range>, break_point<Vars, Break>>, Expression>
     {
-        using product_t = unevaluated_named_range_cache<named_range<Vars, Range>, break_point<Vars, Break>>;
+        using product_t = unevaluated_cache<named_range<Vars, Range>, break_point<Vars, Break>>;
         return { {
             .range = product_t{ { std::move(r.range) }, break_point<Vars, Break>{ std::move(b.expression) } },
             .expression = std::move(r.expression),
         } };
     }
     
+    // ------------------------------------------------
+    //                 Range Inserter
+    // ------------------------------------------------
+    //  Insert into a range dynamically while iterating
+    // ------------------------------------------------
+    
+    template<class Vars, evaluated_range Range, unevaluated Expression>
+        requires (!std::is_const_v<Range>)
+    struct range_inserter {
+        Range& range;
+        Expression expression;
+
+        template<class Self, class Tuple>
+        constexpr Tuple&& operator()(this Self&& self, Tuple&& tuple) {
+            std::inserter(std::forward<Self>(self).range, std::ranges::end(std::forward<Self>(self).range)) 
+                = kaixo::evaluate(std::forward<Self>(self).expression, named_tuple<Vars, Tuple&&>{ std::forward<Tuple>(tuple) });
+            return std::forward<Tuple>(tuple);
+        }
+    };
+
+    template<evaluated_range Range, unevaluated Expression>
+        requires (!std::is_const_v<Range>)
+    constexpr range_inserter<var<>, Range, Expression> operator<<(Range& range, Expression&& expression) {
+        return { range, std::forward<Expression>(expression) };
+    }
+
+    template<class Vars, evaluated_range Range1, class Expression1, evaluated_range Range2, unevaluated Expression2>
+    constexpr auto operator,(named_range<Vars, Range1, Expression1>&& r, range_inserter<var<>, Range2, Expression2>&& i) 
+        -> named_range<Vars, std::ranges::transform_view<Range1, range_inserter<Vars, Range2, Expression2>>, Expression1>
+    {
+        using inserter_t = range_inserter<Vars, Range2, Expression2>;
+        using transform_t = std::ranges::transform_view<Range1, inserter_t>;
+        return { {
+            .range = transform_t{ std::move(r.range), inserter_t{ i.range, std::move(i.expression) } },
+            .expression = std::move(r.expression),
+        } };
+    }
+
     // ------------------------------------------------
     //                     Range
     // ------------------------------------------------
@@ -910,7 +938,9 @@ namespace kaixo {
             // ------------------------------------------------
 
             using value_type = Begin;
+            using reference = value_type;
             using difference_type = std::ptrdiff_t;
+            using iterator_category = std::forward_iterator_tag;
 
             // ------------------------------------------------
 
@@ -983,8 +1013,45 @@ namespace kaixo {
 
     constexpr struct inf_t {} inf;
 
-    constexpr bool operator==(const auto&, inf_t) { return false; }
-    constexpr bool operator==(inf_t, const auto&) { return false; }
+    constexpr static bool operator==(const auto&, inf_t) { return false; }
+    constexpr static bool operator==(inf_t, const auto&) { return false; }
+
+    // ------------------------------------------------
+    //                    Empty
+    // ------------------------------------------------
+
+    template<unevaluated_range Range>
+    struct empty_operation {
+
+        // ------------------------------------------------
+
+        using defines = var<>;
+        using depends = depends_t<Range>;
+
+        // ------------------------------------------------
+
+        Range range;
+
+        // ------------------------------------------------
+
+        template<class Self, class Tuple>
+        constexpr bool evaluate(this Self&& self, Tuple&& tuple) {
+            auto evaluated = kaixo::evaluate(std::forward<Self>(self).range, tuple);
+            return std::ranges::empty(evaluated);
+        }
+
+        // ------------------------------------------------
+
+    };
+
+    // ------------------------------------------------
+
+    template<unevaluated_range Range>
+    constexpr auto is_empty(Range&& range) {
+        return empty_operation<Range>{
+            .range = std::forward<Range>(range) 
+        };
+    }
 
     // ------------------------------------------------
 
@@ -1008,12 +1075,18 @@ int main() {
     constexpr var<E> e;
     constexpr var<detail::dud> _;
 
-    auto oaine = ((a, b) | a <- range(0, 10), b <- (c | c <- range(0, 1)));
-
-    std::println("==== 1");
-    for (auto [a, b, c] : (a, b, c) | a <- range(0, 10), (b, c) <- ((c, d) | d <- range(0, 10), c <- range(a, d))) {
-        std::println("({}, {}, {})", a, b, c);
+    std::vector<int> primes{};
+    for (auto a : a <- range(2, inf), is_empty((b <- primes, b < a, a % b == 0)), primes << a) {
+        (void)a;
     }
+
+    named_tuple<var<C>, std::tuple<int>> values56{ { 4 } };
+    auto oesin = ((a, b, c) | a <- range(0, 10), b <- range(0, 10));
+
+    //std::println("==== 1");
+    //for (auto [a, b, c] : (a, b, c) | a <- range(0, 10), (b, c) <- ((c, d) | d <- range(0, 10), c <- range(a, d))) {
+    //    std::println("({}, {}, {})", a, b, c);
+    //}
     
     std::println("==== 2");
     for (auto [a, b, c] : (a, b, c) | a <- range(0, 10), (b, c) <- ((c, d) | d <- range(a, a + 10), c <- range(a, d))) {
