@@ -246,7 +246,7 @@ namespace kaixo {
     concept unevaluated_range = unevaluated<Ty> && requires() { typename std::decay_t<Ty>::is_range; };
 
     template<class Ty>
-    concept evaluated_range = std::ranges::range<Ty>;
+    concept evaluated_range = !unevaluated<Ty> && std::ranges::range<Ty>;
     
     template<class Ty>
     concept any_range = unevaluated_range<Ty> || evaluated_range<Ty>;
@@ -462,8 +462,13 @@ namespace kaixo {
         // ------------------------------------------------
         
         struct iterator {
+
+            // ------------------------------------------------
+
             base_iterator base;
             named_range<Vars, Range, Expression>* self = nullptr;
+
+            // ------------------------------------------------
 
             constexpr iterator& operator++() {
                 ++base;
@@ -487,10 +492,14 @@ namespace kaixo {
 
             constexpr bool operator==(const auto& o) const { return base == o; }
 
+            // ------------------------------------------------
+
             using value_type = decltype(std::declval<named_range_storage<Vars, Range, Expression>>().transform(std::declval<std::iter_reference_t<base_iterator>>()));
             using reference = value_type;
-            using difference_type = std::ptrdiff_t;
-            using iterator_category = std::forward_iterator_tag;
+            using difference_type = std::iter_difference_t<base_iterator>;
+            using iterator_category = std::conditional_t<std::forward_iterator<base_iterator>, std::forward_iterator_tag, std::input_iterator_tag>;
+
+            // ------------------------------------------------
 
         };
         
@@ -521,13 +530,10 @@ namespace kaixo {
                 .range = std::move(evaluated),
                 .expression = std::forward<Self>(self).expression,
             } };
-            else if constexpr (evaluated_range<evaluated_t>) return named_range<Vars, std::views::all_t<evaluated_t&&>, Expression> { {
+            else return named_range<Vars, std::views::all_t<evaluated_t&&>, Expression> { {
                 .range = std::views::all(std::move(evaluated)),
                 .expression = std::forward<Self>(self).expression,
             } };
-            else {
-                static_assert(std::conditional_t<true, std::false_type, std::type_identity<Tuple>>::value, "Invalid");
-            }
         }
 
         // ------------------------------------------------
@@ -628,8 +634,8 @@ namespace kaixo {
     // This caches every named range starting from the first unevaluated
     // one, and it will evaluate once all dependencies are present using
     // the default comma operators.
-    template<class A, class B> // A and B are of type 'named_range'
-        requires (unevaluated_range<A> || unevaluated_range<B>)
+    template<class A, class B> // A and B are of type 'named_range', or a valid part
+        requires (unevaluated<A> || unevaluated<B>)
     struct unevaluated_named_range_cache {
 
         // ------------------------------------------------
@@ -712,7 +718,18 @@ namespace kaixo {
             .expression = std::move(r1.expression),
         } };
     }
-
+    
+    template<class Vars, unevaluated_range Range, class Expression, valid_expression_arguments Condition>
+    constexpr auto operator,(named_range<Vars, Range, Expression>&& r, Condition&& c)
+        -> named_range<Vars, unevaluated_named_range_cache<named_range<Vars, Range>, Condition>, Expression>
+    {
+        using product_t = unevaluated_named_range_cache<named_range<Vars, Range>, Condition>;
+        return { {
+            .range = product_t{ { std::move(r.range) }, std::forward<Condition>(c) },
+            .expression = std::move(r.expression),
+        } };
+    }
+    
     // ------------------------------------------------
     //                  Zipped Range
     // ------------------------------------------------
@@ -811,6 +828,17 @@ namespace kaixo {
         using break_t = std::ranges::take_while_view<Range, break_point<Vars, Break>>;
         return { {
             .range = break_t{ std::move(r.range), break_point<Vars, Break>{ std::move(b.expression) } },
+            .expression = std::move(r.expression),
+        } };
+    }
+    
+    template<class Vars, unevaluated_range Range, class Expression, unevaluated Break>
+    constexpr auto operator,(named_range<Vars, Range, Expression>&& r, break_point<var<>, Break>&& b) 
+        -> named_range<Vars, unevaluated_named_range_cache<named_range<Vars, Range>, break_point<Vars, Break>>, Expression>
+    {
+        using product_t = unevaluated_named_range_cache<named_range<Vars, Range>, break_point<Vars, Break>>;
+        return { {
+            .range = product_t{ { std::move(r.range) }, break_point<Vars, Break>{ std::move(b.expression) } },
             .expression = std::move(r.expression),
         } };
     }
@@ -970,21 +998,6 @@ struct C {};
 struct D {};
 struct E {};
 
-namespace std {
-    template <class _It>
-    concept aefsriogmsormng =
-        requires(const _It __i) {
-        typename iter_value_t<_It>;
-        typename iter_reference_t<_It>;
-        typename iter_rvalue_reference_t<_It>;
-        { *__i } -> same_as<iter_reference_t<_It>>;
-        { _RANGES iter_move(__i) } -> same_as<iter_rvalue_reference_t<_It>>;
-    }&& common_reference_with<iter_reference_t<_It>&&, iter_value_t<_It>&>
-        && common_reference_with<iter_reference_t<_It>&&, iter_rvalue_reference_t<_It>&&>
-        && common_reference_with<iter_rvalue_reference_t<_It>&&, const iter_value_t<_It>&>;
-
-}
-
 int main() {
     using namespace kaixo;
 
@@ -995,58 +1008,7 @@ int main() {
     constexpr var<E> e;
     constexpr var<detail::dud> _;
 
-    //named_tuple<var<D, E>, std::tuple<int, float>> values3{ { 4, 5 } };
-    //
-    //auto aoneif = (a + 1, b) | a <- range(0, 0);
-    //using iourbngrt = decltype(aoneif);
-    //
-    //using gronsgisr = std::iter_value_t<iourbngrt::iterator>;
-    //
-    //constexpr bool efaegsr = std::aefsriogmsormng<std::ranges::iterator_t<iourbngrt>>;
-    //
-    //auto oasien = std::views::transform(aoneif, [](auto) { return 1; });
-    //
-    //using oinoidtnh = decltype(oasien);
-    //constexpr bool hgythjfsrs = std::aefsriogmsormng<std::ranges::iterator_t<oinoidtnh>>;
-    //
-    //auto oring = e <- (a + b | a <- range(0, 0), b <- range(0, a));
-    //
-    //using oiargsne = decltype(oring);
-    //
-    //constexpr bool oreinsrg = std::forward_iterator<oiargsne::iterator>;
-    //
-    //auto aoine = (d <- range(0, 0), e <- (a + b | a <- range(0, 0), b <- range(0, a)));
-
-    named_tuple<var<A>, std::tuple<int>> values4{ { 4 } };
-    auto oaein = a <- range(0, 10);
-    auto eafaer = ((b, c) <- ((c, d) | d <- range(0, 10), c <- range(a, d)));
-
-    using Range1 = decltype(oaein);
-    using Range2 = decltype(eafaer);
-
-    range_evaluator<var<A>, Range2> aeioenae{ std::move(eafaer) };
-
-    
-    std::views::transform(
-        std::views::all(kaixo::evaluate(std::move(eafaer), named_tuple<var<A>, std::tuple<int>&&>{ std::tuple<int>{ 1 } })),
-        [tuple = detail::store_as_tuple(std::forward<std::tuple<int>>({ 1 }))]<class R>(R && r) {
-            return std::make_tuple(tuple, std::forward<R>(r));
-        }
-    );
-
-    //auto oianef = aeioenae(std::tuple{ 1 });
-
-    //using Fn = decltype([]<class Tuple>(Tuple&& val) -> int& { return *(int*)nullptr; });
-    //using evaluated_t = std::ranges::transform_view<std::views::all_t<Range1>, range_evaluator<var<A>, Range2>>;
-    //using joined_t = std::ranges::join_view<evaluated_t>;
-    //return { {
-    //    .range = joined_t{ evaluated_t{ std::views::all(std::move(r1.range)), { std::move(r2.range) } } },
-    //    .expression = std::move(r1.expression),
-    //} };
-
-    //using oiaunbefon = decltype(eafaer);
-    //using gronsgisr = std::iter_value_t<oiaunbefon::iterator>;
-    //constexpr bool efaegsr = std::forward_iterator<std::ranges::iterator_t<Range1>>;
+    auto oaine = ((a, b) | a <- range(0, 10), b <- (c | c <- range(0, 1)));
 
     std::println("==== 1");
     for (auto [a, b, c] : (a, b, c) | a <- range(0, 10), (b, c) <- ((c, d) | d <- range(0, 10), c <- range(a, d))) {
