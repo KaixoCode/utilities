@@ -482,9 +482,12 @@ namespace kaixo {
                 std::random_access_iterator<base_iterator>, 
                 std::random_access_iterator_tag, 
                 std::conditional_t<
-                    std::forward_iterator<base_iterator>, 
-                    std::forward_iterator_tag, 
-                    std::input_iterator_tag>>;
+                    std::bidirectional_iterator<base_iterator>, 
+                    std::bidirectional_iterator_tag, 
+                    std::conditional_t<
+                        std::forward_iterator<base_iterator>,
+                        std::forward_iterator_tag,
+                        std::input_iterator_tag>>>;
 
             // ------------------------------------------------
 
@@ -551,7 +554,7 @@ namespace kaixo {
             // ------------------------------------------------
 
             constexpr friend difference_type operator-(const iterator& i, const iterator& s) requires std::ranges::random_access_range<Range> {
-                return i.base + s.base;
+                return i.base - s.base;
             }
 
             // ------------------------------------------------
@@ -1141,7 +1144,7 @@ int main() {
     auto aeona = (a | a <- primes);
 
     for (auto a : a <- range(2, inf), is_empty((b <- primes, b < a, a % b == 0)), primes << a) {
-        (void)a;
+        std::println("{}", a);
     }
 
     named_tuple<var<C>, std::tuple<int>> values56{ { 4 } };
