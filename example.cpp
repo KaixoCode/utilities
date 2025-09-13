@@ -28,202 +28,156 @@
 #include <print>
 #include <coroutine>
 #include <typeindex>
+#include <filesystem>
+#include <fstream>
 
-// ------------------------------------------------
 
-template<class, class, bool, bool, bool, int>
-struct fni;
+constexpr std::string_view path = R"~(C:\Users\Jeroen\AppData\Roaming\.minecraft\resourcepacks\Kaixopolis\assets\minecraft\items)~";
 
-template<class Ret, class Class, class ...Args, bool Const, bool Volatile, bool Noexcept, int R>
-struct fni<Ret(Args...), Class, Const, Volatile, Noexcept, R> {
+inline std::string file_to_string(std::filesystem::path path) {
+    std::ifstream file{ path };
+    std::stringstream _stream{};
+    _stream << file.rdbuf();
+    return _stream.str();
+}
 
-    using signature = Ret(Args...);
-
-    template<std::size_t I>
-    using argument_type = std::tuple_element_t<I, std::tuple<Args...>>;
-    using return_type = Ret;
-    using class_type = Class;
-
-    template<template<class...> class T>
-    using evaluate_with_arguments = T<Args...>;
-
-    constexpr static std::size_t arguments = sizeof...(Args);
-
-    constexpr static bool is_member_function = !std::same_as<Class, void>;
-    constexpr static bool is_noexcept = Noexcept;
-    constexpr static bool is_const = Const;
-    constexpr static bool is_volatile = Volatile;
-    constexpr static bool is_lvalue_reference = R == 1;
-    constexpr static bool is_rvalue_reference = R == 2;
-
-    constexpr fni() = default;
-    constexpr fni(auto) {};
-};
-
-template<class> struct fnid;
-
-template<class R, class C, class ...Ts> struct fnid<R(C::*)(Ts...)                           > : fni<R(Ts...),    C, 0, 0, 0, 0> {};
-template<class R, class C, class ...Ts> struct fnid<R(C::*)(Ts...) const                     > : fni<R(Ts...),    C, 1, 0, 0, 0> {};
-template<class R, class C, class ...Ts> struct fnid<R(C::*)(Ts...)       volatile            > : fni<R(Ts...),    C, 0, 1, 0, 0> {};
-template<class R, class C, class ...Ts> struct fnid<R(C::*)(Ts...) const volatile            > : fni<R(Ts...),    C, 1, 1, 0, 0> {};
-template<class R, class C, class ...Ts> struct fnid<R(C::*)(Ts...)                &          > : fni<R(Ts...),    C, 0, 0, 0, 1> {};
-template<class R, class C, class ...Ts> struct fnid<R(C::*)(Ts...) const          &          > : fni<R(Ts...),    C, 1, 0, 0, 1> {};
-template<class R, class C, class ...Ts> struct fnid<R(C::*)(Ts...)       volatile &          > : fni<R(Ts...),    C, 0, 1, 0, 1> {};
-template<class R, class C, class ...Ts> struct fnid<R(C::*)(Ts...) const volatile &          > : fni<R(Ts...),    C, 1, 1, 0, 1> {};
-template<class R, class C, class ...Ts> struct fnid<R(C::*)(Ts...)                &&         > : fni<R(Ts...),    C, 0, 0, 0, 2> {};
-template<class R, class C, class ...Ts> struct fnid<R(C::*)(Ts...) const          &&         > : fni<R(Ts...),    C, 1, 0, 0, 2> {};
-template<class R, class C, class ...Ts> struct fnid<R(C::*)(Ts...)       volatile &&         > : fni<R(Ts...),    C, 0, 1, 0, 2> {};
-template<class R, class C, class ...Ts> struct fnid<R(C::*)(Ts...) const volatile &&         > : fni<R(Ts...),    C, 1, 1, 0, 2> {};
-template<class R, class C, class ...Ts> struct fnid<R(C::*)(Ts...)                   noexcept> : fni<R(Ts...),    C, 0, 0, 1, 0> {};
-template<class R, class C, class ...Ts> struct fnid<R(C::*)(Ts...) const             noexcept> : fni<R(Ts...),    C, 1, 0, 1, 0> {};
-template<class R, class C, class ...Ts> struct fnid<R(C::*)(Ts...)       volatile    noexcept> : fni<R(Ts...),    C, 0, 1, 1, 0> {};
-template<class R, class C, class ...Ts> struct fnid<R(C::*)(Ts...) const volatile    noexcept> : fni<R(Ts...),    C, 1, 1, 1, 0> {};
-template<class R, class C, class ...Ts> struct fnid<R(C::*)(Ts...)                &  noexcept> : fni<R(Ts...),    C, 0, 0, 1, 1> {};
-template<class R, class C, class ...Ts> struct fnid<R(C::*)(Ts...) const          &  noexcept> : fni<R(Ts...),    C, 1, 0, 1, 1> {};
-template<class R, class C, class ...Ts> struct fnid<R(C::*)(Ts...)       volatile &  noexcept> : fni<R(Ts...),    C, 0, 1, 1, 1> {};
-template<class R, class C, class ...Ts> struct fnid<R(C::*)(Ts...) const volatile &  noexcept> : fni<R(Ts...),    C, 1, 1, 1, 1> {};
-template<class R, class C, class ...Ts> struct fnid<R(C::*)(Ts...)                && noexcept> : fni<R(Ts...),    C, 0, 0, 1, 2> {};
-template<class R, class C, class ...Ts> struct fnid<R(C::*)(Ts...) const          && noexcept> : fni<R(Ts...),    C, 1, 0, 1, 2> {};
-template<class R, class C, class ...Ts> struct fnid<R(C::*)(Ts...)       volatile && noexcept> : fni<R(Ts...),    C, 0, 1, 1, 2> {};
-template<class R, class C, class ...Ts> struct fnid<R(C::*)(Ts...) const volatile && noexcept> : fni<R(Ts...),    C, 1, 1, 1, 2> {};
-template<class R,          class ...Ts> struct fnid<R      (Ts...)                           > : fni<R(Ts...), void, 0, 0, 0, 0> {};
-template<class R,          class ...Ts> struct fnid<R      (Ts...) const                     > : fni<R(Ts...), void, 1, 0, 0, 0> {};
-template<class R,          class ...Ts> struct fnid<R      (Ts...)       volatile            > : fni<R(Ts...), void, 0, 1, 0, 0> {};
-template<class R,          class ...Ts> struct fnid<R      (Ts...) const volatile            > : fni<R(Ts...), void, 1, 1, 0, 0> {};
-template<class R,          class ...Ts> struct fnid<R      (Ts...)                &          > : fni<R(Ts...), void, 0, 0, 0, 1> {};
-template<class R,          class ...Ts> struct fnid<R      (Ts...) const          &          > : fni<R(Ts...), void, 1, 0, 0, 1> {};
-template<class R,          class ...Ts> struct fnid<R      (Ts...)       volatile &          > : fni<R(Ts...), void, 0, 1, 0, 1> {};
-template<class R,          class ...Ts> struct fnid<R      (Ts...) const volatile &          > : fni<R(Ts...), void, 1, 1, 0, 1> {};
-template<class R,          class ...Ts> struct fnid<R      (Ts...)                &&         > : fni<R(Ts...), void, 0, 0, 0, 2> {};
-template<class R,          class ...Ts> struct fnid<R      (Ts...) const          &&         > : fni<R(Ts...), void, 1, 0, 0, 2> {};
-template<class R,          class ...Ts> struct fnid<R      (Ts...)       volatile &&         > : fni<R(Ts...), void, 0, 1, 0, 2> {};
-template<class R,          class ...Ts> struct fnid<R      (Ts...) const volatile &&         > : fni<R(Ts...), void, 1, 1, 0, 2> {};
-template<class R,          class ...Ts> struct fnid<R      (Ts...)                   noexcept> : fni<R(Ts...), void, 0, 0, 1, 0> {};
-template<class R,          class ...Ts> struct fnid<R      (Ts...) const             noexcept> : fni<R(Ts...), void, 1, 0, 1, 0> {};
-template<class R,          class ...Ts> struct fnid<R      (Ts...)       volatile    noexcept> : fni<R(Ts...), void, 0, 1, 1, 0> {};
-template<class R,          class ...Ts> struct fnid<R      (Ts...) const volatile    noexcept> : fni<R(Ts...), void, 1, 1, 1, 0> {};
-template<class R,          class ...Ts> struct fnid<R      (Ts...)                &  noexcept> : fni<R(Ts...), void, 0, 0, 1, 1> {};
-template<class R,          class ...Ts> struct fnid<R      (Ts...) const          &  noexcept> : fni<R(Ts...), void, 1, 0, 1, 1> {};
-template<class R,          class ...Ts> struct fnid<R      (Ts...)       volatile &  noexcept> : fni<R(Ts...), void, 0, 1, 1, 1> {};
-template<class R,          class ...Ts> struct fnid<R      (Ts...) const volatile &  noexcept> : fni<R(Ts...), void, 1, 1, 1, 1> {};
-template<class R,          class ...Ts> struct fnid<R      (Ts...)                && noexcept> : fni<R(Ts...), void, 0, 0, 1, 2> {};
-template<class R,          class ...Ts> struct fnid<R      (Ts...) const          && noexcept> : fni<R(Ts...), void, 1, 0, 1, 2> {};
-template<class R,          class ...Ts> struct fnid<R      (Ts...)       volatile && noexcept> : fni<R(Ts...), void, 0, 1, 1, 2> {};
-template<class R,          class ...Ts> struct fnid<R      (Ts...) const volatile && noexcept> : fni<R(Ts...), void, 1, 1, 1, 2> {};
-template<class R,          class ...Ts> struct fnid<R   (*)(Ts...)                           > : fni<R(Ts...), void, 0, 0, 0, 0> {};
-template<class R,          class ...Ts> struct fnid<R   (*)(Ts...)                   noexcept> : fni<R(Ts...), void, 0, 0, 1, 0> {};
-
-template<class Ty>
-struct function_info;
-
-template<class Ty>
-    requires requires { typename fnid<std::decay_t<Ty>>; }
-struct function_info<Ty> : fnid<std::decay_t<Ty>> {};
-
-template<class Ty>
-    requires requires { { &std::decay_t<Ty>::operator() }; }
-struct function_info<Ty> : function_info<decltype(&std::decay_t<Ty>::operator())> {};
-
-// ------------------------------------------------
-
-struct ScriptingLanguage {
-
-    struct Function {
-        struct Overload {
-            std::vector<std::type_index> argument_types;
-            std::function<std::any(std::span<std::any>)> function;
-
-            std::size_t arity() const { return argument_types.size(); }
-
-            bool can_call(std::span<std::any> args) const {
-                if (args.size() != arity()) return false;
-                for (std::size_t i = 0; i < arity(); ++i) {
-                    if (args[i].type() != argument_types[i]) return false;
-                }
-
-                return true;
-            }
-
-            std::any operator()(std::span<std::any> args) { return function(args); }
-        };
-
-        std::vector<Overload> overloads;
-
-        std::any operator()(std::span<std::any> args) {
-            for (auto& overload : overloads) {
-                if (overload.can_call(args)) {
-                    return overload(args);
-                }
-            }
-
-            return {};
-        }
-    };
-    
-    std::vector<std::pair<std::string, Function>> functions;
-
-    Function& get(std::string_view name) {
-        for (auto& fun : functions) {
-            if (fun.first == name) {
-                return fun.second;
-            }
-        }
-
-        return functions.emplace_back(name, Function{}).second;
+constexpr void replace_str(std::string& str, std::string_view from, std::string_view to) {
+    if (from.empty()) return;
+    size_t start_pos = 0;
+    while ((start_pos = str.find(from, start_pos)) != std::string::npos) {
+        str.replace(start_pos, from.length(), to);
+        start_pos += to.length(); // In case 'to' contains 'from', like replacing 'x' with 'yx'
     }
+}
 
-    Function& operator[](std::string_view name) {
-        return get(name);
+constexpr std::string_view item_model = R"~({
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "uno:item/$1"
+  }
+}
+)~";
+
+constexpr std::string_view item_model = R"~({
+  "type": "minecraft:chest",
+  "pools": [
+    {
+      "bonus_rolls": 0.0,
+      "rolls": 1.0,
+      "entries": [
+        {
+          "type": "minecraft:item",
+          "name": "minecraft:jigsaw",
+          "weight": 1,
+          "functions": [
+            {
+              "function": "minecraft:set_components",
+              "components": {
+                "custom_model_name": "$1",
+                "item_name": "$2"
+              }
+            }
+          ]
+        },
+      ]
     }
+  ]
+}
+)~";
 
-    void add(auto fun, std::string_view name) {
-        using info = function_info<decltype(fun)>;
-        auto& function = get(name);
-
-        auto& overload = function.overloads.emplace_back();
-        overload.argument_types.reserve(info::arguments);
-        [&] <std::size_t ...Is>(std::index_sequence<Is...>) {
-            (overload.argument_types.push_back(typeid(typename info::template argument_type<Is>)), ...);
-        }(std::make_index_sequence<info::arguments>{});
-
-        overload.function = [fun = std::move(fun)](std::span<std::any> arguments) -> std::any {
-            return [&] <std::size_t ...Is>(std::index_sequence<Is...>) {
-                if constexpr (std::same_as<typename info::return_type, void>) {
-                    fun(std::any_cast<typename info::template argument_type<Is>>(arguments[Is])...);
-                    return {};
-                } else return fun(std::any_cast<typename info::template argument_type<Is>>(arguments[Is])...);
-            }(std::make_index_sequence<info::arguments>{});
-        };
-    }
-
-};
-
-// ------------------------------------------------
-
-struct MyClass {
-
-    int fun1(int) { return 0; }
-    int fun2(int) const { return 0; }
-    int fun3(int) volatile { return 0; }
-    int fun4(int) const volatile { return 0; }
-
-    void operator()(int a, int b) const {}
-
-};
-
-// ------------------------------------------------
-
-template<class A, class B>
-constexpr auto add(A a, B b) { return a + b; }
-
-// ------------------------------------------------
+constexpr std::string_view item_case = R"~({ "when": "$1", "model": { "type": "model", "model": "uno:item/$1" } },
+)~";
 
 int main() {
+    std::vector<std::string> colors{ "r", "g", "b", "y" };
+    std::vector<std::string> cards{ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "y", "d", "r", "s" };
+    std::vector<std::string> extra{ "qu", "qw" };
 
+    std::filesystem::path outpath = "./items";
 
+    std::string cases = "";
 
+    for (auto& color : colors) {
+        for (auto& card : cards) {
+            std::string filename = "uno_" + color + card;
+
+            std::string content{ item_model };
+            replace_str(content, "$1", filename);
+
+            std::string itemcase{ item_case };
+            replace_str(itemcase, "$1", filename);
+            cases += itemcase;
+
+            std::ofstream out{ outpath / (filename + ".json") };
+            out << content;
+        }
+    }
+
+    for (auto& name : extra) {
+        std::string filename = "uno_" + name;
+
+        std::string content{ item_model };
+        replace_str(content, "$1", filename);
+
+        std::string itemcase{ item_case };
+        replace_str(itemcase, "$1", filename);
+        cases += itemcase;
+
+        std::ofstream out{ outpath / (filename + ".json") };
+        out << content;
+    }
+
+    std::ofstream out{ outpath / "cases.json" };
+    out << cases;
+
+    return 0;
+    std::filesystem::path files{ path };
+
+    //std::filesystem::path outpath = "./items";
+
+    for (auto& file : std::filesystem::directory_iterator(files)) {
+
+        if (!file.exists()) continue;
+        if (!file.is_regular_file()) continue;
+        if (file.path().extension() != ".json") continue;
+
+        auto filename = file.path().filename().string();
+
+        if (!filename.contains("axe.json") &&
+            !filename.contains("pickaxe.json") &&
+            !filename.contains("shovel.json") &&
+            !filename.contains("sword.json") &&
+            !filename.contains("hoe.json")) continue; // not a tool
+
+        auto content = file_to_string(file.path());
+
+        replace_str(content, R"~("when": "minecraft:quartz")~", R"~("when": { "trim": "minecraft:quartz" })~");
+        replace_str(content, R"~("when": "minecraft:iron")~", R"~("when": { "trim": "minecraft:iron" })~");
+        replace_str(content, R"~("when": "minecraft:netherite")~", R"~("when": { "trim": "minecraft:netherite" })~");
+        replace_str(content, R"~("when": "minecraft:redstone")~", R"~("when": { "trim": "minecraft:redstone" })~");
+        replace_str(content, R"~("when": "minecraft:copper")~", R"~("when": { "trim": "minecraft:copper" })~");
+        replace_str(content, R"~("when": "minecraft:gold")~", R"~("when": { "trim": "minecraft:gold" })~");
+        replace_str(content, R"~("when": "minecraft:emerald")~", R"~("when": { "trim": "minecraft:emerald" })~");
+        replace_str(content, R"~("when": "minecraft:diamond")~", R"~("when": { "trim": "minecraft:diamond" })~");
+        replace_str(content, R"~("when": "minecraft:lapis")~", R"~("when": { "trim": "minecraft:lapis" })~");
+        replace_str(content, R"~("when": "minecraft:amethyst")~", R"~("when": { "trim": "minecraft:amethyst" })~");
+        replace_str(content, R"~("when": "minecraft:resin")~", R"~("when": { "trim": "minecraft:resin" })~");
+
+        replace_str(content, R"~("when": "kaixopolis:olivine")~", R"~("when": { "trim": "kaixopolis:olivine" })~");
+        replace_str(content, R"~("when": "kaixopolis:fluorite")~", R"~("when": { "trim": "kaixopolis:fluorite" })~");
+        replace_str(content, R"~("when": "kaixopolis:amber")~", R"~("when": { "trim": "kaixopolis:amber" })~");
+        replace_str(content, R"~("when": "kaixopolis:thulite")~", R"~("when": { "trim": "kaixopolis:thulite" })~");
+        replace_str(content, R"~("when": "kaixopolis:pyrite")~", R"~("when": { "trim": "kaixopolis:pyrite" })~");
+        replace_str(content, R"~("when": "kaixopolis:azurite")~", R"~("when": { "trim": "kaixopolis:azurite" })~");
+        replace_str(content, R"~("when": "kaixopolis:red_calcite")~", R"~("when": { "trim": "kaixopolis:red_calcite" })~");
+        replace_str(content, R"~("when": "kaixopolis:chromium")~", R"~("when": { "trim": "kaixopolis:chromium" })~");
+        replace_str(content, R"~("when": "kaixopolis:rhodium")~", R"~("when": { "trim": "kaixopolis:rhodium" })~");
+
+        replace_str(content, R"~("property": "minecraft:trim_material")~", R"~("property": "minecraft:component", "component": "minecraft:custom_data")~");
+
+        std::ofstream out{ outpath / filename };
+        out << content;
+    }
 
     return 0;
 }
-
-// ------------------------------------------------
