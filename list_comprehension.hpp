@@ -1,1849 +1,2641 @@
+
+// ------------------------------------------------
+
 #pragma once
-#include <type_traits>
-#include <concepts>
-#include <cstddef>
-#include <utility>
+
+// ------------------------------------------------
+
 #include <algorithm>
-#include "kaixo/type_utils.hpp"
+#include <cstddef>
+#include <functional>
+#include <ranges>
+#include <tuple>
+#include <type_traits>
+#include <utility>
 
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
-
-                      Unevaluated Expressions
-
- * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+// ------------------------------------------------
 
 namespace kaixo {
 
-    /**
-     * Forward as tuple, but only lvalue references are kept, rest is copied.
-     * @param ...args arguments
-     */
-    template<class ...Args>
-    constexpr auto ref_tuple(Args&& ...args) {
-        using type = std::tuple<std::conditional_t<concepts::lvalue_reference<Args>, Args, decay_t<Args>>...>;
-        return type{ std::forward<Args>(args)... };
-    }
+    // ------------------------------------------------
+    //                     Utils
+    // ------------------------------------------------
 
-    /**
-     * Construct a pair from a tuple of size 2.
-     * @param t tuple
-     */
-    template<concepts::specialization<std::tuple> Tuple>
-        requires (std::tuple_size_v<decay_t<Tuple>> == 2)
-    constexpr auto tuple_to_pair(Tuple&& t) {
-        using pair_type = move_tparams_t<decay_t<Tuple>, std::pair>;
-        return pair_type(std::get<0>(t), std::get<1>(t));
-    }
+    constexpr std::size_t npos = static_cast<std::size_t>(-1);
 
-    namespace has {
-        template<class Ty> concept depend_v = requires (Ty) { typename Ty::depend; };
-        template<class Ty> concept define_v = requires (Ty) { typename Ty::define; };
-        template<class Ty> concept var_v = requires (Ty) { typename Ty::var; };
-        template<class Ty> concept range_v = requires (Ty) { typename Ty::range; };
+    // ------------------------------------------------
 
-        template<class Ty> struct depend_impl : std::bool_constant<depend_v<Ty>> {};
-        template<class Ty> struct define_impl : std::bool_constant<define_v<Ty>> {};
-        template<class Ty> struct var_impl : std::bool_constant<var_v<Ty>> {};
-        template<class Ty> struct range_impl : std::bool_constant<range_v<Ty>> {};
+    namespace detail {
 
-        constexpr auto depend = type_trait<depend_impl>{};
-        constexpr auto define = type_trait<define_impl>{};
-        constexpr auto var = type_trait<var_impl>{};
-        constexpr auto range = type_trait<range_impl>{};
-    }
+        // ------------------------------------------------
+        
+        struct dud {};
 
-    namespace grab {
-        template<class Ty> struct depend_impl { using type = info<>; };
-        template<has::depend_v Ty> struct depend_impl<Ty> { using type = typename Ty::depend; };
-        template<class Ty> struct define_impl { using type = info<>; };
-        template<has::define_v Ty> struct define_impl<Ty> { using type = typename Ty::define; };
-        template<class Ty> struct var_impl { using type = info<>; };
-        template<has::var_v Ty> struct var_impl<Ty> { using type = typename Ty::var; };
-        template<class Ty> struct range_impl { using type = info<>; };
-        template<has::range_v Ty> struct range_impl<Ty> { using type = typename Ty::range; };
-
-        template<class Ty> using depend = depend_impl<Ty>::type;
-        template<class Ty> using define = define_impl<Ty>::type;
-        template<class Ty> using var = var_impl<Ty>::type;
-        template<class Ty> using range = range_impl<Ty>::type;
-    }
-
-    template<class Ty> using depend = grab::depend<decay_t<Ty>>;
-    template<class Ty> using define = grab::define<decay_t<Ty>>;
-
-    template<class Ty> concept explicit_range = requires() { typename Ty::is_range; };
-    template<class Ty> concept is_range = std::ranges::range<Ty>;
-    template<class Ty> concept is_partial = depend<Ty>::size != 0 || requires() { typename decay_t<Ty>::is_partial; };
-    template<class Ty> concept is_partial_range = is_partial<Ty> && explicit_range<Ty>;
-    template<class Ty> concept is_var = is_partial<Ty> && requires() { { decay_t<Ty>::name }; };
-    template<class Ty> concept is_operator = requires() { typename Ty::is_operator; };
-    template<class Ty> concept is_range_kind = is_range<Ty> || is_partial_range<Ty>;
-
-    /**
-     * Links value to a variable.
-     * @tparam Ty value type
-     * @tparam Var variable
-     */
-    template<class Ty, is_var Var>
-    struct named_value {
-        using value_type = Ty;
-        using define = info<Var>;
-        using depend = depend<Ty>;
-
-        [[no_unique_address]] value_type value;
-
-        constexpr decltype(auto) evaluate(auto& tuple) const;
-        constexpr decltype(auto) execute(auto&, auto& tuple) const;
-    };
-
-    template<class Ty> concept is_named_value = specialization<Ty, named_value> && !is_partial<Ty>;
-
-    /**
-     * Variable.
-     * @tparam Name variable name
-     */
-    template<string_literal Name>
-    struct var {
-        constexpr static string_literal name = Name;
-
-        using depend = info<var>;
+        // ------------------------------------------------
 
         template<class Ty>
-        constexpr auto operator=(Ty&& value) const {
-            return named_value<decay_t<Ty>, var>{ std::forward<Ty>(value) };
-        }
+        constexpr std::tuple<Ty> store_as_tuple(Ty&& t) { return { std::forward<Ty>(t) }; }
+        template<class ...Tys>
+        constexpr std::tuple<Tys...> store_as_tuple(std::tuple<Tys...>&& t) { return std::move(t); }
 
-        constexpr decltype(auto) evaluate(auto& tuple) const {
-            if constexpr (tuple.contains<var>) return tuple.get<var>();
-            else return var{};
-        }
-    };
-
-    /**
-     * Specialization for ignored var "_".
-     */
-    template<>
-    struct var<string_literal<2, char>{ "_" }> {
-        constexpr static string_literal name = "_";
-
-        using is_partial = int;
-        using depend = info<>;
-
-        constexpr dud evaluate(auto&) const { return dud{}; }
-    };
-
-    /**
-     * Wrap reference into reference wrapper, otherwise decay.
-     * @tparam Ty type
-     */
-    template<class Ty>
-    using wrap_reference = std::conditional_t<
-        lvalue_reference<Ty>,
-        std::reference_wrapper<remove_reference_t<Ty>>,
-        decay_t<Ty>>;
-
-    /**
-     * Tuple of named values.
-     * @tparam ...Args named values
-     */
-    template<is_named_value ...Args>
-    struct named_tuple {
-        // Wrap lvalue references in reference wrappers, this allows for overriding 
-        // what reference is stored in the tuple, instead of just assigning to the 
-        // reference that was stored on construction.
-        using tuple_type = std::tuple<wrap_reference<typename Args::value_type>...>;
-        using define = concat_t<kaixo::define<Args>...>::unique;
-
-        template<is_var Var>
-        constexpr static bool contains = define::template occurs<Var>;
-
-        tuple_type value{};
-
-        constexpr named_tuple(Args&&...args) : value(args.value...) {}
-        constexpr named_tuple(tuple_type&& val) : value(std::move(val)) {}
-        constexpr named_tuple(const tuple_type& val) : value(val) {}
-
-        /**
-         * Get value linked to variable.
-         * @tparam Var variable
-         */
-        template<is_var Var, class Self>
-        constexpr decltype(auto) get(this Self&& self) {
-            static_assert(contains<decay_t<Var>>, "Tuple does not contain variable");
-            constexpr std::size_t index = define::template index<Var>;
-            using type = typename info<Args...>::template element<index>::type::value_type;
-            if constexpr (lvalue_reference<type>) {
-                return std::get<index>(std::forward<Self>(self).value).get();
-            } else {
-                return std::move(std::get<index>(std::forward<Self>(self).value));
-            }
-        }
+        // ------------------------------------------------
         
-        /**
-         * Assign value to variable.
-         * @tparam Var variable
-         * @param value value
-         */
-        template<is_var Var, class Self, class Ty>
-        constexpr decltype(auto) set(this Self&& self, Ty&& value) {
-            static_assert(contains<decay_t<Var>>, "Variable is not part of tuple");
-            constexpr std::size_t index = define::template index<Var>;
-            std::get<index>(std::forward<Self>(self).value) = std::forward<Ty>(value);
+        template<class Ty>
+        constexpr auto flatten_tuple(Ty&& t) {
+            if constexpr (requires { typename std::tuple_size<std::decay_t<Ty>>::type; }) {
+                return[&]<std::size_t ...Is>(std::index_sequence<Is...>) {
+                    return std::tuple_cat(flatten_tuple(static_cast<std::tuple_element_t<Is, std::decay_t<Ty>>>(std::get<Is>(t)))...);
+                }(std::make_index_sequence<std::tuple_size_v<std::decay_t<Ty>>>{});
+            } else return std::tuple<Ty>{ std::forward<Ty>(t) };
         }
 
-        /**
-         * Assign another named tuple, either contains all variables of
-         * this named tuple, or it contains none of them. Does not handle the
-         * case where some variables are already in this tuple, and some are not.
-         * @param val other named tuple
-         */
-        template<class Self, is_named_value ...Tys>
-        constexpr decltype(auto) assign(this Self&& self, named_tuple<Tys...>&& val) {
-            if constexpr ((contains<typename kaixo::define<Tys>::type>&& ...)) {
-                ((std::forward<Self>(self).set<typename kaixo::define<Tys>::type>(
-                    std::move(val).get<typename kaixo::define<Tys>::type>())), ...);
-                return std::forward<Self>(self);
-            } else {
-                return named_tuple<Args..., Tys...>{
-                    std::tuple_cat(std::forward<Self>(self).value, std::move(val).value)
+        // ------------------------------------------------
+
+    }
+
+    // ------------------------------------------------
+    
+    template<class Ty>
+    concept not_dud = !std::same_as<std::decay_t<Ty>, detail::dud>;
+
+    // ------------------------------------------------
+
+    template<class Tuple>
+    constexpr std::size_t recursive_tuple_size_v = std::tuple_size_v<decltype(detail::flatten_tuple(std::declval<Tuple>()))>;
+
+    template<class Tuple>
+    using flatten_tuple_t = decltype(detail::flatten_tuple(std::declval<Tuple>()));
+    
+    template<std::size_t I, class Tuple>
+    using recursive_tuple_element_t = std::tuple_element_t<I, flatten_tuple_t<Tuple>>;
+
+    template<std::size_t I, class Tuple>
+    constexpr recursive_tuple_element_t<I, Tuple&&> recursive_get(Tuple&& tuple) {
+        return std::get<I>(detail::flatten_tuple(tuple));
+    }
+
+    // ------------------------------------------------
+    //                      Var
+    // ------------------------------------------------
+
+    template<class Ty>
+    concept is_var = requires { typename std::decay_t<Ty>::is_var; };
+
+    template<class... Vars>
+    struct var {
+
+        // ------------------------------------------------
+
+        using defines = var<>;
+        using depends = var;
+
+        // ------------------------------------------------
+        
+        using is_var = int;
+
+        // ------------------------------------------------
+
+        constexpr static std::size_t size = sizeof...(Vars);
+
+        template<class Find>
+        constexpr static std::size_t index = [](std::size_t i = 0) {
+            return ((i++, std::same_as<Find, Vars>) || ...) ? i - 1 : npos;
+        }();
+
+        // ------------------------------------------------
+
+        template<class Tuple>
+        constexpr static decltype(auto) evaluate(Tuple&& v) {
+            using tplDefines = std::decay_t<Tuple>::defines;
+            // Only a single var, returns single value
+            if constexpr (size == 1) {
+                using Var = std::type_identity_t<Vars...>;
+                // First case, variable is 'dud', used for ignoring a value with '_'.
+                if constexpr (std::same_as<Var, detail::dud>) return detail::dud{};
+                // Second case, variable is not defined by input tuple, return var (remains unevaluated)
+                else if constexpr (tplDefines::template index<Var> == npos) return var{};
+                // Third case, get the value from the tuple
+                else return v.template get<Var>();
+            } 
+            // Otherwise multiple vars; ff none of the vars stay unevaluated, return resulting tuple.
+            else if constexpr (((tplDefines::template index<Vars> != npos) && ...)) {
+                return std::tuple<decltype(var<Vars>::evaluate(std::forward<Tuple>(v)))...>{
+                    var<Vars>::evaluate(std::forward<Tuple>(v))...
+                };
+            } 
+            // Otherwise, use the comma operator to construct a tuple_operation for later evaluation
+            else return (var<Vars>::evaluate(std::forward<Tuple>(v)), ...);
+        }
+
+        // ------------------------------------------------
+        
+        template<class Class, class Type> 
+        constexpr auto operator[](Type(Class::* ptr)) const;
+        
+        template<class Index> 
+        constexpr auto operator[](Index&& index) const;
+
+        template<class Class, class Type, class ...Args, class ...Tys>
+        constexpr auto operator()(Type(Class::* ptr)(Args...), Tys&&... tys) const;
+
+        // ------------------------------------------------
+      
+        template<class ...Args>
+            requires (sizeof...(Vars) == recursive_tuple_size_v<std::tuple<Args...>>)
+        constexpr auto operator=(std::tuple<Args...>&& args) const;
+        
+        template<class Arg>
+            requires (!kaixo::is_var<Arg> && sizeof...(Vars) == recursive_tuple_size_v<std::tuple<Arg>>)
+        constexpr auto operator=(Arg&& arg) const;
+
+        // ------------------------------------------------
+        
+    };
+
+    // ------------------------------------------------
+
+    template<class ...As, class ...Bs>
+    constexpr var<As..., Bs...> operator,(var<As...>, var<Bs...>) { return {}; }
+    template<class ...As>
+    constexpr var<As..., detail::dud> operator,(var<As...>, detail::dud) { return {}; }
+    template<class ...As>
+    constexpr var<detail::dud, As...> operator,(detail::dud, var<As...>) { return {}; }
+
+    // ------------------------------------------------
+
+    template<class In, class Out = var<>> struct unique;
+    template<class ...Bs> // Base case
+    struct unique<var<>, var<Bs...>> : std::type_identity<var<Bs...>> {};
+    template<class A, class ...As, class... Bs>
+    struct unique<var<A, As...>, var<Bs...>> 
+        : std::conditional_t<
+            (std::same_as<A, Bs> || ...),     // If 'Bs...' already contains 'A'
+            unique<var<As...>, var<Bs...>>,   // Do not add 'A'
+            unique<var<As...>, var<Bs..., A>> // Otherwise do add 'A'
+        > {};
+    template<class ...Vars> using unique_t = typename unique<Vars...>::type;
+
+    // ------------------------------------------------
+
+    template<class...> struct concat;
+    template<> struct concat<> : std::type_identity<var<>> {};
+    template<class ...As, class ...Bs, class ...Cs>
+    struct concat<var<As...>, var<Bs...>, Cs...> : concat<var<As..., Bs...>, Cs...> {};
+    template<class ...As>
+    struct concat<var<As...>> : std::type_identity<var<As...>> {};
+    template<class ...Vars> using concat_t = typename concat<Vars...>::type;
+    
+    // ------------------------------------------------
+
+    template<class From, class Remove, class Result = var<>> struct remove_all;
+    template<class ...Bs, class ...Cs>
+    struct remove_all<var<>, var<Bs...>, var<Cs...>> : std::type_identity<var<Cs...>> {};
+    template<class A, class ...As, class ...Bs, class ...Cs>
+    struct remove_all<var<A, As...>, var<Bs...>, var<Cs...>> : 
+        std::conditional_t<
+            (std::same_as<A, Bs> || ...),                     // If 'Bs...' contains 'A'
+            remove_all<var<As...>, var<Bs...>, var<Cs...>>,   // Do not add 'A'
+            remove_all<var<As...>, var<Bs...>, var<Cs..., A>> // Otherwise do add 'A'
+        > {};
+    template<class From, class Remove> using remove_all_t = typename remove_all<From, Remove>::type;
+
+    // ------------------------------------------------
+    //                 Defines/Depends
+    // ------------------------------------------------
+    //  Keeps track of a type's dependencies and 
+    //  definitions. This also determines whether
+    //  something is unevaluated; if it has 
+    //  dependencies.
+    // ------------------------------------------------
+
+    template<class> struct depends : std::type_identity<var<>> {};
+    template<class> struct defines : std::type_identity<var<>> {};
+
+    template<class Ty> using depends_t = typename depends<Ty>::type;
+    template<class Ty> using defines_t = typename defines<Ty>::type;
+
+    template<class ...Args> struct depends<std::tuple<Args...>> : std::type_identity<unique_t<concat_t<depends_t<std::decay_t<Args>>...>>> {};
+    template<class ...Args> struct defines<std::tuple<Args...>> : std::type_identity<unique_t<concat_t<depends_t<std::decay_t<Args>>...>>> {};
+
+    template<class Ty> requires requires { typename std::decay_t<Ty>::depends; }
+    struct depends<Ty> : std::type_identity<typename std::decay_t<Ty>::depends> {};
+
+    template<class Ty> requires requires { typename std::decay_t<Ty>::defines; }
+    struct defines<Ty> : std::type_identity<typename std::decay_t<Ty>::defines> {};
+
+    // ------------------------------------------------
+
+    template<class Vars, class For> // Checks if Vars is enough to fully evaluate For
+    concept has_all_defines_for = unique_t<concat_t<depends_t<For>, Vars>>::size == Vars::size;
+
+    // ------------------------------------------------
+    //                    Evaluate
+    // ------------------------------------------------
+
+    template<class, class, class = detail::dud>
+    struct named_range;
+
+    // ------------------------------------------------
+
+    template<class Ty>
+    concept unevaluated = depends_t<std::decay_t<Ty>>::size != 0 || requires { typename std::decay_t<Ty>::explicitly_unevaluated; };
+    
+    template<class Ty, class Tuple> 
+        requires (!unevaluated<Ty>)
+    constexpr auto evaluate(Ty&& o, Tuple&&) { return std::forward<Ty>(o); }
+    
+    template<unevaluated Ty, class Tuple> 
+        requires requires (Ty&& o, Tuple&& v) { { std::forward<Ty>(o).evaluate(v) }; }
+    constexpr auto evaluate(Ty&& o, Tuple&& v)
+        -> decltype(std::forward<Ty>(o).evaluate(v))
+    {
+        return std::forward<Ty>(o).evaluate(v);
+    }
+    
+    // Owning view does not define a copy constructor, so here we 
+    // manually copy the contained range into a new owning_view.
+    // This is only really used in conjunction with the expression_wrapper
+    // in the case that the stored expression is itself an owning_view.
+    template<std::copy_constructible Ty, class Tuple>
+    constexpr std::ranges::owning_view<Ty> evaluate(const std::ranges::owning_view<Ty>& o, Tuple&&) {
+        return std::views::all(static_cast<Ty>(o.base()));
+    }
+    
+    template<std::copy_constructible Ty, class Tuple>
+    constexpr std::ranges::owning_view<Ty> evaluate(std::ranges::owning_view<Ty>& o, Tuple&&) {
+        return std::views::all(static_cast<Ty>(o.base()));
+    }
+    
+    template<class Ty, class Tuple>
+    using evaluate_result_t = decltype(kaixo::evaluate(std::declval<Ty>(), std::declval<Tuple>()));
+    
+    // ------------------------------------------------
+    //                  Named Tuple
+    // ------------------------------------------------
+    //  Linkes values inside a tuple to variables.
+    //  This is used to evaluate expressions by reading
+    //  the value corresponding to the variable and
+    //  using it inside of the expression.
+    // ------------------------------------------------
+
+    template<class Vars, class Tuple>
+    struct named_tuple {
+
+        // ------------------------------------------------
+
+        using depends = depends_t<std::decay_t<Tuple>>;
+        using defines = Vars;
+
+        // ------------------------------------------------
+
+        Tuple tuple;
+
+        // ------------------------------------------------
+
+        template<class Find, class Self>
+        constexpr auto get(this Self&& self) 
+            -> recursive_tuple_element_t<Vars::template index<Find>, decltype(std::declval<Self&&>().tuple)>
+        {
+            return recursive_get<Vars::template index<Find>>(std::forward<Self>(self).tuple);
+        }
+
+        // ------------------------------------------------
+        
+        template<class Self, class Tuple>
+        constexpr auto evaluate(this Self&& self, Tuple&& tuple) {
+            return std::apply([&]<class ...Tys>(Tys&& ...tys) {
+                using tuple_t = decltype(std::make_tuple(kaixo::evaluate(std::declval<Tys&&>(), std::declval<Tuple&>())...));
+                return named_tuple<Vars, tuple_t>{ .tuple = { kaixo::evaluate(std::forward<Tys>(tys), tuple)... } };
+            }, std::forward<Self>(self).tuple);
+        }
+
+        // ------------------------------------------------
+
+    };
+
+    // ------------------------------------------------
+    
+    template< class ...V1s
+            , class ...As
+            , class ...V2s
+            , class ...Bs>
+    constexpr auto operator,( named_tuple<var<V1s...>, std::tuple<As...>>&& a
+                            , named_tuple<var<V2s...>, std::tuple<Bs...>>&& b)
+        -> named_tuple<var<V1s..., V2s...>, std::tuple<As..., Bs...>>
+    {
+        return { .tuple = std::tuple_cat(std::move(a).tuple, std::move(b).tuple) };
+    }
+
+    // ------------------------------------------------
+
+    template<class ...Vars>
+    template<class ...Args>
+        requires (sizeof...(Vars) == recursive_tuple_size_v<std::tuple<Args...>>)
+    constexpr auto var<Vars...>::operator=(std::tuple<Args...>&& args) const {
+        return named_tuple<var<Vars...>, std::tuple<std::decay_t<Args>...>>{
+            .tuple = std::move(args),
+        };
+    }
+    
+    template<class ...Vars>
+    template<class Arg>
+        requires (!is_var<Arg> && sizeof...(Vars) == recursive_tuple_size_v<std::tuple<Arg>>)
+    constexpr auto var<Vars...>::operator=(Arg&& arg) const {
+        return named_tuple<var<Vars...>, std::tuple<std::decay_t<Arg>>> {
+            .tuple = { std::forward<Arg>(arg) },
+        };
+    }
+
+    // ------------------------------------------------
+    //                  Expressions
+    // ------------------------------------------------
+    //  Lazy evaluated expressions containing variables
+    //  that can be substituted with values using
+    //  a named_tuple instance and the 'evaluate'
+    //  function.
+    // ------------------------------------------------
+
+    template<class Ty>
+    concept explicit_unevaluated_range = unevaluated<Ty> && requires { typename std::decay_t<Ty>::is_range; };
+    
+    template<class Ty>
+    concept unevaluated_range = is_var<Ty> || explicit_unevaluated_range<Ty>;
+
+    template<class Ty>
+    concept evaluated_range = !unevaluated<Ty> && std::ranges::range<Ty>;
+    
+    template<class Ty>
+    concept any_range = unevaluated_range<Ty> || evaluated_range<Ty>;
+    
+    template<class Ty>
+    concept explicit_range = explicit_unevaluated_range<Ty> || evaluated_range<Ty>;
+    
+    template<class ...As>
+    concept valid_overload_arguments =
+           (unevaluated<As> || ...) // Overloads require at least 1 argument to be unevaluated
+        && (not_dud<As> && ...);    // Dud is not allowed in expressions
+
+    template<class ...As>
+    concept valid_expression_arguments =
+           (unevaluated<As> || ...)      // Expressions require at least 1 argument to be unevaluated
+        && (not_dud<As> && ...)          // Dud is not allowed in expressions
+        && (!explicit_range<As> && ...); // Cannot be a range, as this messes with the operator overloads.
+    
+    template<class ...As>
+    concept valid_tuple_arguments =
+           (unevaluated<As> || ...)  // Tuple operation requires at least 1 argument to be unevaluated
+        && (not_dud<As> && ...);     // Dud is not allowed in expressions
+    
+    // ------------------------------------------------
+    
+    // Tuple operation is an expression resulting in a tuple.
+    // This can be constructed using the comma operator.
+    template<class ...Args>
+        requires (sizeof...(Args) == 0 || valid_tuple_arguments<Args...>)
+    struct tuple_operation {
+
+        // ------------------------------------------------
+
+        using defines = var<>;
+        using depends = unique_t<concat_t<depends_t<Args>...>>;
+
+        // ------------------------------------------------
+        
+        using explicitly_unevaluated = int; // Necessary for when empty tuple
+
+        // ------------------------------------------------
+
+        std::tuple<Args...> args;
+
+        // ------------------------------------------------
+
+        template<class Self, class Tuple>
+        constexpr auto evaluate(this Self&& self, Tuple&& v) {
+            if constexpr (sizeof...(Args) == 0) return std::tuple{};
+            else return std::apply([&]<class ...Tys>(Tys&& ...tys) {
+                // First case, at least one of the elements cannot be fully evaluated
+                // return another tuple_operation for later evaluation.
+                if constexpr ((unevaluated<evaluate_result_t<Tys&&, Tuple>> || ...)) {
+                    return tuple_operation<evaluate_result_t<Tys&&, Tuple>...>{
+                        { kaixo::evaluate(std::forward<Tys>(tys), v)... }
+                    };
+                }
+                // Second case, fully evaluated, return results as tuple.
+                else return std::tuple<evaluate_result_t<Tys&&, Tuple>...>{ 
+                    kaixo::evaluate(std::forward<Tys>(tys), v)...
+                };
+            }, std::forward<Self>(self).args);
+        }
+
+        // ------------------------------------------------
+
+    };
+
+    // ------------------------------------------------
+
+    // Handles default case for tuple operation
+    template<class A, class B> 
+        requires valid_expression_arguments<A, B>
+    constexpr tuple_operation<std::decay_t<A>, std::decay_t<B>> operator,(A&& a, B&& b) {
+        return { { std::forward<A>(a), std::forward<B>(b) } };
+    }
+
+    // Adds to an existing tuple operation
+    template<class ...Args, class B> 
+        requires valid_tuple_arguments<Args..., B>
+    constexpr tuple_operation<Args..., std::decay_t<B>> operator,(tuple_operation<Args...>&& a, B&& b) {
+        return { { std::tuple_cat(std::move(a).args, std::forward_as_tuple(std::forward<B>(b))) } };
+    }
+    
+    // ------------------------------------------------
+
+    // Binary operation overloads all binary operators for expressions.
+    template<class A, class B, class Op> 
+        requires valid_expression_arguments<A, B>
+    struct binary_operation {
+
+        // ------------------------------------------------
+
+        using defines = var<>;
+        using depends = unique_t<concat_t<depends_t<A>, depends_t<B>>>;
+
+        // ------------------------------------------------
+
+        [[no_unique_address]] A a;
+        [[no_unique_address]] B b;
+        [[no_unique_address]] Op operation{};
+
+        // ------------------------------------------------
+
+        template<class Self, class Tuple>
+        constexpr auto evaluate(this Self&& self, Tuple&& v) {
+            return std::forward<Self>(self).operation(
+                kaixo::evaluate(std::forward<Self>(self).a, v),
+                kaixo::evaluate(std::forward<Self>(self).b, v));
+        }
+
+        // ------------------------------------------------
+
+    };
+
+    // ------------------------------------------------
+
+#define KAIXO_BINARY_OP(op, name)                                                                             \
+    struct name##_operator {                                                                                  \
+        template<class A, class B>                                                                            \
+        constexpr auto operator()(A&& a, B&& b) const                                                         \
+            -> decltype(std::declval<A&&>() op std::declval<B&&>())                                           \
+        {                                                                                                     \
+            return std::forward<A>(a) op std::forward<B>(b);                                                  \
+        }                                                                                                     \
+    };                                                                                                        \
+                                                                                                              \
+    template<class A, class B> requires valid_expression_arguments<A, B>                                      \
+    constexpr binary_operation<std::decay_t<A>, std::decay_t<B>, name##_operator> operator op(A&& a, B&& b) { \
+        return { std::forward<A>(a), std::forward<B>(b) };                                                    \
+    }
+
+    KAIXO_BINARY_OP(+, add);         
+    KAIXO_BINARY_OP(-, subtract);    
+    KAIXO_BINARY_OP(*, multiply);    
+    KAIXO_BINARY_OP(/ , divide);     
+    KAIXO_BINARY_OP(%, modulo);  
+
+    KAIXO_BINARY_OP(&, bit_and); 
+    KAIXO_BINARY_OP(| , bit_or);
+    KAIXO_BINARY_OP(^, bit_xor);
+    KAIXO_BINARY_OP(&&, logic_and);
+    KAIXO_BINARY_OP(|| , logic_or);
+
+    KAIXO_BINARY_OP(< , less_than);
+    KAIXO_BINARY_OP(> , greater_than);
+    KAIXO_BINARY_OP(<= , less_or_equals);
+    KAIXO_BINARY_OP(>= , greater_or_equals);
+    KAIXO_BINARY_OP(== , equals);
+    KAIXO_BINARY_OP(!= , not_equals);
+
+    KAIXO_BINARY_OP(*=, multiply_assign);
+    KAIXO_BINARY_OP(/=, divide_assign);
+    KAIXO_BINARY_OP(%=, modulo_assign);
+    KAIXO_BINARY_OP(&=, bit_and_assign);
+    KAIXO_BINARY_OP(+=, add_assign);         
+    KAIXO_BINARY_OP(-=, subtract_assign);    
+    KAIXO_BINARY_OP(|=, bit_or_assign);
+    KAIXO_BINARY_OP(^=, bit_xor_assign);
+
+    // ------------------------------------------------
+
+    // Unary operation overloads all unary operators for expressions.
+    template<valid_expression_arguments A, class Op>
+    struct unary_operation {
+
+        // ------------------------------------------------
+
+        using defines = var<>;
+        using depends = depends_t<A>;
+
+        // ------------------------------------------------
+
+        [[no_unique_address]] A a;
+        [[no_unique_address]] Op operation{};
+
+        // ------------------------------------------------
+
+        template<class Self, class Tuple>
+        constexpr auto evaluate(this Self&& self, Tuple&& v) {
+            return std::forward<Self>(self).operation(
+                kaixo::evaluate(std::forward<Self>(self).a, v));
+        }
+
+        // ------------------------------------------------
+
+    };
+
+    // ------------------------------------------------
+
+#define KAIXO_UNARY_OP(op, name)                                                     \
+    struct name##_operator {                                                         \
+        template<class A>                                                            \
+        constexpr decltype(auto) operator()(A&& a) const {                           \
+            return op std::forward<A>(a);                                            \
+        }                                                                            \
+    };                                                                               \
+                                                                                     \
+    template<valid_expression_arguments A>                                           \
+    constexpr unary_operation<std::decay_t<A>, name##_operator> operator op(A&& a) { \
+        return { std::forward<A>(a) };                                               \
+    }
+
+    KAIXO_UNARY_OP(++, increment);
+    KAIXO_UNARY_OP(--, decrement);
+    KAIXO_UNARY_OP(!, logic_not);
+    //KAIXO_UNARY_OP(&, pointer);    // <<< Crashes MSVC for some reason...
+    KAIXO_UNARY_OP(*, dereference);
+    
+    // ------------------------------------------------
+    //                Index Operation
+    // ------------------------------------------------
+    //  Allows the index operator to be used inside
+    //  expressions.
+    // ------------------------------------------------
+    
+    template<unevaluated Expression, class Class, class Type>
+    struct member_operation;
+
+    template<unevaluated Expression, class Fptr, class TupleOperation>
+    struct member_function_operation;
+
+    template<class Expression, class Index>
+        requires (unevaluated<Expression> || unevaluated<Index>)
+    struct index_operation {
+
+        // ------------------------------------------------
+
+        [[no_unique_address]] Expression expression;
+        [[no_unique_address]] Index index;
+
+        // ------------------------------------------------
+
+        using defines = var<>;
+        using depends = unique_t<concat_t<depends_t<Expression>, depends_t<Index>>>;
+
+        // ------------------------------------------------
+
+        template<class Self, class Tuple>
+        constexpr decltype(auto) evaluate(this Self&& self, Tuple&& tuple) {
+            using evaluated1_t = decltype(kaixo::evaluate(std::declval<Self&&>().expression, std::declval<Tuple&>()));
+            using evaluated2_t = decltype(kaixo::evaluate(std::declval<Self&&>().index, std::declval<Tuple&>()));
+            // First case, either the expression or the index is still unevaluated, return new index operation
+            if constexpr (unevaluated<evaluated1_t> || unevaluated<evaluated2_t>) {
+                return index_operation<evaluated1_t, evaluated2_t>{
+                    .expression = kaixo::evaluate(std::forward<Self>(self).expression, tuple),
+                    .index = kaixo::evaluate(std::forward<Self>(self).index, tuple),
                 };
             }
+            // Second case, both expression and index are fully evaluated
+            else return kaixo::evaluate(std::forward<Self>(self).expression, tuple)[kaixo::evaluate(std::forward<Self>(self).index, tuple)];
+        }
+
+        // ------------------------------------------------
+
+        template<class Self, class Class, class Type>
+        constexpr member_operation<index_operation, Class, Type> operator[](this Self&& self, Type(Class::* ptr)) {
+            return {
+                .expression = std::forward<Self>(self), 
+                .ptr = ptr,
+            };
+        }
+        
+        template<class Self, class Index>
+        constexpr index_operation<index_operation, std::decay_t<Index>> operator[](this Self&& self, Index&& index) {
+            return {
+                .expression = std::forward<Self>(self), 
+                .index = std::forward<Index>(index),
+            };
+        }
+
+        template<class Self, class Class, class Type, class ...Args, class ...Tys>
+        constexpr auto operator()(this Self&& self, Type(Class::* ptr)(Args...), Tys&&... tys) 
+            -> member_function_operation<index_operation, Type(Class::*)(Args...), tuple_operation<std::decay_t<Tys>...>>
+        {
+            return {
+                .expression = std::forward<Self>(self), 
+                .ptr = ptr,
+                .arguments = { .args = { std::forward<Tys>(tys)... } },
+            };
+        }
+
+        // ------------------------------------------------
+
+    };
+
+    template<class ...Vars>
+    template<class Index>
+    constexpr auto var<Vars...>::operator[](Index&& index) const {
+        return index_operation<var<Vars...>, std::decay_t<Index>>{
+            .index = std::forward<Index>(index) 
+        };
+    }
+    
+    // ------------------------------------------------
+    //                Member Operation
+    // ------------------------------------------------
+    //  Access a class member inside an expression
+    // ------------------------------------------------
+    
+    template<unevaluated Expression, class Class, class Type>
+    struct member_operation {
+
+        // ------------------------------------------------
+
+        [[no_unique_address]] Expression expression;
+        Type(Class::* ptr);
+
+        // ------------------------------------------------
+
+        using defines = var<>;
+        using depends = depends_t<Expression>;
+
+        // ------------------------------------------------
+
+        template<class Self, class Tuple>
+        constexpr decltype(auto) evaluate(this Self&& self, Tuple&& tuple) {
+            using evaluated_t = decltype(kaixo::evaluate(std::declval<Self&&>().expression, std::declval<Tuple&>()));
+            // First case, result still not fully evaluated, so return another member operation
+            if constexpr (unevaluated<evaluated_t>) {
+                return member_operation<evaluated_t, Class, Type>{
+                    .expression = kaixo::evaluate(std::forward<Self>(self).expression, tuple),
+                    .ptr = std::forward<Self>(self).ptr,
+                };
+            } 
+            // Second case, fully evaluated, so access the member
+            else return kaixo::evaluate(std::forward<Self>(self).expression, tuple).*(std::forward<Self>(self).ptr);
+        }
+
+        // ------------------------------------------------
+        
+        template<class Self, class Class, class Type>
+        constexpr member_operation<member_operation, Class, Type> operator[](this Self&& self, Type(Class::* ptr)) {
+            return {
+                .expression = std::forward<Self>(self), 
+                .ptr = ptr,
+            };
+        }
+        
+        template<class Self, class Index>
+        constexpr index_operation<member_operation, std::decay_t<Index>> operator[](this Self&& self, Index&& index) {
+            return {
+                .expression = std::forward<Self>(self), 
+                .index = std::forward<Index>(index),
+            };
+        }
+                
+        template<class Self, class Class, class Type, class ...Args, class ...Tys>
+        constexpr auto operator()(this Self&& self, Type(Class::* ptr)(Args...), Tys&&... tys) 
+            -> member_function_operation<member_operation, Type(Class::*)(Args...), tuple_operation<std::decay_t<Tys>...>>
+        {
+            return {
+                .expression = std::forward<Self>(self), 
+                .ptr = ptr,
+                .arguments = { .args = { std::forward<Tys>(tys)... } },
+            };
+        }
+
+
+        // ------------------------------------------------
+
+    };
+
+    // ------------------------------------------------
+
+    template<class ...Vars>
+    template<class Class, class Type>
+    constexpr auto var<Vars...>::operator[](Type(Class::* ptr)) const {
+        return member_operation<var<Vars...>, Class, Type>{ .ptr = ptr };
+    }
+    
+    // ------------------------------------------------
+    //                Member Operation
+    // ------------------------------------------------
+    //  Access a class member inside an expression
+    // ------------------------------------------------
+    
+    template<unevaluated Expression, class Fptr, class TupleOperation>
+    struct member_function_operation {
+
+        // ------------------------------------------------
+
+        [[no_unique_address]] Expression expression;
+        Fptr ptr;
+        TupleOperation arguments;
+
+        // ------------------------------------------------
+
+        using defines = var<>;
+        using depends = unique_t<concat_t<depends_t<Expression>, depends_t<TupleOperation>>>;
+
+        // ------------------------------------------------
+
+        template<class Self, class Tuple>
+        constexpr decltype(auto) evaluate(this Self&& self, Tuple&& tuple) {
+            using evaluated1_t = decltype(kaixo::evaluate(std::declval<Self&&>().expression, std::declval<Tuple&>()));
+            using evaluated2_t = decltype(kaixo::evaluate(std::declval<Self&&>().arguments, std::declval<Tuple&>()));
+            // First case, result still not fully evaluated, so return another member operation
+            if constexpr (unevaluated<evaluated1_t> || unevaluated<evaluated2_t>) {
+                return member_function_operation<evaluated1_t, Fptr, evaluated2_t>{
+                    .expression = kaixo::evaluate(std::forward<Self>(self).expression, tuple),
+                    .ptr = std::forward<Self>(self).ptr,
+                    .arguments = kaixo::evaluate(std::forward<Self>(self).arguments, tuple),
+                };
+            } 
+            // Second case, fully evaluated, so access the member
+            else return std::apply([&]<class ...Args>(Args&& ...args) {
+                return (kaixo::evaluate(std::forward<Self>(self).expression, tuple)
+                    .*(std::forward<Self>(self).ptr))(std::forward<Args>(args)...);
+            }, kaixo::evaluate(std::forward<Self>(self).arguments, tuple));
+        }
+
+        // ------------------------------------------------
+        
+        template<class Self, class Class, class Type>
+        constexpr member_operation<member_function_operation, Class, Type> operator[](this Self&& self, Type(Class::* ptr)) {
+            return {
+                .expression = std::forward<Self>(self), 
+                .ptr = ptr,
+            };
+        }
+        
+        template<class Self, class Index>
+        constexpr index_operation<member_function_operation, std::decay_t<Index>> operator[](this Self&& self, Index&& index) {
+            return {
+                .expression = std::forward<Self>(self), 
+                .index = std::forward<Index>(index),
+            };
+        }
+
+        template<class Self, class Class, class Type, class ...Args, class ...Tys>
+        constexpr auto operator()(this Self&& self, Type(Class::* ptr)(Args...), Tys&&... tys) 
+            -> member_function_operation<member_function_operation, Type(Class::*)(Args...), tuple_operation<std::decay_t<Tys>...>>
+        {
+            return {
+                .expression = std::forward<Self>(self), 
+                .ptr = ptr,
+                .arguments = { { std::forward<Tys>(tys)... } },
+            };
+        }
+
+        // ------------------------------------------------
+
+    };
+
+    // ------------------------------------------------
+
+    template<class ...Vars>
+    template<class Class, class Type, class ...Args, class ...Tys>
+    constexpr auto var<Vars...>::operator()(Type(Class::* ptr)(Args...), Tys&&... tys) const {
+        using tuple_t = tuple_operation<std::decay_t<Tys>...>;
+        return member_function_operation<var<Vars...>, Type (Class::*)(Args...), tuple_t>{
+            .ptr = ptr,
+            .arguments = tuple_t{ { std::forward<Tys>(tys)... } },
+        };
+    }
+
+    // ------------------------------------------------
+    //                 Named Range
+    // ------------------------------------------------
+    //  Constructs a named_tuple using the value_type
+    //  of the range, and the variables. This is then
+    //  used to evaluate the Expression, which will
+    //  be the result type of this named range.
+    // ------------------------------------------------
+
+    template<class Vars, class Range, class Expression>
+    struct named_range_storage {
+
+        // ------------------------------------------------
+
+        using defines = Vars;
+        using depends = remove_all_t<unique_t<concat_t<depends_t<Range>, depends_t<Expression>>>, Vars>;
+
+        // ------------------------------------------------
+
+        using is_range = int;
+
+        // ------------------------------------------------
+
+        Range range;
+        [[no_unique_address]] Expression expression;
+
+        // ------------------------------------------------
+
+        template<class Self, class Arg>
+        constexpr decltype(auto) transform(this Self&& self, Arg&& arg) {
+            // First case, no Expression defined, just forward the result
+            if constexpr (std::same_as<Expression, detail::dud>) return static_cast<Arg>(arg);
+            // Second case, evaluate the expression using the Vars and range result Arg
+            else return kaixo::evaluate(std::forward<Self>(self).expression, named_tuple<Vars, Arg&&>{ std::forward<Arg>(arg) });
+        }
+
+        // ------------------------------------------------
+
+    };
+    
+    // ------------------------------------------------
+    
+    template<class Vars, evaluated_range Range, class Expression> // Evaluated version
+        requires (Vars::size == recursive_tuple_size_v<std::ranges::range_value_t<Range>> && has_all_defines_for<Vars, Expression>)
+    struct named_range<Vars, Range, Expression> : named_range_storage<Vars, Range, Expression> {
+        
+        // ------------------------------------------------
+        
+        // Some ranges (like std::views::filter) cannot const-iterator, because they have side-effects
+        // For that reason, we need to separate the base_iterator types for const and non-const like
+        // this, because evaluating std::ranges::begin for a const-version that cannot const iterate
+        // will cause a compile-time error.
+        constexpr static bool can_const_iterate = std::ranges::range<const Range>;
+
+        template<bool Const>
+        struct base_iterator_types;
+        
+        template<bool Const>
+            requires (!Const || !can_const_iterate)
+        struct base_iterator_types<Const> {
+            using base_iterator = decltype(std::ranges::begin(std::declval<named_range_storage<Vars, Range, Expression>&>().range));
+            using base_sentinel = decltype(std::ranges::end(std::declval<named_range_storage<Vars, Range, Expression>&>().range));
+        };
+        
+        template<bool Const>
+            requires (Const && can_const_iterate)
+        struct base_iterator_types<Const>{
+            using base_iterator = decltype(std::ranges::begin(std::declval<const named_range_storage<Vars, Range, Expression>&>().range));
+            using base_sentinel = decltype(std::ranges::end(std::declval<const named_range_storage<Vars, Range, Expression>&>().range));
+        };
+
+        using base_iterator = base_iterator_types<false>::base_iterator;
+        using base_sentinel = base_iterator_types<false>::base_sentinel;
+        using base_const_iterator = base_iterator_types<true>::base_iterator;
+        using base_const_sentinel = base_iterator_types<true>::base_sentinel;
+
+        // ------------------------------------------------
+        
+        // Iterator implementation just wraps around the Range's iterator
+        // and only modifies the output when an Expression is defined.
+        template<bool Const>
+        struct iterator_impl {
+
+            // ------------------------------------------------
+
+            using self_type = std::conditional_t<Const, 
+                const named_range_storage<Vars, Range, Expression>, 
+                      named_range_storage<Vars, Range, Expression>>;
+
+            using base_iterator_type = base_iterator_types<Const>::base_iterator;
+            using reference = decltype(std::declval<self_type&>().transform(std::declval<std::iter_reference_t<base_iterator_type>>()));
+            using value_type = std::decay_t<reference>;
+            using difference_type = std::iter_difference_t<base_iterator_type>;
+            using iterator_category = std::conditional_t<
+                std::random_access_iterator<base_iterator_type>,
+                std::random_access_iterator_tag, 
+                std::conditional_t<
+                    std::bidirectional_iterator<base_iterator_type>,
+                    std::bidirectional_iterator_tag, 
+                    std::conditional_t<
+                        std::forward_iterator<base_iterator_type>,
+                        std::forward_iterator_tag,
+                        std::input_iterator_tag>>>;
+
+            // ------------------------------------------------
+
+            base_iterator_type base{};
+            self_type* self = nullptr;
+
+            // ------------------------------------------------
+            
+            constexpr operator iterator_impl<true>() const { return { base, self }; }
+
+            // ------------------------------------------------
+
+            constexpr iterator_impl& operator++() {
+                ++base;
+                return *this;
+            }
+
+            constexpr iterator_impl operator++(int) {
+                iterator_impl copy = *this;
+                ++base;
+                return copy;
+            }
+            
+            constexpr iterator_impl& operator--() requires std::ranges::bidirectional_range<Range> {
+                --base;
+                return *this;
+            }
+
+            constexpr iterator_impl operator--(int) requires std::ranges::bidirectional_range<Range> {
+                iterator_impl copy = *this;
+                --base;
+                return copy;
+            }
+
+            // ------------------------------------------------
+
+            template<class Self>
+            constexpr reference operator*(this Self&& me) {
+                return std::forward<Self>(me).self->transform(*std::forward<Self>(me).base);
+            }
+
+            // ------------------------------------------------
+
+            constexpr static friend iterator_impl operator+(const iterator_impl& s, difference_type i)
+                requires std::ranges::random_access_range<Range> { return iterator_impl{ s.base + i, s.self }; }
+            
+            constexpr static friend iterator_impl operator+(difference_type i, const iterator_impl& s)
+                requires std::ranges::random_access_range<Range> { return iterator_impl{ i + s.base, s.self }; }
+            
+            constexpr static friend iterator_impl operator-(const iterator_impl& s, difference_type i)
+                requires std::ranges::random_access_range<Range> { return iterator_impl{ s.base - i, s.self }; }
+            
+            constexpr static friend iterator_impl operator-(difference_type i, const iterator_impl& s)
+                requires std::ranges::random_access_range<Range> { return iterator_impl{ i - s.base, s.self }; }
+
+            // ------------------------------------------------
+
+            constexpr iterator_impl& operator+=(difference_type i) requires std::ranges::random_access_range<Range> {
+                base += i;
+                return *this;
+            }
+
+            constexpr iterator_impl& operator-=(difference_type i) requires std::ranges::random_access_range<Range> {
+                base -= i;
+                return *this;
+            }
+
+            // ------------------------------------------------
+
+            constexpr friend difference_type operator-(const iterator_impl& i, const iterator_impl& s) requires std::ranges::random_access_range<Range> {
+                return i.base - s.base;
+            }
+
+            // ------------------------------------------------
+
+            constexpr bool operator< (const iterator_impl& o) const requires std::ranges::random_access_range<Range> { return base <  o.base; }
+            constexpr bool operator<=(const iterator_impl& o) const requires std::ranges::random_access_range<Range> { return base <= o.base; }
+            constexpr bool operator> (const iterator_impl& o) const requires std::ranges::random_access_range<Range> { return base >  o.base; }
+            constexpr bool operator>=(const iterator_impl& o) const requires std::ranges::random_access_range<Range> { return base >= o.base; }
+
+            // ------------------------------------------------
+
+            constexpr reference operator[](difference_type i) const requires std::ranges::random_access_range<Range> {
+                return self->transform(base[i]);
+            }
+
+            // ------------------------------------------------
+
+            constexpr bool operator==(const auto& o) const { return base == o; }
+
+            // ------------------------------------------------
+
+        };
+        
+        // ------------------------------------------------
+        
+        using iterator = iterator_impl<false>;
+        using const_iterator = iterator_impl<true>;
+
+        // ------------------------------------------------
+
+        constexpr iterator begin() { return { std::ranges::begin(this->range), this }; }
+        constexpr base_sentinel end() { return std::ranges::end(this->range); }
+
+        constexpr const_iterator begin() const requires can_const_iterate { return { std::ranges::begin(this->range), this };  }
+        constexpr base_const_sentinel end() const requires can_const_iterate { return std::ranges::end(this->range); }
+
+        // ------------------------------------------------
+        
+        constexpr std::size_t size() const requires std::ranges::sized_range<Range> {
+            return std::ranges::size(this->range);
+        }
+
+        // ------------------------------------------------
+        
+        template<class Ty, class Self>
+            requires requires(Self&& self) { { std::ranges::to<Ty>(std::forward<Self>(self)) } -> std::same_as<Ty>; }
+        constexpr operator Ty(this Self&& self) {
+            return std::ranges::to<Ty>(std::forward<Self>(self));
+        }
+        
+        template<template<class...> class Ty, class Self>
+            requires requires(Self&& self) { { std::ranges::to<Ty>(std::forward<Self>(self)) }; }
+        constexpr auto as(this Self&& self) {
+            return std::ranges::to<Ty>(std::forward<Self>(self));
+        }
+        
+        template<class Ty, class Self>
+            requires requires(Self&& self) { { std::ranges::to<Ty>(std::forward<Self>(self)) } -> std::same_as<Ty>; }
+        constexpr auto as(this Self&& self) {
+            return std::ranges::to<Ty>(std::forward<Self>(self));
+        }
+
+        // ------------------------------------------------
+
+        template<class Self>
+            requires std::ranges::random_access_range<Range>
+        constexpr decltype(auto) operator[](this Self&& self, std::size_t i) {
+            return std::forward<Self>(self).transform(std::forward<Self>(self).range[i]);
+        }
+        
+        // ------------------------------------------------
+        
+        template<class Self, class Index>
+        constexpr index_operation<named_range, std::decay_t<Index>> operator[](this Self&& self, Index&& index) {
+            return {
+                .expression = std::forward<Self>(self), 
+                .index = std::forward<Index>(index),
+            };
+        }
+
+        // ------------------------------------------------
+
+    };
+
+    // ------------------------------------------------
+
+    template<class Vars, class Range, class Expression> // Unevaluated version
+        requires (unevaluated<Range> || !has_all_defines_for<Vars, Expression>)
+    struct named_range<Vars, Range, Expression> : named_range_storage<Vars, Range, Expression> {
+
+        // ------------------------------------------------
+
+        template<class Self, class Tuple>
+        constexpr auto evaluate(this Self&& self, Tuple&& tuple) {
+            using evaluated_t = decltype(kaixo::evaluate(std::declval<Self&&>().range, std::declval<Tuple&>()));
+            using expression_t = decltype(kaixo::evaluate(std::declval<Self&&>().expression, std::declval<Tuple&>()));
+            // First case, result is still not fully evaluated
+            if constexpr (unevaluated<evaluated_t>) return named_range<Vars, evaluated_t, expression_t> { {
+                .range = kaixo::evaluate(std::forward<Self>(self).range, tuple),
+                .expression = kaixo::evaluate(std::forward<Self>(self).expression, tuple),
+            } };
+            // Second case, result is fully evaluated, wrap in an 'all_t', which will store 
+            // it as either an owning_view or a ref_view.
+            else return named_range<Vars, std::views::all_t<evaluated_t>, expression_t> { {
+                .range = std::views::all(kaixo::evaluate(std::forward<Self>(self).range, tuple)),
+                .expression = kaixo::evaluate(std::forward<Self>(self).expression, tuple),
+            } };
+        }
+
+        // ------------------------------------------------
+        
+        template<class Self, class Index>
+        constexpr index_operation<named_range, std::decay_t<Index>> operator[](this Self&& self, Index&& index) {
+            return {
+                .expression = std::forward<Self>(self), 
+                .index = std::forward<Index>(index),
+            };
+        }
+
+        // ------------------------------------------------
+
+    }; 
+
+    // ------------------------------------------------
+    
+    // This '-' operator is half of the custom '<-' operator
+    // this instance is for evaluated ranges, and wraps it in
+    // either an owning_view or ref_view using all_t.
+    template<evaluated_range Range>
+    constexpr std::views::all_t<Range&&> operator-(Range&& range) {
+        return std::views::all(std::forward<Range>(range));
+    }
+
+    // The other instance of '-' operator, for unevaluated
+    // ranges. Since we can't do much here, just forward.
+    // It's wrapped into an owning_view or ref_view later
+    // inside the named_view once it has been evaluated.
+    template<unevaluated Range>
+    constexpr Range&& operator-(Range&& range) { return std::forward<Range>(range); }
+    
+    // Links a range to variables to create a named range
+    template<class ...Vars, class Range>
+        requires (evaluated_range<Range> || unevaluated<Range>)
+    constexpr named_range<var<Vars...>, std::decay_t<Range>> operator<(var<Vars...>, Range&& range) {
+        return { { 
+            .range = std::forward<Range>(range),
+        } };
+    }
+
+    // ------------------------------------------------
+    
+    // Link an expression to a named range
+    template<class Expression, class Vars, class Range>
+    constexpr auto operator|(Expression&& e, named_range<Vars, Range>&& r) 
+        -> named_range<Vars, Range, std::decay_t<Expression>> 
+    {
+        return { { 
+            .range = std::move(r).range,
+            .expression = std::forward<Expression>(e),
+        } };
+    }
+
+    // ------------------------------------------------
+    
+    // Handles main case for combining 2 ranges, adds them to a cartesian_product_view.
+    template< class           ...V1s
+            , evaluated_range    Range1
+            , class              Expression
+            , class           ...V2s
+            , evaluated_range    Range2>
+
+    constexpr auto operator,( named_range<var<V1s...>, Range1, Expression>&& r1
+                            , named_range<var<V2s...>, Range2>&&             r2)
+        -> named_range <var<V1s..., V2s...>
+                      , std::ranges::cartesian_product_view<Range1, Range2>
+                      , Expression>
+    {
+        using range_t = std::ranges::cartesian_product_view<Range1, Range2>;
+        return { {
+            .range = range_t{ std::move(r1).range, std::move(r2).range },
+            .expression = std::move(r1).expression,
+        } };
+    }
+    
+    // ------------------------------------------------
+    //             Range Expression Wrapper
+    // ------------------------------------------------
+    //  Wraps any range inside a fake unevaluated
+    //  expression this is the only way to have a fully
+    //  evaluated range inside of an expression.
+    // ------------------------------------------------
+    
+    template<any_range Range>
+    struct range_expression_wrapper {
+
+        // ------------------------------------------------
+
+        using defines = defines_t<Range>;
+        using depends = depends_t<Range>;
+
+        // ------------------------------------------------
+
+        using explicitly_unevaluated = int;
+
+        // ------------------------------------------------
+
+        Range range;
+
+        // ------------------------------------------------
+
+        template<class Self, class Tuple>
+        constexpr auto evaluate(this Self&& self, Tuple&& tuple) 
+            -> decltype(kaixo::evaluate(std::forward<Self>(self).range, tuple))
+        {
+            return kaixo::evaluate(std::forward<Self>(self).range, tuple);
+        }
+
+        // ------------------------------------------------
+
+    };
+
+    // ------------------------------------------------
+
+    // Wraps a range (both evaluated, and unevaluated) in an explicitly
+    // unevaluated wrapper, to be used in other expressions. This is
+    // to prevent the otherwise ambiguous comma operator overloads for
+    // the tuple_operation and zip_view.
+    template<explicit_unevaluated_range Range>
+    constexpr range_expression_wrapper<std::decay_t<Range>> operator+(Range&& range) {
+        return { std::forward<Range>(range) };
+    }
+
+    template<evaluated_range Range>
+    constexpr range_expression_wrapper<std::views::all_t<Range&&>> operator+(Range&& range) {
+        return { std::views::all(std::forward<Range>(range)) };
+    }
+    
+    // ------------------------------------------------
+    //                 Range Evaluator
+    // ------------------------------------------------
+    //  Handles case where an unevaluated range can
+    //  be evaluated using the previous definitions
+    //  in a named_range.
+    // ------------------------------------------------
+
+    // This evaluator evaluates the unevaluated range on the fly inside 
+    // a 'transform_view' using the current iteration values, and then 
+    // joining the resulting ranges, which creates a cartesian product.
+    template<class Vars, unevaluated Range>
+        requires has_all_defines_for<Vars, Range>
+    struct range_evaluator {
+        Range range;
+
+        template<class Self, class Tuple>
+        constexpr auto operator()(this Self&& self, Tuple&& tuple) {
+            using tuple_t = decltype(detail::store_as_tuple(std::declval<Tuple&&>()));
+            // This operator evaluates this unevaluated range on the fly
+            // for each result of the parent range. This is done as follows:
+            
+            // First step is to evaluate the unevaluated range, we know Vars is
+            // enough to fully evaluate the range, so this results in an evaluated range.
+            auto evaluated = std::views::all(kaixo::evaluate(std::forward<Self>(self).range, named_tuple<Vars, Tuple&&>{ std::forward<Tuple>(tuple) }));
+            return std::views::transform(std::move(evaluated),
+                // Then combine the results of the now evaluated range with the original
+                // results passed to this evaluator. This creates a cartesian product.
+                [tuple = detail::store_as_tuple(std::forward<Tuple>(tuple))]<class R>(R && r) {
+                    return std::tuple<tuple_t, R>(tuple, std::forward<R>(r));
+                }
+            );
         }
     };
 
-    template<class Ty> concept is_named_tuple = specialization<Ty, named_tuple>;
+    // ------------------------------------------------
+    
+    // Handles default case for evaluation of consecutive ranges
+    template< class           ...V1s
+            , evaluated_range    Range1
+            , class              Expression
+            , class           ...V2s
+            , unevaluated        Range2>
 
-    /**
-     * Has an evaluate function that works for a certain tuple.
-     */
-    template<class A, class Tuple>
-    concept has_evaluate_for = requires(A & a, Tuple & tuple) { { a.evaluate(tuple) }; };
+        requires has_all_defines_for<var<V1s...>, Range2>
 
-    /**
-     * Evaluate a variable in an expression.
-     * @param var value
-     * @param tuple named tuple
-     */
-    template<class A>
-    constexpr decltype(auto) evaluate(A&& val, is_named_tuple auto& tuple) {
-        if constexpr (has_evaluate_for<decay_t<A>, decay_t<decltype(tuple)>>)
-            return val.evaluate(tuple);
-        else return std::forward<A>(val);
+    constexpr auto operator,( named_range<var<V1s...>, Range1, Expression>&& r1
+                            , named_range<var<V2s...>, Range2>&&             r2)
+        -> named_range< var<V1s..., V2s...>
+                      , std::ranges::join_view<std::ranges::transform_view<Range1, range_evaluator<var<V1s...>, Range2>>>
+                      , Expression>
+    {
+        using evaluated_t = std::ranges::transform_view<Range1, range_evaluator<var<V1s...>, Range2>>;
+        using joined_t = std::ranges::join_view<evaluated_t>;
+        return { {
+            .range = joined_t{ evaluated_t{ std::move(r1).range, { std::move(r2).range } } },
+            .expression = std::move(r1).expression,
+        } };
     }
 
-    template<class Ty, is_var Var>
-    constexpr decltype(auto) named_value<Ty, Var>::execute(auto&, auto& tuple) const {
-        return tuple.assign(named_tuple{ Var{} = evaluate(tuple) });
-    }
+    // ------------------------------------------------
+    //                Unevaluated Cache
+    // ------------------------------------------------
+    //  Build a cache of unevaluated parts that will
+    //  be combined later once they're evaluated.
+    // ------------------------------------------------
+    
+    // The moment an unevaluated part is encountered that cannot be 
+    // evaluated on the fly, we need to cache all the parts for later
+    // evaluation. That is what this cache does.
+    template<class A, class B>
+        requires (unevaluated<A> || unevaluated<B>)
+    struct unevaluated_cache {
 
-    template<class Ty, is_var Var>
-    constexpr decltype(auto) named_value<Ty, Var>::evaluate(auto& tuple) const {
-        return kaixo::evaluate(value, tuple);
-    }
+        // ------------------------------------------------
+        
+        using is_range = int;
 
-    /**
-     * Valid expression parts, one must be a partial value
-     * and the rest may not be an operator or a range of any kind.
-     */
-    template<class ...As>
-    concept are_valid_expression = (is_partial<decay_t<As>> || ...)
-        && ((!is_range_kind<decay_t<As>> && !is_operator<decay_t<As>>) && ...);
+        // ------------------------------------------------
 
-    /**
-     * Are valid arguments to an overloaded function for 
-     * partial values. Means at least one of the values is partial.
-     */
-    template<class ...As>
-    concept are_valid_arguments = (is_partial<decay_t<As>> || ...);
+        using defines = var<>;
+        using depends = unique_t<concat_t<depends_t<A>, depends_t<B>>>;
 
-    /**
-     * Binary operator expression.
-     * @tparam A first type
-     * @tparam B second type
-     * @tparam Op operator
-     */
-    template<class A, class B, is_operator Op>
-        requires are_valid_expression<A, B>
-    struct binary_operation {
-        using depend = concat_t<depend<A>, depend<B>>::unique;
+        // ------------------------------------------------
 
-        [[no_unique_address]] A a{};
-        [[no_unique_address]] B b{};
+        [[no_unique_address]] A a;
+        [[no_unique_address]] B b;
 
-        template<class Self>
-        constexpr decltype(auto) evaluate(this Self&& self, is_named_tuple auto& tuple) {
-            return Op::evaluate(
+        // ------------------------------------------------
+
+        template<class Self, class Tuple>
+        constexpr auto evaluate(this Self&& self, Tuple&& tuple) {
+            return operator,(
                 kaixo::evaluate(std::forward<Self>(self).a, tuple),
                 kaixo::evaluate(std::forward<Self>(self).b, tuple));
         }
+
+        // ------------------------------------------------
+
     };
 
-    /**
-     * Unary operator expression.
-     * @tparam A first type
-     * @tparam Op operator
-     */
-    template<is_partial A, is_operator Op>
-    struct unary_operation {
-        using depend = depend<A>;
+    // ------------------------------------------------
 
-        [[no_unique_address]] A a{};
+    // Handles 2 cases for later evaluation:
+    //  - Continue building upon an unevaluated range, need to cache all ranges
+    //  - Encounters unevaluated range which can not be evaluated using V1s...
+    template< class   ...V1s
+            , class      Range1
+            , class      Expression
+            , class   ...V2s
+            , class      Range2>
 
-        template<class Self>
-        constexpr decltype(auto) evaluate(this Self&& self, is_named_tuple auto& tuple) {
-            return Op::evaluate(kaixo::evaluate(std::forward<Self>(self).a, tuple));
-        }
-    };
+        requires (unevaluated<Range1>     // Case 1: building upon unevaluated Range1
+               && explicit_range<Range2>  //         with Range2
+             ||   evaluated_range<Range1> // Case 2: encountered unevaluated Range2
+               && unevaluated<Range2>     //         which cannot be evaluated with V1s...
+               && !has_all_defines_for<var<V1s...>, Range2>)
 
-    /**
-     * Tuple expression, when evaluated creates a tuple.
-     * @tparam ...As values, expression, or variables.
-     */
-    template<class ...As>
-        requires are_valid_expression<As...>
-    struct tuple_operation {
-        using depend = concat_t<depend<As>...>::unique;
-
-        std::tuple<std::conditional_t<lvalue_reference<As>, As, decay_t<As>>...> parts;
-
-        template<class Self>
-        constexpr decltype(auto) evaluate(this Self&& self, is_named_tuple auto& tuple) {
-            auto res = [&]<std::size_t ...Is>(std::index_sequence<Is...>) {
-                return ref_tuple(kaixo::evaluate(std::get<Is>(std::forward<Self>(self).parts), tuple)...);
-            }(std::index_sequence_for<As...>{});
-            // Check whether the resulting tuple still has partial values.
-            if constexpr (as_info<decltype(res)>::template count_filter<[]<is_partial>{}> != 0)
-                return move_tparams_t<decltype(res), tuple_operation>{ std::move(res) };
-            else return res;
-        }
-    };
-
-    /**
-     * Tuple of vars, used in deconstruction of tuples, and 
-     * in resulting expressions to yield a tuple.
-     */
-    template<is_var ...As> 
-    struct var_tuple {
-        using depend = concat_t<depend<As>...>::unique;
-
-        template<class Self>
-        constexpr decltype(auto) evaluate(this Self&& self, is_named_tuple auto& tuple) {
-            return tuple_operation<As...>{ std::tuple{ As{}... } }.evaluate(tuple);
-        }
-    };
-
-    template<class Ty> concept is_var_tuple = specialization<Ty, var_tuple>;
-
-    /**
-     * All operators to construct the unevaluated expression objects.
-     */
-    namespace operators {
-        // Variable pack operators
-        template<is_var A, is_var B> constexpr auto operator,(const A&, const B&) { return var_tuple<A, B>{}; }
-        template<is_var A, is_var ...Bs> constexpr auto operator,(var_tuple<Bs...>, const A&) { return var_tuple<Bs..., A>{}; }
-        template<is_var A, is_var ...Bs> constexpr auto operator,(const A&, var_tuple<Bs...>) { return var_tuple<A, Bs...>{}; }
-
-        // Tuple expression operators
-        template<class A, class B>
-            requires are_valid_expression<A, B>
-        constexpr auto operator,(A&& a, B&& b) {
-            return tuple_operation<decay_t<A>, decay_t<B>>{ std::tuple{ std::forward<A>(a), std::forward<B>(b) } };
-        }
-
-        template<class A, class ...Bs>
-            requires are_valid_expression<Bs...>
-        constexpr auto operator,(A&& a, tuple_operation<Bs...>&& b) {
-            return tuple_operation<decay_t<A>, Bs...>{ std::tuple_cat(std::forward_as_tuple(std::forward<A>(a)), b.parts) };
-        }
-
-        template<class A, class ...Bs>
-            requires are_valid_expression<Bs...>
-        constexpr auto operator,(tuple_operation<Bs...>&& b, A&& a) {
-            return tuple_operation<Bs..., decay_t<A>>{ std::tuple_cat(std::move(b).parts, std::forward_as_tuple(std::forward<A>(a))) };
-        }
-
-#define KAIXO_BINARY_OPERATOR(name, op)                              \
-        struct name {                                                \
-            using is_operator = int;                                 \
-            template<class A, class B>                               \
-            constexpr static decltype(auto) evaluate(A&& a, B&& b) { \
-                return a op b;                                       \
-            }                                                        \
-        };                                                                                             \
-                                                                                                       \
-        template<class A, class B> requires are_valid_expression<A, B>                                 \
-        constexpr binary_operation<decay_t<A>, decay_t<B>, name> operator op(A&& a, B&& b) {                 \
-            return binary_operation<decay_t<A>, decay_t<B>, name>{ std::forward<A>(a), std::forward<B>(b) }; \
-        }
-
-#define KAIXO_UNARY_OPERATOR(name, op)                        \
-        struct name {                                         \
-            using is_operator = int;                          \
-            template<class A>                                 \
-            constexpr static decltype(auto) evaluate(A&& a) { \
-                return op std::forward<A>(a);                 \
-            }                                                 \
-        };                                                                  \
-                                                                            \
-        template<is_partial A>                                              \
-        constexpr unary_operation<decay_t<A>, name> operator op(A&& a) {    \
-            return unary_operation<decay_t<A>, name>{ std::forward<A>(a) }; \
-        }
-
-        KAIXO_UNARY_OPERATOR(increment, ++);
-        KAIXO_UNARY_OPERATOR(decrement, --);
-        KAIXO_UNARY_OPERATOR(boolean_not, !);
-        KAIXO_UNARY_OPERATOR(bitwise_not, ~);
-
-        KAIXO_BINARY_OPERATOR(add, +);
-        KAIXO_BINARY_OPERATOR(subtract, -);
-        KAIXO_BINARY_OPERATOR(multiply, *);
-        KAIXO_BINARY_OPERATOR(divide, / );
-        KAIXO_BINARY_OPERATOR(modulo, %);
-        KAIXO_BINARY_OPERATOR(less_than, < );
-        KAIXO_BINARY_OPERATOR(less_or_equal, <= );
-        KAIXO_BINARY_OPERATOR(greater_than, > );
-        KAIXO_BINARY_OPERATOR(greater_or_equal, >= );
-        KAIXO_BINARY_OPERATOR(equal, == );
-        KAIXO_BINARY_OPERATOR(not_equal, != );
-        KAIXO_BINARY_OPERATOR(left_shift, << );
-        KAIXO_BINARY_OPERATOR(right_shift, >> );
-        KAIXO_BINARY_OPERATOR(boolean_and, &&);
-        KAIXO_BINARY_OPERATOR(boolean_or, || );
-        KAIXO_BINARY_OPERATOR(bitwise_and, &);
-        KAIXO_BINARY_OPERATOR(bitwise_or, | );
-        KAIXO_BINARY_OPERATOR(bitwise_xor, ^);
-        KAIXO_BINARY_OPERATOR(spaceship, <=> );
-        KAIXO_BINARY_OPERATOR(add_assign, +=);
-        KAIXO_BINARY_OPERATOR(subtract_assign, -=);
-        KAIXO_BINARY_OPERATOR(multiply_assign, *=);
-        KAIXO_BINARY_OPERATOR(divide_assign, /=);
-        KAIXO_BINARY_OPERATOR(modulo_assign, %=);
-        KAIXO_BINARY_OPERATOR(left_shift_assign, <<=);
-        KAIXO_BINARY_OPERATOR(right_shift_assign, >>=);
-        KAIXO_BINARY_OPERATOR(and_assign, &=);
-        KAIXO_BINARY_OPERATOR(or_assign, |=);
-        KAIXO_BINARY_OPERATOR(xor_assign, ^=);
+    constexpr auto operator,( named_range<var<V1s...>, Range1, Expression>&& r1
+                            , named_range<var<V2s...>, Range2>&&             r2)
+        -> named_range< var<V1s..., V2s...>
+                      , unevaluated_cache< named_range<var<V1s...>, Range1>
+                                         , named_range<var<V2s...>, Range2>>
+                      , Expression>
+    {
+        using product_t = unevaluated_cache< named_range<var<V1s...>, Range1>
+                                           , named_range<var<V2s...>, Range2>>;
+        return { {
+            .range = product_t{ { std::move(r1.range) }, std::move(r2) },
+            .expression = std::move(r1.expression),
+        } };
     }
-}
 
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+    // ------------------------------------------------
+    //             Variable Assignment
+    // ------------------------------------------------
+    //  Assign single values to a variable for use
+    //  in later expressions.
+    // ------------------------------------------------
+               
+    template<class Vars, class ...Args>
+    struct variable_assignment_operation {
+        std::tuple<Args...> args;
 
-                        List Comprehension
-
- * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-
-namespace kaixo {
-
-    template<class Range> struct range_wrapper;
-
-    // Owning range
-    template<is_range Range>
-        requires (!lvalue_reference<Range>)
-    struct range_wrapper<Range> {
-        using range_type = decay_t<Range>;
-
-        range_type value;
-
-        using value_type = std::ranges::range_value_t<const range_type>;
-        using reference = std::ranges::range_reference_t<const range_type>;
-        using iterator = std::ranges::iterator_t<const range_type>;
-
-        constexpr iterator begin() const { return value.begin(); }
-        constexpr iterator end() const { return value.end(); }
+        template<class Self, class Tuple>
+        constexpr auto operator()(this Self&& self, Tuple&& tuple) {
+            // First evaluate all the arguments in the variable assignment
+            named_tuple<Vars, Tuple&> named{ tuple };
+            auto evaluated = std::apply([&]<class ...Tys>(Tys&& ...tys) {
+                using tuple_t = std::tuple<decltype(kaixo::evaluate(std::declval<Tys&&>(), std::declval<named_tuple<Vars, Tuple&>&>()))...>;
+                return tuple_t{ kaixo::evaluate(std::forward<Tys>(tys), named)... };
+            }, std::forward<Self>(self).args);
+            // Then combine the fully evaluated arguments with the original tuple
+            return std::make_tuple(std::forward<Tuple>(tuple), std::move(evaluated));
+        }
     };
+
+    // ------------------------------------------------
     
-    // Reference to range
-    template<is_range Range>
-        requires lvalue_reference<Range>
-    struct range_wrapper<Range> {
-        using range_type = remove_reference_t<Range>;
+    // Handles default case for a variable assignment
+    template< class                      ...V1s
+            , evaluated_range               Range
+            , class                         Expression
+            , class                      ...V2s
+            , class                      ...Args>
 
-        std::reference_wrapper<range_type> value;
+        requires has_all_defines_for<var<V1s...>, std::tuple<Args...>>
 
-        using value_type = std::ranges::range_value_t<range_type>;
-        using reference = std::ranges::range_reference_t<range_type>;
-        using iterator = std::ranges::iterator_t<range_type>;
-
-        constexpr iterator begin() const { return value.get().begin(); }
-        constexpr iterator end() const { return value.get().end(); }
-    };
-
-    template<class Ty> concept is_range_wrapper = specialization<Ty, range_wrapper>;
-
-    template<is_range Range>
-        requires (!is_range_wrapper<Range>)
-    constexpr auto wrap_range(Range&& range) {
-        return range_wrapper<Range&&>{ { std::forward<Range>(range) } };
+    constexpr auto operator,( named_range<var<V1s...>, Range, Expression>&&   r
+                            , named_tuple<var<V2s...>, std::tuple<Args...>>&& c)
+        -> named_range< var<V1s..., V2s...>
+                      , std::ranges::transform_view< std::views::all_t<Range>
+                                                   , variable_assignment_operation<var<V1s...>, Args...>>
+                      , Expression> 
+    {
+        using range_t = std::ranges::transform_view< std::views::all_t<Range>
+                                                   , variable_assignment_operation<var<V1s...>, Args...>>;
+        return { {
+            .range = range_t{ std::views::all(std::move(r).range), { std::move(c).tuple } },
+            .expression = std::move(r).expression,
+        } };
     }
     
-    template<class Range>
-    constexpr decltype(auto) wrap_range(Range&& range) {
-        return std::forward<Range>(range);
+    // Handles 2 cases for later evaluation:
+    //  - Continues building upon an unevaluated range, need to cache all parts
+    //  - Encounters Condition which can not be evaluated using Vars
+    template< class                   ...V1s
+            , class                      Range
+            , class                      Expression
+            , class                   ...V2s
+            , class                   ...Args>
+
+        requires (unevaluated<Range>     // Case 1: continue building upon unevaluated
+             ||   evaluated_range<Range> // Case 2: Can't fully evaluate Condition
+               && !has_all_defines_for<var<V1s...>, std::tuple<Args...>>)
+
+    constexpr auto operator,( named_range<var<V1s...>, Range, Expression>&&   r
+                            , named_tuple<var<V2s...>, std::tuple<Args...>>&& c)
+        -> named_range< var<V1s..., V2s...>
+                      , unevaluated_cache< named_range<var<V1s...>, Range>
+                                         , named_tuple<var<V2s...>, std::tuple<Args...>>>
+                      , Expression>
+    {
+        using range_t = unevaluated_cache< named_range<var<V1s...>, Range>
+                                         , named_tuple<var<V2s...>, std::tuple<Args...>>>;
+        return { {
+            .range = range_t{ { std::move(r).range }, std::move(c) },
+            .expression = std::move(r).expression,
+        } };
     }
 
-    /**
-     * Return code for executables in comprehension.
-     */
-    enum class return_code {
-        none = 0, // Continue like normal
-        stop = 1, // Stop iteration now, and set to end
-        skip = 2, // Skip current values, and increment again
-    };
+    // ------------------------------------------------
+    //                 Range Filter
+    // ------------------------------------------------
+    //  Build upon a named_range with a filter_view.
+    // ------------------------------------------------
 
-    constexpr return_code choose_code(return_code a, return_code b) {
-        return (return_code)std::max((int)a, (int)b);
-    }
+    // Add range filter, this simply adds a filter_view with this
+    // range_filter as callback, which will evaluate the stored Condition
+    // to filter the results of the parent range.
+    template<class Vars, class Condition>
+    struct range_filter {
+        Condition condition;
 
-    /**
-     * Tests if expression is executable with a certain named tuple.
-     */
-    template<class Ty, class Tuple>
-    concept is_executable_with = requires(decay_t<Ty>&val, return_code & code, decay_t<Tuple>&tuple) {
-        { val.execute(code, tuple) } -> is_named_tuple;
-    };
-
-    template<class E>
-    constexpr decltype(auto) execute(E&& e, return_code& code, is_named_tuple auto& tuple) {
-        if constexpr (is_executable_with<E, decltype(tuple)>) {
-            return std::forward<E>(e).execute(code, tuple);
-        } else if constexpr (std::convertible_to<decltype(evaluate(std::forward<E>(e), tuple)), bool>) {
-            code = bool(evaluate(std::forward<E>(e), tuple)) ? return_code::none : return_code::skip;
-            return tuple;
+        template<class Self, class Tuple>
+        constexpr bool operator()(this Self&& self, Tuple&& tuple) {
+            return static_cast<bool>(kaixo::evaluate( std::forward<Self>(self).condition
+                                                    , named_tuple<Vars, Tuple&&>{ std::forward<Tuple>(tuple) }));
         }
-    }
-
-    /**
-     * Get the complete type, given a named tuple.
-     * @tparam R partial type
-     * @tparam T named tuple
-     */
-    template<class R, is_named_tuple T>
-    struct full_type : std::type_identity<R> {};
-
-    template<is_partial R, is_named_tuple T> // Recurse on partial.
-    struct full_type<R, T> : full_type<decltype(std::declval<R&>().evaluate(std::declval<T&>())), T> {};
-
-    template<class R, is_named_tuple T>
-    using full_type_t = full_type<R, T>::type;
-
-    /**
-     * Get the defined named values of type R.
-     * @tparam R type to get defined named values of
-     * @tparam T named tuple
-     */
-    template<class R, is_named_tuple T>
-    struct defined_values : std::type_identity<T> {};
-
-    template<class R, is_named_tuple T>
-        requires is_executable_with<R, T>
-    struct defined_values<R, T> : std::type_identity<decay_t<decltype(
-        std::declval<R&>().execute(std::declval<return_code&>(), std::declval<T&>()))>> {};
-
-    template<is_range R, is_named_tuple T>
-    struct defined_values<R, T> : std::type_identity<prepend_t<as_info<T>, typename R::reference>> {};
-    
-    template<is_partial_range R, is_named_tuple T>
-    struct defined_values<R, T> : defined_values<full_type_t<R, T>, T> {};
-
-    template<class R, is_named_tuple T>
-    using defined_values_t = typename defined_values<R, T>::type;
-
-    /**
-     * Get the type of the named tuple given all parts.
-     * @tparam Tuple named tuple
-     * @tparam Parts parts
-     */
-    template<is_named_tuple Tuple, class Parts>
-    struct named_tuple_type;
-
-    template<is_named_tuple Tuple, class Part, class ...Parts>
-    struct named_tuple_type<Tuple, info<Part, Parts...>>
-        : named_tuple_type<defined_values_t<Part, Tuple>, info<Parts...>> {};
-
-    template<is_named_tuple Tuple, class Part>
-    struct named_tuple_type<Tuple, info<Part>> {
-        using type = defined_values_t<Part, Tuple>;
     };
 
-    template<class ...Parts>
-    using named_tuple_type_t = named_tuple_type<named_tuple<>, info<Parts...>>::type;
-
-    /**
-     * Get the intermediate value of type R. For every part this is a
-     * reference to the original part, except for a partial range, where
-     * for every iteration a new instance is generated, so it's stored by value.
-     * @tparam R type to get intermediate value of
-     * @tparam T named tuple
-     */
-    template<class R, is_named_tuple T>
-    struct intermediate_value : std::type_identity<dud> {};
-
-    template<is_partial_range R, is_named_tuple T>
-    struct intermediate_value<R, T> : std::type_identity<std::optional<full_type_t<R, T>>> {};
-
-    template<class R, is_named_tuple T>
-    using intermediate_value_t = intermediate_value<R, T>::type;
-
-    /**
-     * Get the iterator type of a range, given a named tuple.
-     * @tparam R (partial) range
-     * @tparam T named tuple
-     */
-    template<class R, is_named_tuple T>
-    struct iterator_data : std::type_identity<dud> {};
-
-    template<is_range R, is_named_tuple T> // Normal range, just get its iterator type.
-    struct iterator_data<R, T> : std::type_identity<std::ranges::iterator_t<R>> {};
-
-    template<is_partial_range R, is_named_tuple T>
-    struct iterator_data<R, T> : iterator_data<full_type_t<R, T>, T> {};
-
-    template<class R, is_named_tuple T>
-    using iterator_data_t = iterator_data<R, T>::type;
-
-    /**
-     * Flatten a tuple containing tuples.
-     * @param arg value
-     */
+    // ------------------------------------------------
+    
     template<class Ty>
-    constexpr decltype(auto) flatten_tuple(Ty&& arg) { 
-        return std::forward_as_tuple(std::forward<Ty>(arg)); 
+    concept valid_range_condition = valid_expression_arguments<Ty> && defines_t<Ty>::size == 0;
+
+    // Handles default case for a range filter
+    template< class                      Vars
+            , evaluated_range            Range
+            , class                      Expression
+            , valid_range_condition      Condition>
+
+        requires has_all_defines_for<Vars, Condition>
+
+    constexpr auto operator,( named_range<Vars, Range, Expression>&& r
+                            , Condition&&                            c)
+        -> named_range< Vars
+                      , std::ranges::filter_view< std::views::all_t<Range>
+                                                , range_filter<Vars, Condition>>
+                      , Expression> 
+    {
+        using filtered_t = std::ranges::filter_view< std::views::all_t<Range>
+                                                   , range_filter<Vars, Condition>>;
+        return { {
+            .range = filtered_t{ std::views::all(std::move(r).range), { std::forward<Condition>(c) } },
+            .expression = std::move(r).expression,
+        } };
+    }
+    
+    // Handles 2 cases for later evaluation:
+    //  - Continues building upon an unevaluated range, need to cache all parts
+    //  - Encounters Condition which can not be evaluated using Vars
+    template< class                      Vars
+            , class                      Range
+            , class                      Expression
+            , valid_range_condition      Condition>
+
+        requires (unevaluated<Range>     // Case 1: continue building upon unevaluated
+             ||   evaluated_range<Range> // Case 2: Can't fully evaluate Condition
+               && !has_all_defines_for<Vars, Condition>)
+
+    constexpr auto operator,( named_range<Vars, Range, Expression>&& r
+                            , Condition&&                            c)
+        -> named_range< Vars
+                      , unevaluated_cache< named_range<Vars, Range>
+                                         , Condition>
+                      , Expression>
+    {
+        using product_t = unevaluated_cache< named_range<Vars, Range>
+                                           , Condition>;
+        return { {
+            .range = product_t{ { std::move(r).range }, std::forward<Condition>(c) },
+            .expression = std::move(r).expression,
+        } };
     }
 
-    template<specialization<std::pair> Tuple>
-    constexpr decltype(auto) flatten_tuple(Tuple&& tuple) {
-        return std::tuple_cat(
-            flatten_tuple(std::forward<Tuple>(tuple).first),
-            flatten_tuple(std::forward<Tuple>(tuple).second));
-    }
+    // ------------------------------------------------
+    //                  Zipped Range
+    // ------------------------------------------------
 
-    template<specialization<std::tuple> Tuple>
-    constexpr decltype(auto) flatten_tuple(Tuple&& tuple) {
-        return sequence<as_info<decay_t<Tuple>>::size>([&]<std::size_t ...Is>() {
-            return std::tuple_cat(
-                flatten_tuple(std::get<Is>(std::forward<Tuple>(tuple)))...);
-        });
-    }
+    template<class ...Ranges>
+    struct zip_range;
 
-    /**
-     * Flatten a tuple type containing tuples.
-     */
-    template<class Ty>
-    using flatten_tuple_type_t = decltype(flatten_tuple(std::declval<Ty>()));
-
-    /**
-     * Determine the reference type of a named range based on
-     * provided variables and the range.
-     * @tparam Range range
-     * @tparam ...Vars defined variables
-     */
-    template<is_range Range, is_var ...Vars>
-    struct determine_named_range_reference;
-
-    template<is_range Range, is_var Var>
-    struct determine_named_range_reference<Range, Var>
-        : std::type_identity<named_tuple<named_value<std::ranges::range_reference_t<Range>, Var>>>{
-        constexpr static bool flatten = false;
-    };
-
-    template<class, class, class>
-    struct zip_as_named_tuple;
-    template<template<class...> class R, class ...Tys, is_var ...Vars, class Q>
-    struct zip_as_named_tuple<R<Tys...>, info<Vars...>, Q>
-        : std::type_identity<named_tuple<named_value<add_cvref_t<Tys, Q>, Vars>...>> {};
-
-    template<is_range Range, is_var ...Vars>
-        requires (as_info<std::ranges::range_reference_t<Range>>::size == sizeof...(Vars))
-    struct determine_named_range_reference<Range, Vars...>
-        : zip_as_named_tuple<decay_t<std::ranges::range_reference_t<Range>>, info<Vars...>, std::ranges::range_reference_t<Range>> {
-        constexpr static bool flatten = false;
+    template<evaluated_range ...Ranges> // Evaluated version
+    struct zip_range<Ranges...> : std::ranges::zip_view<std::views::all_t<Ranges>...> {
+        // Just uses the zip_view from the ranges library.
+        using std::ranges::zip_view<std::views::all_t<Ranges>...>::zip_view;
     };
     
-    template<is_range Range, is_var ...Vars>
-        requires (as_info<std::ranges::range_reference_t<Range>>::size != sizeof...(Vars)
-        && as_info<flatten_tuple_type_t<std::ranges::range_reference_t<Range>>>::size == sizeof...(Vars))
-    struct determine_named_range_reference<Range, Vars...> : zip_as_named_tuple<
-        flatten_tuple_type_t<std::ranges::range_reference_t<Range>>, info<Vars...>, std::ranges::range_reference_t<Range>> {
-        constexpr static bool flatten = true;
-    };
+    template<class ...Ranges> // Unevaluated version
+        requires (!evaluated_range<Ranges> || ...)
+    struct zip_range<Ranges...> {
 
-    template<class Range, is_var ...Vars> struct named_range;
-    template<class T, class ...V> named_range(const T&, const V&...) -> named_range<T, V...>;
-    template<class T, class ...V> named_range(T&&, const V&...) -> named_range<T, V...>;
+        // ------------------------------------------------
+        
+        using defines = var<>;
+        using depends = unique_t<concat_t<depends_t<std::decay_t<Ranges>>...>>;
 
-    /**
-     * Range linked to variables.
-     * @tparam Range range
-     * @tparam ...Vars variables
-     */
-    template<is_range Range, is_var ...Vars>
-    struct named_range<Range, Vars...> {
-        using define = info<Vars...>;
+        // ------------------------------------------------
 
-        using range_type = Range;
-        using _range_info = determine_named_range_reference<Range, Vars...>;
-        using reference = _range_info::type;
-        using value_type = decay_t<reference>;
-
-        [[no_unique_address]] Range rng;
-
-        constexpr named_range(Range&& range, const Vars&...) : rng(std::move(range)) {}
-        constexpr named_range(const Range& range, const Vars&...) : rng(range) {}
-
-        struct iterator {
-            using iterator_category = std::input_iterator_tag;
-            using difference_type = std::ptrdiff_t;
-            using reference = reference;
-            using value_type = value_type;
-
-            std::ranges::iterator_t<const Range> it{};
-
-            constexpr iterator& operator++() { ++it; return *this; }
-            constexpr iterator operator++(int) { iterator b = *this; operator++(); return b; }
-
-            constexpr bool operator!=(const iterator& other) const { return !operator==(other); }
-            constexpr bool operator==(const iterator& other) const { return it == other.it; }
-
-            constexpr reference operator*() {
-                if constexpr (_range_info::flatten) 
-                    return reference{ flatten_tuple(*it) };
-                else return reference{ *it };
-            }
-        };
-
-        constexpr iterator begin() const { return iterator{ std::ranges::begin(rng) }; }
-        constexpr iterator end() const { return iterator{ std::ranges::end(rng) }; }
-    };
-
-    /**
-     * Partial range linked to variables, still depends on variables.
-     * @tparam Range range
-     * @tparam ...Vars variables
-     */
-    template<is_partial Range, is_var ...Vars>
-    struct named_range<Range, Vars...> {
         using is_range = int;
 
-        using define = info<Vars...>;
-        using depend = depend<Range>;
+        // ------------------------------------------------
 
-        [[no_unique_address]] Range rng;
+        std::tuple<Ranges...> ranges;
 
-        constexpr named_range(Range&& range, const Vars&...) : rng(std::move(range)) {}
-        constexpr named_range(const Range& range, const Vars&...) : rng(range) {}
+        // ------------------------------------------------
 
-        template<class Self>
-        constexpr decltype(auto) evaluate(this Self&& self, is_named_tuple auto& tuple) {
-            return kaixo::named_range{
-                wrap_range(kaixo::evaluate(std::forward<Self>(self).rng, tuple)), Vars{}... 
-            };
+        template<class Self, class Tuple>
+        constexpr auto evaluate(this Self&& self, Tuple&& tuple) {
+            return std::apply([&]<class ...Args>(Args&& ...args) {
+                // Evaluate all ranges, and apply the comma operator again
+                // This will construct a new zip_range, automatically picking
+                // the correct one (unevaluated or evaluated).
+                return (kaixo::evaluate(std::forward<Args>(args), tuple), ...);
+            }, std::forward<Self>(self).ranges);
         }
+
+        // ------------------------------------------------
+
     };
 
-    /**
-     * List comprehension object.
-     * @tparam R result expression
-     * @tparam ...Parts comprehension parts
-     */
-    template<class R, class ...Parts>
-    struct list_comprehension {
-        using reference = std::conditional_t<is_partial<R>, 
-            decltype(evaluate(std::declval<R&>(), std::declval<named_tuple_type_t<Parts...>&>())), R>;
-        using value_type = decay_t<reference>;
-
-        struct iterator {
-            using iterator_category = std::input_iterator_tag;
-            using difference_type = std::ptrdiff_t;
-            using value_type = value_type;
-            using reference = reference;
-
-            constexpr iterator() : at_end(true) {}
-            constexpr iterator(const list_comprehension& self) : self(&self) { prepare(); }
-
-            constexpr iterator& operator++() { increment<sizeof...(Parts) - 1>(); return *this; }
-            constexpr iterator operator++(int) { iterator b = *this; operator++(); return b; }
-
-            constexpr bool operator!=(const iterator& other) const { return !operator==(other); }
-            constexpr bool operator==(const iterator& other) const {
-                return end() == true && other.end() == true // If end, iterators don't matter.
-                    || other.end() == end() && other.iterators == iterators;
-            }
-
-            constexpr reference operator*() {
-                if (end()) throw; // Can't access past end
-                return kaixo::evaluate(self->result, values.value());
-            }
-
-        private:
-            using named_tuple_type = named_tuple_type_t<Parts...>;
-            using iterator_datas = std::tuple<iterator_data_t<Parts, named_tuple_type>...>;
-            using intermediate_values = std::tuple<intermediate_value_t<Parts, named_tuple_type>...>;
-
-            intermediate_values intermediate{};
-            iterator_datas iterators{};
-            std::optional<named_tuple_type> values{};
-            const list_comprehension* self = nullptr;
-            bool at_end = false;
-          
-            constexpr bool end() const { return at_end; }
-            constexpr void set_end() { at_end = true; }
-
-            template<std::size_t I>
-            constexpr void increment() {
-                using type = info<Parts...>::template element<I>::type;
-                if constexpr (is_range_kind<type>) {
-                    auto& part = std::get<I>(self->parts);
-                    auto& intr = std::get<I>(intermediate);
-                    auto& iter = std::get<I>(iterators);
-
-                    auto at_end = [&] {
-                        if constexpr (is_partial_range<type>)
-                            return ++iter == std::ranges::end(intr.value());
-                        else return ++iter == std::ranges::end(part);
-                    };
-
-                    auto to_begin = [&] {
-                        if constexpr (is_partial_range<type>) {
-                            intr = evaluate(part, values.value());
-                            iter = std::ranges::begin(intr.value());
-                        } else iter = std::ranges::begin(part);
-                    };
-
-                    do {
-                        if (at_end()) {
-                            if constexpr (I != 0) increment<I - 1>();
-                            to_begin();
-                            if constexpr (I == 0) { set_end(); return; }
-                        }
-
-                        values.value().assign(*iter);
-
-                        if constexpr (I != sizeof...(Parts) - 1) {
-                            return_code code = evaluate_i<I + 1>();
-                            if (end() || code == return_code::stop) { set_end(); return; }
-                            else if (code == return_code::skip) continue;
-                        }
-                        return;
-                    } while (true);
-                }
-                else if constexpr (I == 0) { set_end(); return; }// We're at the end!
-                else return increment<I - 1>();
-            }
-
-            template<std::size_t I>
-            constexpr return_code evaluate_i() {
-                using type = info<Parts...>::template element<I>::type;
-                
-                if constexpr (!is_range_kind<type>) {
-                    auto& part = std::get<I>(self->parts);
-
-                    return_code code = return_code::none;
-                    
-                    execute(part, code, values.value());
-
-                    if (code != return_code::none) return code;
-                    if constexpr (I == sizeof...(Parts) - 1) return code;
-                    else return evaluate_i<I + 1>();
-                }
-                else return return_code::none;
-            }
-
-            template<std::int64_t I, class Tuple>
-            constexpr return_code initialize(Tuple&& cur_values, return_code code) {
-                if constexpr (I == sizeof...(Parts)) {
-                    values.emplace(std::forward<Tuple>(cur_values).value);
-                    return code;
-                } else {
-                    using type = info<Parts...>::template element<I>::type;
-                    auto& part = std::get<I>(self->parts);
-                    if constexpr (is_range_kind<type>) {
-                        auto& intr = std::get<I>(intermediate);
-                        auto& iter = std::get<I>(iterators);
-
-                        auto at_end = [&] {
-                            if constexpr (is_partial_range<type>)
-                                return iter == std::ranges::end(intr.value());
-                            else return iter == std::ranges::end(part);
-                        };
-
-                        if constexpr (is_partial_range<type>) {
-                            intr = evaluate(part, cur_values);
-                            iter = std::ranges::begin(intr.value());
-                        } else iter = std::ranges::begin(part);
-
-                        if (at_end()) {
-                            set_end();
-                            return return_code::stop;
-                        }
-
-                        return initialize<I + 1>(std::forward<Tuple>(cur_values).assign(*iter), code);
-                    } else {
-                        return_code new_code = return_code::none;
-                        using returned_tuple = decltype(execute(part, new_code, cur_values));
-                        // If returns same tuple (did not add values), don't evaluate
-                        // when already determined this initial value is invalid.
-                        if constexpr (kaixo::reference<returned_tuple>) {
-                            if (code != return_code::none) {
-                                return initialize<I + 1>(std::forward<Tuple>(cur_values), code);
-                            }
-                        }
-                        decltype(auto) res = execute(part, new_code, cur_values);
-                        return initialize<I + 1>(res, choose_code(new_code, code));
-                    }
-                }
-            }
-
-            constexpr inline void prepare() {
-                return_code _code = initialize<0>(named_tuple<>{}, return_code::none); // Set iterators to begin
-                if (_code == return_code::skip) operator++();
-                if (_code == return_code::stop) set_end();
-            }
+    // Construct the zip range
+    template<any_range A, any_range B>
+        requires (explicit_range<A> || explicit_range<B>)
+    constexpr auto operator,(A&& a, B&& b) {
+        using a_t = std::conditional_t<evaluated_range<A>, A, std::decay_t<A>>;
+        using b_t = std::conditional_t<evaluated_range<B>, B, std::decay_t<B>>;
+        if constexpr (evaluated_range<A> && evaluated_range<B>) return zip_range<A, B>{
+            std::forward<A>(a),
+            std::forward<B>(b),
         };
-
-        using const_iterator = iterator;
-
-        [[no_unique_address]] R result;
-        std::tuple<Parts...> parts;
-
-        constexpr iterator begin() const { return iterator(*this); }
-        constexpr iterator end() const { return iterator(); }
-
-        constexpr bool empty() const { return begin() == end(); }
-
-        constexpr reference operator[](std::size_t index) const {
-            auto _it = begin();
-            while (index > 0) ++_it, --index;
-            return *_it;
-        }
-    };
-
-    template<class R, class ...As> list_comprehension(R&&, std::tuple<As...>&&) -> list_comprehension<R, As...>;
-
-    /**
-     * Partial list comprehension, still misses some variables.
-     * @tparam R result expression
-     * @tparam ...Parts comprehension parts
-     */
-    template<class R, class ...Parts>
-        requires (concat_t<depend<R>, depend<Parts>...>::unique
-    ::template remove<typename concat_t<define<Parts>...>::unique>::size != 0)
-    struct list_comprehension<R, Parts...> {
-        using is_range = int;
-
-        using depend = concat_t<depend<R>, depend<Parts>...>::unique
-            ::template remove<typename concat_t<define<Parts>...>::unique>;
-
-        [[no_unique_address]] R result;
-        std::tuple<Parts...> parts;
-
-        template<class Self>
-        constexpr decltype(auto) evaluate(this Self&& self, is_named_tuple auto& tuple) {
-            return sequence<sizeof...(Parts)>([&]<std::size_t ...Is>() {
-                return kaixo::list_comprehension{ // No more dependencies
-                    kaixo::evaluate(std::forward<Self>(self).result, tuple),
-                    std::make_tuple(std::move(kaixo::evaluate(std::get<Is>(std::forward<Self>(self).parts), tuple))...)
-                };
-            });
-        }
-
-        template<class Self, is_named_value ...Tys>
-        constexpr decltype(auto) operator()(this Self&& self, Tys&& ...vals) {
-            named_tuple tpl{ std::forward<Tys>(vals)... };
-            return std::forward<Self>(self).evaluate(tpl);
-        }
-    };
-
-    template<class Ty> concept is_lc = specialization<Ty, list_comprehension>;
-    template<class Ty> concept is_partial_lc = is_lc<Ty> && is_partial<Ty>;
-
-    namespace operators {
-        constexpr decltype(auto) operator-(is_range auto& r) { return wrap_range(r); }
-        constexpr decltype(auto) operator-(is_range auto&& r) { return wrap_range(std::move(r)); }
-        constexpr decltype(auto) operator-(is_partial auto& r) { return r; }
-        constexpr decltype(auto) operator-(is_partial auto&& r) { return std::move(r); }
-        
-        constexpr decltype(auto) operator<(is_var auto v, is_range auto&& r) {
-            return named_range{ std::move(r), v }; 
-        }
-
-        constexpr decltype(auto) operator<(is_var auto v, is_partial auto& r) {
-            return named_range{ std::move(r), v };
-        }
-        
-        constexpr decltype(auto) operator<(is_var auto v, is_partial auto&& r) {
-            return named_range{ std::move(r), v };
-        }
-        
-        template<is_var ...Vars>
-        constexpr decltype(auto) operator<(var_tuple<Vars...>, is_range auto&& r) {
-            return named_range{ std::move(r), Vars{}... };
-        }
-
-        template<is_var ...Vars>
-        constexpr decltype(auto) operator<(var_tuple<Vars...>, is_partial auto& r) {
-            return named_range{ std::move(r), Vars{}... };
-        }
-        
-        template<is_var ...Vars>
-        constexpr decltype(auto) operator<(var_tuple<Vars...>, is_partial auto&& r) {
-            return named_range{ std::move(r), Vars{}... };
-        }
-
-        template<class A, class B>
-        constexpr decltype(auto) construct_lc(A&& a, B&& b) {
-            return list_comprehension<decay_t<A>, decay_t<B>>{
-                std::forward<A>(a), std::tuple{ std::forward<B>(b) }
-            };
-        };
-
-        template<class Ty, class Part>
-            requires (is_lc<Ty> || is_partial_lc<Ty>)
-        constexpr auto operator,(Ty&& lc, Part&& part) {
-            return list_comprehension{ std::forward<Ty>(lc).result, 
-                std::tuple_cat(std::forward<Ty>(lc).parts, std::tuple(std::forward<Part>(part))) 
-            };
-        };
-        
-        template<is_partial A, class B>
-        constexpr auto operator|(A&& a, B&& b) {
-            return construct_lc(std::forward<A>(a), std::forward<B>(b));
-        }
-        
-        template<is_var ...As, class B>
-        constexpr auto operator|(var_tuple<As...>, B&& b) {
-            return construct_lc(tuple_operation<As...>{ std::tuple{ As{}... } }, std::forward<B>(b));
-        }
+        else return zip_range<a_t, b_t>{ { 
+            std::forward<A>(a), 
+            std::forward<B>(b) 
+        } };
     }
-}
 
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+    // ------------------------------------------------
+    //                    Break
+    // ------------------------------------------------
+    //  Adds a condition, that when met, will stop
+    //  generating output. It does this by using the
+    //  take_while_view.
+    // ------------------------------------------------
+    
+    template<class Vars, unevaluated Break>
+    struct break_point {
+        Break expression;
 
-                   List Comprehension Extensions
-
- * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-
-namespace kaixo {
-
-    /**
-     * Type for conveying infinity.
-     */
-    constexpr struct inf_t {} inf{};
-
-    /**
-     * A break expression stops the list comprehension 
-     * when its contained expression evaluates to true.
-     */
-    template<class A>
-    struct break_expression {
-        using depend = depend<A>;
-
-        [[no_unique_address]] A expr;
-
-        template<class Self>
-        constexpr auto evaluate(this Self&& self, is_named_tuple auto& tuple) {
-            using result = decay_t<decltype(kaixo::evaluate(std::forward<Self>(self).expr, tuple))>;
-            return break_expression<result>{ kaixo::evaluate(std::forward<Self>(self).expr, tuple) };
-        }
-
-        template<class Self>
-        constexpr decltype(auto) execute(this Self&& self, return_code& code, is_named_tuple auto& tuple) {
-            if (kaixo::evaluate(std::forward<Self>(self).expr, tuple)) code = return_code::stop;
-            return tuple;
+        template<class Self, class Tuple>
+        constexpr bool operator()(this Self&& self, Tuple&& tuple) {
+            return !static_cast<bool>(kaixo::evaluate(
+                std::forward<Self>(self).expression, 
+                named_tuple<Vars, Tuple&&>{ std::forward<Tuple>(tuple) }
+            ));
         }
     };
+
+    // ------------------------------------------------
 
     constexpr struct break_t {
-        template<class A>
-        constexpr auto operator=(A&& a) const {
-            return break_expression{ std::forward<A>(a) };
+        template<unevaluated Break>
+        constexpr break_point<var<>, Break> operator=(Break&& e) const {
+            return { std::forward<Break>(e) };
         }
-    } brk{};
+    } brk;
 
+    // ------------------------------------------------
 
-    /**
-     * Zipped range for parallel iteration.
-     */
-    template<class ...As> struct zipped_range;
-    template<class ...As> zipped_range(std::tuple<As...>&&) -> zipped_range<As...>;
+    // Handles default case for break condition
+    template< class           Vars
+            , evaluated_range Range
+            , class           Expression
+            , unevaluated     Break>
 
-    template<is_range ...As>
-    struct zipped_range<As...> {
-        using define = concat_t<define<As>...>;
-        using depend = concat_t<depend<As>...>;
+        requires has_all_defines_for<Vars, Break>
 
-        using reference = std::tuple<std::ranges::range_reference_t<As>...>;
-        using value_type = std::tuple<std::ranges::range_value_t<As>...>;
+    constexpr auto operator,( named_range<Vars, Range, Expression>&& r
+                            , break_point<var<>, Break>&&            b) 
+        -> named_range< Vars
+                      , std::ranges::take_while_view<Range, break_point<Vars, Break>>
+                      , Expression> 
+    {
+        using break_t = std::ranges::take_while_view<Range, break_point<Vars, Break>>;
+        return { {
+            .range = break_t{ std::move(r).range, break_point<Vars, Break>{ std::move(b).expression } },
+            .expression = std::move(r).expression,
+        } };
+    }
 
-        std::tuple<As...> ranges;
+    // Handles 2 cases for later evaluation:
+    //  - Continues building upon an unevaluated range, need to cache all parts
+    //  - Encounters Break condition which can not be evaluated using Vars
+    template< class       Vars
+            , class       Range
+            , class       Expression
+            , unevaluated Break>
 
+        requires (unevaluated<Range>      // Case 1: continue building upon unevaluated
+             ||   evaluated_range<Range>  // Case 2: can't fully evaluate Break
+               && !has_all_defines_for<Vars, Break>)
+
+    constexpr auto operator,( named_range<Vars, Range, Expression>&& r
+                            , break_point<var<>, Break>&&            b) 
+        -> named_range< Vars
+                      , unevaluated_cache< named_range<Vars, Range>
+                                         , break_point<Vars, Break>>
+                      , Expression>
+    {
+        using product_t = unevaluated_cache< named_range<Vars, Range>
+                                           , break_point<Vars, Break>>;
+        return { {
+            .range = product_t{ { std::move(r).range }, break_point<Vars, Break>{ std::move(b).expression } },
+            .expression = std::move(r).expression,
+        } };
+    }
+    
+    // ------------------------------------------------
+    //                 Range Inserter
+    // ------------------------------------------------
+    //  Insert into a range dynamically while iterating
+    // ------------------------------------------------
+    
+    template<class Vars, evaluated_range Range, unevaluated Expression>
+        requires (!std::is_const_v<Range>)
+    struct range_inserter {
+        Range& range;
+        Expression expression;
+
+        template<class Self, class Tuple>
+        constexpr Tuple operator()(this Self&& self, Tuple&& tuple) {
+            std::inserter(std::forward<Self>(self).range, std::ranges::end(std::forward<Self>(self).range)) 
+                = kaixo::evaluate(std::forward<Self>(self).expression, named_tuple<Vars, Tuple&&>{ std::forward<Tuple>(tuple) });
+            return std::forward<Tuple>(tuple);
+        }
+    };
+
+    // ------------------------------------------------
+    
+    // Create the inserter like this: 'range << expression'
+    template<evaluated_range Range, unevaluated Expression>
+        requires (!std::is_const_v<Range>)
+    constexpr range_inserter<var<>, Range, Expression> operator<<(Range& range, Expression&& expression) {
+        return { range, std::forward<Expression>(expression) };
+    }
+
+    // ------------------------------------------------
+
+    // Handles default case for range inserter
+    template< class           Vars
+            , evaluated_range Range1
+            , class           Expression1
+            , evaluated_range Range2
+            , unevaluated     Expression2>
+
+        requires has_all_defines_for<Vars, Expression2>
+
+    constexpr auto operator,( named_range<Vars, Range1, Expression1>&&     r
+                            , range_inserter<var<>, Range2, Expression2>&& i) 
+        -> named_range< Vars
+                      , std::ranges::transform_view<Range1, range_inserter<Vars, Range2, Expression2>>
+                      , Expression1>
+    {
+        using inserter_t = range_inserter<Vars, Range2, Expression2>;
+        using transform_t = std::ranges::transform_view<Range1, inserter_t>;
+        return { {
+            .range = transform_t{ std::move(r).range, inserter_t{ i.range, std::move(i).expression } },
+            .expression = std::move(r).expression,
+        } };
+    }
+    
+    // Handles 2 cases for later evaluation:
+    //  - Continues building upon an unevaluated range, need to cache all parts
+    //  - Encounters expression which can not be evaluated using Vars
+    template< class           Vars
+            , class           Range1
+            , class           Expression1
+            , evaluated_range Range2
+            , unevaluated     Expression2>
+
+        requires (unevaluated<Range1>     // Case 1: continue building upon unevaluated
+             ||   evaluated_range<Range1> // Case 2: can't fully evaluate Expression2
+               && !has_all_defines_for<Vars, Expression2>)
+
+    constexpr auto operator,( named_range<Vars, Range1, Expression1>&&     r
+                            , range_inserter<var<>, Range2, Expression2>&& i) 
+        -> named_range< Vars
+                      , unevaluated_cache< named_range<Vars, Range1>
+                                         , range_inserter<Vars, Range2, Expression2>>
+                      , Expression1>
+    {
+        using inserter_t = range_inserter<Vars, Range2, Expression2>;
+        using product_t = unevaluated_cache<named_range<Vars, Range1>, inserter_t>;
+        return { {
+            .range = product_t{ { std::move(r).range }, inserter_t{ std::move(i).range, std::move(i).expression } },
+            .expression = std::move(r).expression,
+        } };
+    }
+    
+    // ------------------------------------------------
+    //                     Range
+    // ------------------------------------------------
+    //  The range object can be used to create
+    //  unevaluated ranges, where the begin, end
+    //  and increment can be dependent on outside
+    //  variables.
+    // ------------------------------------------------
+
+    template<class Begin, class End, class Increment = detail::dud>
+    struct range;
+
+    // ------------------------------------------------
+
+    template<class A, class B>
+    concept can_add_assign = requires (A& a, const B& b) {
+        { a += b } -> std::convertible_to<A&>; 
+    };
+    
+    template<class A, class B>
+    concept can_subtract_assign = requires (A& a, const B& b) {
+        { a -= b } -> std::convertible_to<A&>; 
+    };
+
+    // ------------------------------------------------
+
+    template<class Begin, class End, class Increment = detail::dud>
+    struct range_storage {
+
+        // ------------------------------------------------
+        
+        using value_type = typename std::conditional_t< std::same_as<Increment, detail::dud>
+                                                      , std::type_identity<Begin>
+                                                      , std::common_type<Begin, Increment>>::type;
+
+        // ------------------------------------------------
+
+        Begin beginValue;
+        End endValue;
+        Increment increment;
+
+        // ------------------------------------------------
+        
+        constexpr std::size_t size() const {
+            if constexpr (std::integral<value_type>) {
+                value_type min = std::min(static_cast<value_type>(beginValue), static_cast<value_type>(endValue));
+                value_type max = std::max(static_cast<value_type>(beginValue), static_cast<value_type>(endValue));
+                if constexpr (not_dud<Increment>) {
+                    return static_cast<std::size_t>((max - min + static_cast<value_type>(increment) - 1) / static_cast<value_type>(increment));
+                } else {
+                    return static_cast<std::size_t>(max - min);
+                }
+            } else if constexpr (std::floating_point<value_type>) {
+                value_type min = std::min(static_cast<value_type>(beginValue), static_cast<value_type>(endValue));
+                value_type max = std::max(static_cast<value_type>(beginValue), static_cast<value_type>(endValue));
+                if constexpr (not_dud<Increment>) {
+                    return static_cast<std::size_t>(std::ceil((max - min) / static_cast<value_type>(increment)));
+                } else {
+                    return static_cast<std::size_t>(std::ceil(max - min));
+                }
+            } else {
+                std::size_t size = 0;
+                value_type value = beginValue;
+                while (!is_end(value)) {
+                    this->do_increment(value);
+                    ++size;
+                }
+                return size;
+            }
+        }
+        
+        // ------------------------------------------------
+
+        constexpr bool is_end(const value_type& value) const {
+            if constexpr (std::floating_point<value_type> || not_dud<Increment>) {
+                if (beginValue < endValue) return static_cast<bool>(value >= endValue);
+                else return static_cast<bool>(value <= endValue);
+            } else return static_cast<bool>(value == endValue);
+        }
+
+        constexpr void do_increment(value_type& value) const {
+            if constexpr (std::same_as<Increment, detail::dud>) ++value;
+            else if constexpr (can_add_assign<value_type, Increment>) value += increment;
+            else value = value + increment;
+        }
+
+        constexpr void do_decrement(value_type& value) const {
+            if constexpr (std::same_as<Increment, detail::dud>) --value;
+            else if constexpr (can_subtract_assign<value_type, Increment>) value -= increment;
+            else value = value - increment;
+        }
+        
+        constexpr void do_increment(value_type& value, std::ptrdiff_t n) const {
+            if (n < 0) while (n++ != 0) do_decrement(value);
+            else while (n-- != 0) do_increment(value);
+        }
+
+        constexpr void do_decrement(value_type& value, std::ptrdiff_t n) const {
+            if (n < 0) while (n++ != 0) do_increment(value);
+            else while (n-- != 0) do_decrement(value);
+        }
+
+        // ------------------------------------------------
+
+    };
+
+    // ------------------------------------------------
+
+    template<class, class, class = void>
+    struct range_implementation;
+
+    template<class Begin, class End, class Increment> // Unevaluated version
+        requires (unevaluated<Begin> || unevaluated<End> || unevaluated<Increment>)
+    struct range_implementation<Begin, End, Increment> : range_storage<Begin, End, Increment> {
+
+        // ------------------------------------------------
+
+        template<class Self, class Tuple>
+        constexpr auto evaluate(this Self&& self, Tuple&& tuple) {
+            return range{
+                kaixo::evaluate(std::forward<Self>(self).beginValue, tuple),
+                kaixo::evaluate(std::forward<Self>(self).endValue, tuple),
+                kaixo::evaluate(std::forward<Self>(self).increment, tuple),
+            };
+        }
+
+        // ------------------------------------------------
+
+    };
+
+    template<class Begin, class End, class Increment> // Evaluated version
+        requires (!unevaluated<Begin> && !unevaluated<End> && !unevaluated<Increment>)
+    struct range_implementation<Begin, End, Increment> : range_storage<Begin, End, Increment> {
+
+        // ------------------------------------------------
+
+        struct sentinel {};
         struct iterator {
-            using iterator_category = std::input_iterator_tag;
+
+            // ------------------------------------------------
+
+            using value_type = typename range_storage<Begin, End, Increment>::value_type;
+            using reference = value_type;
             using difference_type = std::ptrdiff_t;
-            using reference = reference;
-            using value_type = value_type;
+            using iterator_category = std::random_access_iterator_tag;
 
-            using iterators = std::tuple<std::ranges::iterator_t<As>...>;
+            // ------------------------------------------------
 
-            iterators iters{};
+            value_type value;
+            const range_storage<Begin, End, Increment>* self;
+
+            // ------------------------------------------------
 
             constexpr iterator& operator++() {
-                sequence<sizeof...(As)>([&]<std::size_t ...Is>() {
-                    ((++std::get<Is>(iters)), ...);
-                });
+                self->do_increment(value);
                 return *this;
             }
 
             constexpr iterator operator++(int) {
-                iterator b = *this;
-                operator++();
-                return b;
+                iterator copy = *this;
+                self->do_increment(value);
+                return copy;
             }
 
-            constexpr reference operator*() {
-                return sequence<sizeof...(As)>([&]<std::size_t ...Is>() {
-                    return reference{ std::forward_as_tuple((*std::get<Is>(iters))...) };
-                });
+            constexpr iterator& operator--() {
+                self->do_decrement(value);
+                return *this;
             }
 
-            constexpr bool operator==(const iterator& o) const {
-                return sequence<sizeof...(As)>([&]<std::size_t ...Is>() {
-                    return ((std::get<Is>(iters) == std::get<Is>(o.iters)) || ...);
-                });
+            constexpr iterator operator--(int) {
+                iterator copy = *this;
+                self->do_decrement(value);
+                return copy;
             }
+
+            // ------------------------------------------------
+
+            constexpr value_type operator*() const { return value; }
+
+            // ------------------------------------------------
+
+            constexpr static friend iterator operator+(const iterator& s, difference_type i) { return iterator{ static_cast<Begin>(s.value + i), s.self }; }
+            constexpr static friend iterator operator+(difference_type i, const iterator& s) { return iterator{ static_cast<Begin>(i + s.value), s.self }; }
+            constexpr static friend iterator operator-(const iterator& s, difference_type i) { return iterator{ static_cast<Begin>(s.value - i), s.self }; }
+            constexpr static friend iterator operator-(difference_type i, const iterator& s) { return iterator{ static_cast<Begin>(i - s.value), s.self }; }
+
+            // ------------------------------------------------
+
+            constexpr iterator& operator+=(difference_type i) {
+                self->do_increment(value, i);
+                return *this;
+            }
+
+            constexpr iterator& operator-=(difference_type i) {
+                self->do_decrement(value, i);
+                return *this;
+            }
+
+            // ------------------------------------------------
+
+            constexpr friend difference_type operator-(const iterator& i, const iterator& s) {
+                return i.value - s.value;
+            }
+
+            // ------------------------------------------------
+
+            constexpr bool operator< (const iterator& o) const { return value <  o.value; }
+            constexpr bool operator<=(const iterator& o) const { return value <= o.value; }
+            constexpr bool operator> (const iterator& o) const { return value >  o.value; }
+            constexpr bool operator>=(const iterator& o) const { return value >= o.value; }
+
+            // ------------------------------------------------
+
+            constexpr reference operator[](difference_type i) const {
+                auto copy = value;
+                self->do_increment(copy, i);
+                return copy;
+            }
+
+            // ------------------------------------------------
+
+            constexpr bool operator==(const iterator& o) const { return value == o.value; }
+            constexpr bool operator==(sentinel) const { return self->is_end(value); }
+
+            // ------------------------------------------------
+
         };
 
-        constexpr iterator begin() const {
-            return sequence<sizeof...(As)>([&]<std::size_t ...Is>() {
-                return iterator{ std::make_tuple(std::ranges::begin(std::get<Is>(ranges))...) };
-            }); 
+        // ------------------------------------------------
+
+        constexpr iterator begin() const { return { this->beginValue, this }; }
+        constexpr sentinel end() const { return {}; }
+
+        // ------------------------------------------------
+
+        constexpr Begin operator[](std::size_t i) const {
+            auto copy = this->beginValue;
+            this->do_increment(copy, i);
+            return copy;
         }
 
-        constexpr iterator end() const {
-            return sequence<sizeof...(As)>([&]<std::size_t ...Is>() {
-                return iterator{ std::make_tuple(std::ranges::end(std::get<Is>(ranges))...) };
-            }); 
-        }
+        // ------------------------------------------------
+
     };
 
-    template<class Ty>
-    concept is_zipped_range = specialization<Ty, zipped_range>;
+    // ------------------------------------------------
 
-    template<class ...As>
-        requires (((is_partial<As> || is_range<As>) && ...) && (is_partial<As> || ...))
-    struct zipped_range<As...> {
+    template<class Begin, class End, class Increment>
+    struct range : range_implementation<Begin, End, Increment> {
+
+        // ------------------------------------------------
+
+        using defines = var<>;
+        using depends = unique_t<concat_t<depends_t<Begin>, depends_t<End>, depends_t<Increment>>>;
+
+        // ------------------------------------------------
+
         using is_range = int;
-        using depend = concat_t<depend<As>...>;
 
-        std::tuple<As...> ranges;
+        // ------------------------------------------------
 
-        template<class Self>
-        constexpr auto evaluate(this Self&& self, is_named_tuple auto& tuple) {
-            return sequence<sizeof...(As)>([&]<std::size_t ...Is>() {
-                return kaixo::zipped_range{
-                    std::make_tuple(
-                        wrap_range(kaixo::evaluate(std::get<Is>(std::forward<Self>(self).ranges), tuple))...)
+        template<class ...Args>
+            requires (sizeof...(Args) == 2 || sizeof...(Args) == 3)
+        constexpr range(Args&& ...args)
+            : range_implementation<Begin, End, Increment>{ std::forward<Args>(args)... }
+        {}
+
+        // ------------------------------------------------
+
+    };
+
+    template<class ...Args>
+    range(Args&&...) -> range<std::decay_t<Args>...>;
+
+    // ------------------------------------------------
+
+    constexpr struct inf_t {} inf;
+
+    constexpr static bool operator==(const auto&, inf_t) { return false; }
+    constexpr static bool operator> (const auto&, inf_t) { return false; }
+    constexpr static bool operator>=(const auto&, inf_t) { return false; }
+    constexpr static bool operator< (const auto&, inf_t) { return true;  }
+    constexpr static bool operator<=(const auto&, inf_t) { return true;  }
+    constexpr static bool operator==(inf_t, const auto&) { return false; }
+    constexpr static bool operator> (inf_t, const auto&) { return true;  }
+    constexpr static bool operator>=(inf_t, const auto&) { return true;  }
+    constexpr static bool operator< (inf_t, const auto&) { return false; }
+    constexpr static bool operator<=(inf_t, const auto&) { return false; }
+
+    // ------------------------------------------------
+    //                    Empty
+    // ------------------------------------------------
+    //  Empty expression checks whether an unevaluated
+    //  range is empty when evaluated on the fly.
+    // ------------------------------------------------
+
+    template<unevaluated Range>
+    struct empty_operation {
+
+        // ------------------------------------------------
+
+        using defines = var<>;
+        using depends = depends_t<Range>;
+
+        // ------------------------------------------------
+
+        Range range;
+
+        // ------------------------------------------------
+
+        template<class Self, class Tuple>
+        constexpr bool evaluate(this Self&& self, Tuple&& tuple) {
+            auto evaluated = kaixo::evaluate(std::forward<Self>(self).range, tuple);
+            return std::ranges::empty(evaluated);
+        }
+
+        // ------------------------------------------------
+
+    };
+
+    // ------------------------------------------------
+
+    template<unevaluated Range>
+    constexpr empty_operation<Range> is_empty(Range&& range) {
+        return empty_operation<Range>{
+            .range = std::forward<Range>(range) 
+        };
+    }
+
+    // ------------------------------------------------
+    //                Fold Operation
+    // ------------------------------------------------
+    //  Operation on ranges that folds them into
+    //  single values, like std::ranges::fold_left etc.
+    // ------------------------------------------------
+
+    constexpr detail::dud _{};
+
+    // ------------------------------------------------
+
+    template<class A, class B, class Op>
+    struct fold_operation {
+
+        // ------------------------------------------------
+
+        using defines = var<>;
+        using depends = unique_t<concat_t<depends_t<A>, depends_t<B>>>;
+
+        // ------------------------------------------------
+
+        [[no_unique_address]] A a;
+        [[no_unique_address]] B b;
+        [[no_unique_address]] Op operation{};
+
+        // ------------------------------------------------
+
+        template<class Self, class Tuple>
+        constexpr auto evaluate(this Self&& self, Tuple&& tuple) {
+            using evaluated1_t = decltype(kaixo::evaluate(std::declval<Self&&>().a, std::declval<Tuple&>()));
+            using evaluated2_t = decltype(kaixo::evaluate(std::declval<Self&&>().b, std::declval<Tuple&>()));
+
+            if constexpr (unevaluated<evaluated1_t> || unevaluated<evaluated2_t>) {
+                return fold_operation<evaluated1_t, evaluated2_t, Op>{
+                    kaixo::evaluate(std::forward<Self>(self).a, tuple),
+                    kaixo::evaluate(std::forward<Self>(self).b, tuple),
+                    std::forward<Self>(self).operation,
                 };
-            });
+            } else {
+                // There are 2 special cases: logic_and and logic_or operator
+                // when no initial value is defined, it will default to 'true'
+                // for the logic_and operator, and 'false' for logic_or.
+                if constexpr (std::ranges::range<evaluated1_t>) {
+                    if constexpr (std::same_as<B, detail::dud>)
+                        if constexpr (std::same_as<Op, logic_and_operator>)
+                            return std::ranges::fold_right(
+                                kaixo::evaluate(std::forward<Self>(self).a, tuple),
+                                true, // Default to 'true' for logic_and
+                                std::forward<Self>(self).operation);
+                        else if constexpr (std::same_as<Op, logic_or_operator>)
+                            return std::ranges::fold_right(
+                                kaixo::evaluate(std::forward<Self>(self).a, tuple),
+                                false, // Default to 'false' for logic_or
+                                std::forward<Self>(self).operation);
+                        else return std::ranges::fold_right_last(
+                            kaixo::evaluate(std::forward<Self>(self).a, tuple),
+                            std::forward<Self>(self).operation);
+                    else return std::ranges::fold_right(
+                        kaixo::evaluate(std::forward<Self>(self).a, tuple),
+                        kaixo::evaluate(std::forward<Self>(self).b, tuple),
+                        std::forward<Self>(self).operation);
+                } else if constexpr (std::ranges::range<evaluated2_t>) {
+                    if constexpr (std::same_as<A, detail::dud>)
+                        if constexpr (std::same_as<Op, logic_and_operator>)
+                            return std::ranges::fold_left(
+                                kaixo::evaluate(std::forward<Self>(self).a, tuple),
+                                true, // Default to 'true' for logic_and
+                                std::forward<Self>(self).operation);
+                        else if constexpr (std::same_as<Op, logic_or_operator>)
+                            return std::ranges::fold_left(
+                                kaixo::evaluate(std::forward<Self>(self).a, tuple),
+                                false, // Default to 'false' for logic_or
+                                std::forward<Self>(self).operation);
+                        else return std::ranges::fold_left_first(
+                            kaixo::evaluate(std::forward<Self>(self).b, tuple),
+                            std::forward<Self>(self).operation);
+                    else return std::ranges::fold_left(
+                        kaixo::evaluate(std::forward<Self>(self).b, tuple),
+                        kaixo::evaluate(std::forward<Self>(self).a, tuple),
+                        std::forward<Self>(self).operation);
+                } else {
+                    static_assert(std::conditional_t<false, A, std::false_type>::value, "Fold expression expected a range!");
+                }
+            }
         }
+
+        // ------------------------------------------------
+
     };
 
-    template<class Ty>
-    concept is_partial_zipped_range = is_zipped_range<Ty> && is_partial<Ty>;
+    // ------------------------------------------------
 
-    namespace operators {
-        template<class A, class B>
-            requires ((is_range_kind<A> || is_range_kind<B>) 
-                && !is_lc<A> && !is_partial_lc<A> 
-                && !is_zipped_range<A> && !is_partial_zipped_range<A>)
-        constexpr auto operator,(A&& a, B&& b) {
-            return zipped_range{
-                std::make_tuple(wrap_range(std::forward<A>(a)), wrap_range(std::forward<B>(b)))
-            };
-        }        
-        
-        template<class A, is_range_kind B>
-            requires (is_zipped_range<A> || is_partial_zipped_range<A>)
-        constexpr auto operator,(A&& a, B&& b) {
-            return zipped_range{ 
-                std::tuple_cat(std::forward<A>(a).ranges, std::make_tuple(wrap_range(std::forward<B>(b)))) 
-            };
-        }
+#define KAIXO_FOLD_OP(op, name)                                                                 \
+    template<class A>                                                                           \
+    constexpr auto operator op(A&& a, detail::dud)                                              \
+        -> fold_operation<std::decay_t<A>, detail::dud, name##_operator>                        \
+    {                                                                                           \
+        return { std::forward<A>(a), {} };                                                      \
+    }                                                                                           \
+                                                                                                \
+    template<class A>                                                                           \
+    constexpr auto operator op(detail::dud, A&& a)                                              \
+        -> fold_operation<detail::dud, std::decay_t<A>, name##_operator>                        \
+    {                                                                                           \
+        return { {}, std::forward<A>(a) };                                                      \
+    }                                                                                           \
+                                                                                                \
+    template<class A, class B>                                                                  \
+        requires (unevaluated<A> || unevaluated<B>)                                             \
+    constexpr auto operator op(fold_operation<A, detail::dud, name##_operator>&& a, B&& b)      \
+        -> fold_operation<std::decay_t<A>, std::decay_t<B>, name##_operator>                    \
+    {                                                                                           \
+        return { std::move(a).a, std::forward<B>(b) };                                          \
+    }                                                                                           \
+                                                                                                \
+    template<class A, class B>                                                                  \
+        requires (unevaluated<A> || unevaluated<B>)                                             \
+    constexpr auto operator op(A&& a, fold_operation<detail::dud, B, name##_operator>&& b)      \
+        -> fold_operation<std::decay_t<A>, std::decay_t<B>, name##_operator>                    \
+    {                                                                                           \
+        return { std::forward<A>(a), std::move(b).b };                                          \
     }
 
-    /**
-     * Simple range object, allows for variable 
-     * dependent, and infinite ranges.
-     */
-    template<class ...As> struct range;
-
-    template<arithmetic A> range(A, A)->range<A>;
-    template<arithmetic A> range(A, inf_t)->range<A, inf_t>;
-    template<is_partial A> range(A, inf_t)->range<decay_t<A>, inf_t>;
-    template<is_partial A, arithmetic B> range(A, B)->range<decay_t<A>, B>;
-    template<arithmetic A, is_partial B> range(A, B)->range<A, decay_t<B>>;
-    template<is_partial A, is_partial B> range(A, B)->range<decay_t<A>, decay_t<B>>;
-
-    /**
-     * Default range between 2 numbers.
-     */
-    template<arithmetic Ty>
-    struct range<Ty> {
-        Ty a{};
-        Ty b{};
-        constexpr range(Ty a, Ty b) : a(a), b(b) {}
-
-        struct iterator {
-            using iterator_category = std::input_iterator_tag;
-            using difference_type = std::ptrdiff_t;
-            using value_type = Ty;
-
-            Ty value{};
-
-            constexpr iterator& operator++() { ++value; return *this; }
-            constexpr iterator operator++(int) { iterator b = *this; ++value; return b; }
-            constexpr Ty operator*() { return value; }
-            constexpr bool operator==(const iterator& b) const { return value == b.value; }
-        };
-
-        constexpr iterator begin() const { return { a }; }
-        constexpr iterator end() const { return { std::max(b + 1, a) }; }
-    };
+    KAIXO_FOLD_OP(+, add);      KAIXO_FOLD_OP(< , less_than);          KAIXO_FOLD_OP(| , bit_or);      KAIXO_FOLD_OP(*=, multiply_assign);
+    KAIXO_FOLD_OP(-, subtract); KAIXO_FOLD_OP(> , greater_than);       KAIXO_FOLD_OP(^, bit_xor);      KAIXO_FOLD_OP(/=, divide_assign);
+    KAIXO_FOLD_OP(*, multiply); KAIXO_FOLD_OP(<= , less_or_equals);    KAIXO_FOLD_OP(&&, logic_and);   KAIXO_FOLD_OP(%=, modulo_assign);
+    KAIXO_FOLD_OP(/ , divide);  KAIXO_FOLD_OP(>= , greater_or_equals); KAIXO_FOLD_OP(|| , logic_or);   KAIXO_FOLD_OP(&=, bit_and_assign);
+    KAIXO_FOLD_OP(%, modulo);   KAIXO_FOLD_OP(+=, add_assign);         KAIXO_FOLD_OP(== , equals);     KAIXO_FOLD_OP(|=, bit_or_assign);
+    KAIXO_FOLD_OP(&, bit_and);  KAIXO_FOLD_OP(-=, subtract_assign);    KAIXO_FOLD_OP(!= , not_equals); KAIXO_FOLD_OP(^=, bit_xor_assign);
     
-    /**
-     * Range from value to infinity.
-     */
-    template<arithmetic Ty>
-    struct range<Ty, inf_t> {
-        Ty a{};
+    // ------------------------------------------------
+    //          Basic variable definitions
+    // ------------------------------------------------
 
-        constexpr range(Ty a, inf_t) : a(a) {}
+    namespace variables {
+        constexpr auto a = var<struct variable_a>{};
+        constexpr auto b = var<struct variable_b>{};
+        constexpr auto c = var<struct variable_c>{};
+        constexpr auto d = var<struct variable_d>{};
+        constexpr auto e = var<struct variable_e>{};
+        constexpr auto f = var<struct variable_f>{};
+        constexpr auto g = var<struct variable_g>{};
+        constexpr auto h = var<struct variable_h>{};
+        constexpr auto i = var<struct variable_i>{};
+        constexpr auto j = var<struct variable_j>{};
+        constexpr auto k = var<struct variable_k>{};
+        constexpr auto l = var<struct variable_l>{};
+        constexpr auto m = var<struct variable_m>{};
+        constexpr auto n = var<struct variable_n>{};
+        constexpr auto o = var<struct variable_o>{};
+        constexpr auto p = var<struct variable_p>{};
+        constexpr auto q = var<struct variable_q>{};
+        constexpr auto r = var<struct variable_r>{};
+        constexpr auto s = var<struct variable_s>{};
+        constexpr auto t = var<struct variable_t>{};
+        constexpr auto u = var<struct variable_u>{};
+        constexpr auto v = var<struct variable_v>{};
+        constexpr auto w = var<struct variable_w>{};
+        constexpr auto x = var<struct variable_x>{};
+        constexpr auto y = var<struct variable_y>{};
+        constexpr auto z = var<struct variable_z>{};
 
-        struct iterator {
-            using iterator_category = std::input_iterator_tag;
-            using difference_type = std::ptrdiff_t;
-            using value_type = Ty;
-
-            std::optional<Ty> value{};
-
-            constexpr iterator& operator++() { ++value.value(); return *this; }
-            constexpr iterator operator++(int) { iterator b = *this; ++value.value(); return b; }
-            constexpr Ty operator*() { return value.value(); }
-            constexpr bool operator==(const iterator& b) const { return value == b.value; }
-        };
-
-        constexpr iterator begin() const { return { a }; }
-        constexpr iterator end() const { return {}; }
-    };
-
-    /**
-     * Range from dependent variable to value.
-     */
-    template<is_partial A, arithmetic Ty>
-    struct range<A, Ty> {
-        using is_range = int;
-        using depend = depend<A>;
-
-        A a{};
-        Ty b{};
-
-        template<class T>
-        constexpr range(T&& a, Ty b) : a(std::forward<T>(a)), b(b) {}
-
-        constexpr auto evaluate(is_named_tuple auto& tuple) const {
-            return kaixo::range{ (Ty)kaixo::evaluate(a, tuple), b};
-        }
-    };
-        
-    /**
-     * Range from dependent variable to infinity.
-     */
-    template<is_partial A>
-    struct range<A, inf_t> {
-        using is_range = int;
-        using depend = depend<A>;
-
-        A a;
-
-        template<class T>
-        constexpr range(T&& a, inf_t) : a(std::forward<T>(a)) {}
-
-        constexpr auto evaluate(is_named_tuple auto& tuple) const {
-            return kaixo::range{ kaixo::evaluate(a, tuple), inf };
-        }
-    };
-
-    /**
-     * Range from value to dependent variable.
-     */
-    template<arithmetic Ty, is_partial B>
-    struct range<Ty, B> {
-        using is_range = int;
-        using depend = depend<B>;
-
-        Ty a{};
-        B b{};
-
-        template<class T>
-        constexpr range(Ty a, T&& b) : a(a), b(std::forward<T>(b)) {}
-
-        constexpr auto evaluate(is_named_tuple auto& tuple) const {
-            return kaixo::range{ a, (Ty)kaixo::evaluate(b, tuple) };
-        }
-    };
-
-    /**
-     * Range from dependent variable to dependent variable.
-     */
-    template<is_partial A, is_partial B>
-    struct range<A, B> {
-        using is_range = int;
-        using depend = concat_t<depend<A>, depend<B>>;
-
-        A a;
-        B b;
-
-        template<class T, class Q>
-        constexpr range(T&& a, Q&& b) : a(std::forward<T>(a)), b(std::forward<Q>(b)) {}
-
-        constexpr auto evaluate(is_named_tuple auto& tuple) const {
-            return kaixo::range{ kaixo::evaluate(a, tuple), kaixo::evaluate(b, tuple) };
-        }
-    };
-
-    /**
-     * Some often used names in list comprehensions.
-     */
-    namespace default_variables {
-        constexpr var<"a"> a{};
-        constexpr var<"b"> b{};
-        constexpr var<"c"> c{};
-        constexpr var<"d"> d{};
-        constexpr var<"e"> e{};
-        constexpr var<"f"> f{};
-        constexpr var<"g"> g{};
-        constexpr var<"h"> h{};
-        constexpr var<"i"> i{};
-        constexpr var<"j"> j{};
-        constexpr var<"k"> k{};
-        constexpr var<"l"> l{};
-        constexpr var<"m"> m{};
-        constexpr var<"n"> n{};
-        constexpr var<"o"> o{};
-        constexpr var<"p"> p{};
-        constexpr var<"q"> q{};
-        constexpr var<"r"> r{};
-        constexpr var<"s"> s{};
-        constexpr var<"t"> t{};
-        constexpr var<"u"> u{};
-        constexpr var<"v"> v{};
-        constexpr var<"w"> w{};
-        constexpr var<"x"> x{};
-        constexpr var<"y"> y{};
-        constexpr var<"z"> z{};
-        constexpr var<"_"> _{};
+        constexpr auto key   = var<struct Key>{};
+        constexpr auto value = var<struct Value>{};
     }
 
-    /**
-     * Extension for a list comprehension to insert values
-     * into a range directly.
-     * @tparam Range range, must be non-const reference
-     * @tparam Ty expression
-     */
-    template<is_range Range, class Ty>
-    struct range_inserter {
-        using depend = depend<Ty>;
-        
-        std::reference_wrapper<Range> value;
-        Ty expr;
-
-        template<class Self>
-        constexpr decltype(auto) evaluate(this Self&& self, auto& tuple) {
-            return range_inserter{ value.get(), std::forward<Self>(self).expr };
-        }
-
-        template<class Self>
-        constexpr decltype(auto) execute(this Self&& self, auto& code, auto& tuple) {
-            using value_type = decay_t<Range>::value_type;
-            using result_type = decltype(kaixo::evaluate(std::forward<Self>(self).expr, tuple));
-            auto& container = std::forward<Self>(self).value.get();
-            // Need a special case for value type of pair, as there's no conversion
-            // operator between a tuple with 2 elements and a pair.
-            if constexpr (!specialization<result_type, std::pair> && specialization<value_type, std::pair>) {
-                container.insert(container.end(), tuple_to_pair(kaixo::evaluate(std::forward<Self>(self).expr, tuple)));
-            } else {
-                container.insert(container.end(), kaixo::evaluate(std::forward<Self>(self).expr, tuple));
-            }
-            return tuple;
-        }
-    };
-
-    namespace operators {
-        template<is_range Range, is_partial Ty>
-        constexpr auto operator<<(Range& range, Ty&& expr) {
-            return range_inserter<Range, decay_t<Ty>>{ range, std::forward<Ty>(expr) };
-        }
-    }
+    // ------------------------------------------------
+    
 }
 
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+// ------------------------------------------------
 
-                    Standard Function Overloads
+namespace std {
 
- * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+    // ------------------------------------------------
+    //            std function overloads
+    // ------------------------------------------------
+    //  Overloads for a bunch of standard functions.
+    // ------------------------------------------------
 
-namespace kaixo {
-    /**
-     * Expression for overloaded function.
-     * @tparam Fun function type
-     * @tparam ...Args provided argument types
-     */
-    template<class Fun, class ...Args>
-    struct overload_expression {
-        using depend = concat_t<depend<Args>...>;
-
-        [[no_unique_address]] Fun fun{};
-        std::tuple<Args...> args;
-
-        template<class Self>
-        constexpr decltype(auto) evaluate(this Self&& self, is_named_tuple auto& tuple) {
-            using remaining = depend::template remove<kaixo::define<decltype(tuple)>>;
-            if constexpr (remaining::size == 0) {
-                return sequence<sizeof...(Args)>([&]<std::size_t ...Is>() {
-                    return std::forward<Self>(self).fun(kaixo::evaluate(std::get<Is>(std::forward<Self>(self).args), tuple)...);
-                });
-            } else {
-                return sequence<sizeof...(Args)>([&]<std::size_t ...Is>() {
-                    return overload_expression{
-                        std::forward<Self>(self).fun, 
-                        std::make_tuple(kaixo::evaluate(std::get<Is>(std::forward<Self>(self).args), tuple)...)
-                    };
-                });
-            }
-        }
-    };
-
-#define lc_std_fun(y, x)                                                                 \
-    template<class ...Args>                                                              \
-        requires are_valid_arguments<Args...>                                            \
-    constexpr auto x(Args&&... args) {                                                   \
-        constexpr auto fun = []<class ...Args>(Args&&...args) -> decltype(auto) {        \
-            return ::y x(std::forward<Args>(args)...);                                   \
-        };                                                                               \
-        return overload_expression{ fun, std::make_tuple(std::forward<Args>(args)...) }; \
+#define KAIXO_FUNCTION_OVERLOAD(name)                                                                               \
+    template<class Tys, class Args>                                                                                 \
+    struct kaixo_##name##_overload;                                                                                 \
+                                                                                                                    \
+    template<class ...Tys, class... Args>                                                                           \
+        requires kaixo::valid_overload_arguments<Args...>                                                           \
+    struct kaixo_##name##_overload<std::tuple<Tys...>, std::tuple<Args...>> {                                       \
+        using defines = kaixo::var<>;                                                                               \
+        using depends = kaixo::unique_t<kaixo::concat_t<kaixo::depends_t<Args>...>>;                                \
+                                                                                                                    \
+        std::tuple<Args...> args;                                                                                   \
+                                                                                                                    \
+        template<class Self, class Tuple>                                                                           \
+        constexpr decltype(auto) evaluate(this Self&& self, Tuple&& tuple) {                                        \
+            return std::apply([&]<class ...Ts>(Ts&& ...ts) {                                                        \
+                if constexpr (sizeof...(Tys) == 0) {                                                                \
+                    return name(kaixo::evaluate(std::forward<Ts>(ts), tuple)...);                                   \
+                } else {                                                                                            \
+                    return name<Tys...>(kaixo::evaluate(std::forward<Ts>(ts), tuple)...);                           \
+                }                                                                                                   \
+            }, std::forward<Self>(self).args);                                                                      \
+        }                                                                                                           \
+    };                                                                                                              \
+                                                                                                                    \
+    template<class ...Tys, class... Args>                                                                           \
+        requires kaixo::valid_overload_arguments<Args...>                                                           \
+    constexpr kaixo_##name##_overload<std::tuple<Tys...>, std::tuple<std::decay_t<Args>...>> name(Args&& ...args) { \
+        return { .args = { std::forward<Args>(args)... } };                                                         \
     }
+
+    // ------------------------------------------------
+
+    // <functional>
+    KAIXO_FUNCTION_OVERLOAD(bind_front);
+    KAIXO_FUNCTION_OVERLOAD(bind);
+    KAIXO_FUNCTION_OVERLOAD(ref);
+    KAIXO_FUNCTION_OVERLOAD(cref);
+    KAIXO_FUNCTION_OVERLOAD(invoke);
+
+    // ------------------------------------------------
+
+    // <any>
+    KAIXO_FUNCTION_OVERLOAD(any_cast);
+    KAIXO_FUNCTION_OVERLOAD(make_any);
+
+    // ------------------------------------------------
+
+    // <algorithm>
+    KAIXO_FUNCTION_OVERLOAD(adjacent_find);
+    KAIXO_FUNCTION_OVERLOAD(binary_search);
+    KAIXO_FUNCTION_OVERLOAD(bsearch);
+    KAIXO_FUNCTION_OVERLOAD(clamp);
+    KAIXO_FUNCTION_OVERLOAD(copy_backward);
+    KAIXO_FUNCTION_OVERLOAD(copy_n);
+    KAIXO_FUNCTION_OVERLOAD(count);
+    KAIXO_FUNCTION_OVERLOAD(count_if);
+    KAIXO_FUNCTION_OVERLOAD(equal);
+    KAIXO_FUNCTION_OVERLOAD(equal_range);
+    KAIXO_FUNCTION_OVERLOAD(fill);
+    KAIXO_FUNCTION_OVERLOAD(fill_n);
+    KAIXO_FUNCTION_OVERLOAD(find);
+    KAIXO_FUNCTION_OVERLOAD(find_end);
+    KAIXO_FUNCTION_OVERLOAD(find_first_of);
+    KAIXO_FUNCTION_OVERLOAD(find_if);
+    KAIXO_FUNCTION_OVERLOAD(find_if_not);
+    KAIXO_FUNCTION_OVERLOAD(for_each);
+    KAIXO_FUNCTION_OVERLOAD(for_each_n);
+    KAIXO_FUNCTION_OVERLOAD(generate);
+    KAIXO_FUNCTION_OVERLOAD(generate_n);
+    KAIXO_FUNCTION_OVERLOAD(includes);
+    KAIXO_FUNCTION_OVERLOAD(inplace_merge);
+    KAIXO_FUNCTION_OVERLOAD(iter_swap);
+    KAIXO_FUNCTION_OVERLOAD(lexicographical_compare);
+    KAIXO_FUNCTION_OVERLOAD(lower_bound);
+    KAIXO_FUNCTION_OVERLOAD(make_heap);
+    KAIXO_FUNCTION_OVERLOAD(max);
+    KAIXO_FUNCTION_OVERLOAD(max_element);
+    KAIXO_FUNCTION_OVERLOAD(merge);
+    KAIXO_FUNCTION_OVERLOAD(min);
+    KAIXO_FUNCTION_OVERLOAD(min_element);
+    KAIXO_FUNCTION_OVERLOAD(minmax);
+    KAIXO_FUNCTION_OVERLOAD(minmax_element);
+    KAIXO_FUNCTION_OVERLOAD(mismatch);
+    KAIXO_FUNCTION_OVERLOAD(move);
+    KAIXO_FUNCTION_OVERLOAD(move_backward);
+    KAIXO_FUNCTION_OVERLOAD(next_permutation);
+    KAIXO_FUNCTION_OVERLOAD(nth_element);
+    KAIXO_FUNCTION_OVERLOAD(partial_sort);
+    KAIXO_FUNCTION_OVERLOAD(partial_sort_copy);
+    KAIXO_FUNCTION_OVERLOAD(partition);
+    KAIXO_FUNCTION_OVERLOAD(partition_copy);
+    KAIXO_FUNCTION_OVERLOAD(partition_point);
+    KAIXO_FUNCTION_OVERLOAD(pop_heap);
+    KAIXO_FUNCTION_OVERLOAD(prev_permutation);
+    KAIXO_FUNCTION_OVERLOAD(push_heap);
+    KAIXO_FUNCTION_OVERLOAD(qsort);
+    KAIXO_FUNCTION_OVERLOAD(remove);
+    KAIXO_FUNCTION_OVERLOAD(remove_copy);
+    KAIXO_FUNCTION_OVERLOAD(replace);
+    KAIXO_FUNCTION_OVERLOAD(replace_copy);
+    KAIXO_FUNCTION_OVERLOAD(replace_copy_if);
+    KAIXO_FUNCTION_OVERLOAD(reverse);
+    KAIXO_FUNCTION_OVERLOAD(reverse_copy);
+    KAIXO_FUNCTION_OVERLOAD(rotate);
+    KAIXO_FUNCTION_OVERLOAD(rotate_copy);
+    KAIXO_FUNCTION_OVERLOAD(sample);
+    KAIXO_FUNCTION_OVERLOAD(search);
+    KAIXO_FUNCTION_OVERLOAD(search_n);
+    KAIXO_FUNCTION_OVERLOAD(shift_left);
+    KAIXO_FUNCTION_OVERLOAD(shift_right);
+    KAIXO_FUNCTION_OVERLOAD(set_difference);
+    KAIXO_FUNCTION_OVERLOAD(set_intersection);
+    KAIXO_FUNCTION_OVERLOAD(set_symmetric_difference);
+    KAIXO_FUNCTION_OVERLOAD(set_union);
+    KAIXO_FUNCTION_OVERLOAD(sort);
+    KAIXO_FUNCTION_OVERLOAD(sort_heap);
+    KAIXO_FUNCTION_OVERLOAD(stable_partition);
+    KAIXO_FUNCTION_OVERLOAD(stable_sort);
+    KAIXO_FUNCTION_OVERLOAD(swap);
+    KAIXO_FUNCTION_OVERLOAD(swap_ranges);
+    KAIXO_FUNCTION_OVERLOAD(transform);
+    KAIXO_FUNCTION_OVERLOAD(unique);
+    KAIXO_FUNCTION_OVERLOAD(unique_copy);
+    KAIXO_FUNCTION_OVERLOAD(upper_bound);
+
+    // ------------------------------------------------
+
+    // <iterator>
+    KAIXO_FUNCTION_OVERLOAD(advance);
+    KAIXO_FUNCTION_OVERLOAD(back_inserter);
+    KAIXO_FUNCTION_OVERLOAD(begin);
+    KAIXO_FUNCTION_OVERLOAD(data);
+    KAIXO_FUNCTION_OVERLOAD(distance);
+    KAIXO_FUNCTION_OVERLOAD(empty);
+    KAIXO_FUNCTION_OVERLOAD(end);
+    KAIXO_FUNCTION_OVERLOAD(front_inserter);
+    KAIXO_FUNCTION_OVERLOAD(inserter);
+    KAIXO_FUNCTION_OVERLOAD(make_move_iterator);
+    KAIXO_FUNCTION_OVERLOAD(make_reverse_iterator);
+    KAIXO_FUNCTION_OVERLOAD(next);
+    KAIXO_FUNCTION_OVERLOAD(prev);
+    KAIXO_FUNCTION_OVERLOAD(rbegin);
+    KAIXO_FUNCTION_OVERLOAD(rend);
+    KAIXO_FUNCTION_OVERLOAD(size);
+
+    // ------------------------------------------------
+
+    // <memory>, <memory_resource>
+    KAIXO_FUNCTION_OVERLOAD(addressof);
+    KAIXO_FUNCTION_OVERLOAD(align);
+    KAIXO_FUNCTION_OVERLOAD(assume_aligned);
+    KAIXO_FUNCTION_OVERLOAD(calloc);
+    KAIXO_FUNCTION_OVERLOAD(free);
+    KAIXO_FUNCTION_OVERLOAD(malloc);
+    KAIXO_FUNCTION_OVERLOAD(make_unique);
+    KAIXO_FUNCTION_OVERLOAD(realloc);
+    KAIXO_FUNCTION_OVERLOAD(destroy);
+    KAIXO_FUNCTION_OVERLOAD(destroy_at);
+    KAIXO_FUNCTION_OVERLOAD(destroy_n);
+    KAIXO_FUNCTION_OVERLOAD(make_obj_using_allocator);
+    KAIXO_FUNCTION_OVERLOAD(to_address);
+    KAIXO_FUNCTION_OVERLOAD(uninitialized_construct_using_allocator);
+    KAIXO_FUNCTION_OVERLOAD(uninitialized_copy);
+    KAIXO_FUNCTION_OVERLOAD(uninitialized_copy_n);
+    KAIXO_FUNCTION_OVERLOAD(uninitialized_default_construct);
+    KAIXO_FUNCTION_OVERLOAD(uninitialized_default_construct_n);
+    KAIXO_FUNCTION_OVERLOAD(uninitialized_fill);
+    KAIXO_FUNCTION_OVERLOAD(uninitialized_fill_n);
+    KAIXO_FUNCTION_OVERLOAD(uninitialized_move);
+    KAIXO_FUNCTION_OVERLOAD(uninitialized_move_n);
+    KAIXO_FUNCTION_OVERLOAD(uninitialized_value_construct);
+    KAIXO_FUNCTION_OVERLOAD(uninitialized_value_construct_n);
+
+    // ------------------------------------------------
+
+    // <numeric>
+    KAIXO_FUNCTION_OVERLOAD(accumulate);
+    KAIXO_FUNCTION_OVERLOAD(adjacent_difference);
+    KAIXO_FUNCTION_OVERLOAD(inclusive_scan);
+    KAIXO_FUNCTION_OVERLOAD(inner_product);
+    KAIXO_FUNCTION_OVERLOAD(iota);
+    KAIXO_FUNCTION_OVERLOAD(reduce);
+    KAIXO_FUNCTION_OVERLOAD(partial_sum);
+    KAIXO_FUNCTION_OVERLOAD(transform_exclusive_scan);
+    KAIXO_FUNCTION_OVERLOAD(transform_inclusive_scan);
+    KAIXO_FUNCTION_OVERLOAD(transform_reduce);
+    KAIXO_FUNCTION_OVERLOAD(bit_cast);
+    KAIXO_FUNCTION_OVERLOAD(gcd);
+    KAIXO_FUNCTION_OVERLOAD(lcm);
+    KAIXO_FUNCTION_OVERLOAD(lerp);
+    KAIXO_FUNCTION_OVERLOAD(abs);
+    KAIXO_FUNCTION_OVERLOAD(acos);
+    KAIXO_FUNCTION_OVERLOAD(acosh);
+    KAIXO_FUNCTION_OVERLOAD(asin);
+    KAIXO_FUNCTION_OVERLOAD(asinh);
+    KAIXO_FUNCTION_OVERLOAD(atan);
+    KAIXO_FUNCTION_OVERLOAD(atan2);
+    KAIXO_FUNCTION_OVERLOAD(atanh);
+    KAIXO_FUNCTION_OVERLOAD(cbrt);
+    KAIXO_FUNCTION_OVERLOAD(ceil);
+    KAIXO_FUNCTION_OVERLOAD(copysign);
+    KAIXO_FUNCTION_OVERLOAD(cos);
+    KAIXO_FUNCTION_OVERLOAD(cosh);
+    KAIXO_FUNCTION_OVERLOAD(div);
+    KAIXO_FUNCTION_OVERLOAD(erf);
+    KAIXO_FUNCTION_OVERLOAD(erfc);
+    KAIXO_FUNCTION_OVERLOAD(exp);
+    KAIXO_FUNCTION_OVERLOAD(exp2);
+    KAIXO_FUNCTION_OVERLOAD(expm1);
+    KAIXO_FUNCTION_OVERLOAD(fabs);
+    KAIXO_FUNCTION_OVERLOAD(fdim);
+    KAIXO_FUNCTION_OVERLOAD(floor);
+    KAIXO_FUNCTION_OVERLOAD(fma);
+    KAIXO_FUNCTION_OVERLOAD(fmax);
+    KAIXO_FUNCTION_OVERLOAD(fmin);
+    KAIXO_FUNCTION_OVERLOAD(fmod);
+    KAIXO_FUNCTION_OVERLOAD(fpclassify);
+    KAIXO_FUNCTION_OVERLOAD(frexp);
+    KAIXO_FUNCTION_OVERLOAD(hypot);
+    KAIXO_FUNCTION_OVERLOAD(ilogb);
+    KAIXO_FUNCTION_OVERLOAD(isfinite);
+    KAIXO_FUNCTION_OVERLOAD(isgreater);
+    KAIXO_FUNCTION_OVERLOAD(isgreaterequal);
+    KAIXO_FUNCTION_OVERLOAD(isinf);
+    KAIXO_FUNCTION_OVERLOAD(isless);
+    KAIXO_FUNCTION_OVERLOAD(islessequal);
+    KAIXO_FUNCTION_OVERLOAD(islessgreater);
+    KAIXO_FUNCTION_OVERLOAD(isnan);
+    KAIXO_FUNCTION_OVERLOAD(isnormal);
+    KAIXO_FUNCTION_OVERLOAD(isunordered);
+    KAIXO_FUNCTION_OVERLOAD(ldexp);
+    KAIXO_FUNCTION_OVERLOAD(lgamma);
+    KAIXO_FUNCTION_OVERLOAD(log);
+    KAIXO_FUNCTION_OVERLOAD(log10);
+    KAIXO_FUNCTION_OVERLOAD(log1p);
+    KAIXO_FUNCTION_OVERLOAD(log2);
+    KAIXO_FUNCTION_OVERLOAD(logb);
+    KAIXO_FUNCTION_OVERLOAD(modf);
+    KAIXO_FUNCTION_OVERLOAD(nan);
+    KAIXO_FUNCTION_OVERLOAD(nearbyint);
+    KAIXO_FUNCTION_OVERLOAD(nextafter);
+    KAIXO_FUNCTION_OVERLOAD(pow);
+    KAIXO_FUNCTION_OVERLOAD(remainder);
+    KAIXO_FUNCTION_OVERLOAD(remquo);
+    KAIXO_FUNCTION_OVERLOAD(rint);
+    KAIXO_FUNCTION_OVERLOAD(round);
+    KAIXO_FUNCTION_OVERLOAD(scalbn);
+    KAIXO_FUNCTION_OVERLOAD(signbit);
+    KAIXO_FUNCTION_OVERLOAD(sin);
+    KAIXO_FUNCTION_OVERLOAD(sinh);
+    KAIXO_FUNCTION_OVERLOAD(sqrt);
+    KAIXO_FUNCTION_OVERLOAD(tan);
+    KAIXO_FUNCTION_OVERLOAD(tanh);
+    KAIXO_FUNCTION_OVERLOAD(tgamma);
+    KAIXO_FUNCTION_OVERLOAD(trunc);
+    KAIXO_FUNCTION_OVERLOAD(midpoint);
+    KAIXO_FUNCTION_OVERLOAD(assoc_laguerre);
+    KAIXO_FUNCTION_OVERLOAD(assoc_legendre);
+    KAIXO_FUNCTION_OVERLOAD(beta);
+    KAIXO_FUNCTION_OVERLOAD(comp_ellint_1);
+    KAIXO_FUNCTION_OVERLOAD(comp_ellint_2);
+    KAIXO_FUNCTION_OVERLOAD(comp_ellint_3);
+    KAIXO_FUNCTION_OVERLOAD(cyl_bessel_i);
+    KAIXO_FUNCTION_OVERLOAD(cyl_bessel_j);
+    KAIXO_FUNCTION_OVERLOAD(cyl_bessel_k);
+    KAIXO_FUNCTION_OVERLOAD(cyl_neumann);
+    KAIXO_FUNCTION_OVERLOAD(ellint_1);
+    KAIXO_FUNCTION_OVERLOAD(ellint_2);
+    KAIXO_FUNCTION_OVERLOAD(ellint_3);
+    KAIXO_FUNCTION_OVERLOAD(expint);
+    KAIXO_FUNCTION_OVERLOAD(hermite);
+    KAIXO_FUNCTION_OVERLOAD(laguerre);
+    KAIXO_FUNCTION_OVERLOAD(legendre);
+    KAIXO_FUNCTION_OVERLOAD(riemann_zeta);
+    KAIXO_FUNCTION_OVERLOAD(sph_bessel);
+    KAIXO_FUNCTION_OVERLOAD(sph_legendre);
+    KAIXO_FUNCTION_OVERLOAD(sph_neumann);
+
+    // ------------------------------------------------
+
+    // <string>, <cstring>, <cwctype>, <cuchar>
+    KAIXO_FUNCTION_OVERLOAD(atof);
+    KAIXO_FUNCTION_OVERLOAD(atoi);
+    KAIXO_FUNCTION_OVERLOAD(isalnum);
+    KAIXO_FUNCTION_OVERLOAD(isalpha);
+    KAIXO_FUNCTION_OVERLOAD(isblank);
+    KAIXO_FUNCTION_OVERLOAD(iscntrl);
+    KAIXO_FUNCTION_OVERLOAD(isdigit);
+    KAIXO_FUNCTION_OVERLOAD(isgraph);
+    KAIXO_FUNCTION_OVERLOAD(islower);
+    KAIXO_FUNCTION_OVERLOAD(isprint);
+    KAIXO_FUNCTION_OVERLOAD(ispunct);
+    KAIXO_FUNCTION_OVERLOAD(isspace);
+    KAIXO_FUNCTION_OVERLOAD(isupper);
+    KAIXO_FUNCTION_OVERLOAD(isxdigit);
+    KAIXO_FUNCTION_OVERLOAD(memchr);
+    KAIXO_FUNCTION_OVERLOAD(memcmp);
+    KAIXO_FUNCTION_OVERLOAD(memcpy);
+    KAIXO_FUNCTION_OVERLOAD(memmove);
+    KAIXO_FUNCTION_OVERLOAD(memset);
+    KAIXO_FUNCTION_OVERLOAD(strcat);
+    KAIXO_FUNCTION_OVERLOAD(strchr);
+    KAIXO_FUNCTION_OVERLOAD(strcmp);
+    KAIXO_FUNCTION_OVERLOAD(strcoll);
+    KAIXO_FUNCTION_OVERLOAD(strcpy);
+    KAIXO_FUNCTION_OVERLOAD(strcspn);
+    KAIXO_FUNCTION_OVERLOAD(strerror);
+    KAIXO_FUNCTION_OVERLOAD(strlen);
+    KAIXO_FUNCTION_OVERLOAD(strncat);
+    KAIXO_FUNCTION_OVERLOAD(strncmp);
+    KAIXO_FUNCTION_OVERLOAD(strncpy);
+    KAIXO_FUNCTION_OVERLOAD(strpbrk);
+    KAIXO_FUNCTION_OVERLOAD(strrchr);
+    KAIXO_FUNCTION_OVERLOAD(strspn);
+    KAIXO_FUNCTION_OVERLOAD(strstr);
+    KAIXO_FUNCTION_OVERLOAD(strtof);
+    KAIXO_FUNCTION_OVERLOAD(strtok);
+    KAIXO_FUNCTION_OVERLOAD(strtol);
+    KAIXO_FUNCTION_OVERLOAD(strtoul);
+    KAIXO_FUNCTION_OVERLOAD(strxfrm);
+    KAIXO_FUNCTION_OVERLOAD(tolower);
+    KAIXO_FUNCTION_OVERLOAD(toupper);
+    KAIXO_FUNCTION_OVERLOAD(to_string);
+    KAIXO_FUNCTION_OVERLOAD(copy);
+    KAIXO_FUNCTION_OVERLOAD(btowc);
+    KAIXO_FUNCTION_OVERLOAD(c16rtomb);
+    KAIXO_FUNCTION_OVERLOAD(c32rtomb);
+    KAIXO_FUNCTION_OVERLOAD(mblen);
+    KAIXO_FUNCTION_OVERLOAD(mbrlen);
+    KAIXO_FUNCTION_OVERLOAD(mbrtoc16);
+    KAIXO_FUNCTION_OVERLOAD(mbrtoc32);
+    KAIXO_FUNCTION_OVERLOAD(mbrtowc);
+    KAIXO_FUNCTION_OVERLOAD(mbsinit);
+    KAIXO_FUNCTION_OVERLOAD(mbsrtowcs);
+    KAIXO_FUNCTION_OVERLOAD(mbstowcs);
+    KAIXO_FUNCTION_OVERLOAD(mbtowc);
+    KAIXO_FUNCTION_OVERLOAD(wcrtomb);
+    KAIXO_FUNCTION_OVERLOAD(wcsrtombs);
+    KAIXO_FUNCTION_OVERLOAD(wcstombs);
+    KAIXO_FUNCTION_OVERLOAD(wctob);
+    KAIXO_FUNCTION_OVERLOAD(wctomb);
+    KAIXO_FUNCTION_OVERLOAD(iswalnum);
+    KAIXO_FUNCTION_OVERLOAD(iswalpha);
+    KAIXO_FUNCTION_OVERLOAD(iswblank);
+    KAIXO_FUNCTION_OVERLOAD(iswcntrl);
+    KAIXO_FUNCTION_OVERLOAD(iswctype);
+    KAIXO_FUNCTION_OVERLOAD(iswdigit);
+    KAIXO_FUNCTION_OVERLOAD(iswgraph);
+    KAIXO_FUNCTION_OVERLOAD(iswlower);
+    KAIXO_FUNCTION_OVERLOAD(iswprint);
+    KAIXO_FUNCTION_OVERLOAD(iswpunct);
+    KAIXO_FUNCTION_OVERLOAD(iswspace);
+    KAIXO_FUNCTION_OVERLOAD(iswupper);
+    KAIXO_FUNCTION_OVERLOAD(iswxdigit);
+    KAIXO_FUNCTION_OVERLOAD(towctrans);
+    KAIXO_FUNCTION_OVERLOAD(towlower);
+    KAIXO_FUNCTION_OVERLOAD(towupper);
+    KAIXO_FUNCTION_OVERLOAD(wcscat);
+    KAIXO_FUNCTION_OVERLOAD(wcschr);
+    KAIXO_FUNCTION_OVERLOAD(wcscmp);
+    KAIXO_FUNCTION_OVERLOAD(wcscoll);
+    KAIXO_FUNCTION_OVERLOAD(wcscpy);
+    KAIXO_FUNCTION_OVERLOAD(wcscspn);
+    KAIXO_FUNCTION_OVERLOAD(wcslen);
+    KAIXO_FUNCTION_OVERLOAD(wcsncat);
+    KAIXO_FUNCTION_OVERLOAD(wcsncmp);
+    KAIXO_FUNCTION_OVERLOAD(wcsncpy);
+    KAIXO_FUNCTION_OVERLOAD(wcspbrk);
+    KAIXO_FUNCTION_OVERLOAD(wcsrchr);
+    KAIXO_FUNCTION_OVERLOAD(wcsspn);
+    KAIXO_FUNCTION_OVERLOAD(wcsstr);
+    KAIXO_FUNCTION_OVERLOAD(wcstof);
+    KAIXO_FUNCTION_OVERLOAD(wcstok);
+    KAIXO_FUNCTION_OVERLOAD(wcstol);
+    KAIXO_FUNCTION_OVERLOAD(wcstoul);
+    KAIXO_FUNCTION_OVERLOAD(wcsxfrm);
+    KAIXO_FUNCTION_OVERLOAD(wctrans);
+    KAIXO_FUNCTION_OVERLOAD(wctype);
+    KAIXO_FUNCTION_OVERLOAD(wmemchr);
+    KAIXO_FUNCTION_OVERLOAD(wmemcmp);
+    KAIXO_FUNCTION_OVERLOAD(wmemcpy);
+    KAIXO_FUNCTION_OVERLOAD(wmemmove);
+    KAIXO_FUNCTION_OVERLOAD(wmemset);
+
+    // ------------------------------------------------
+
 }
 
-#ifndef KAIXO_LC_FUNCTIONAL
-#define KAIXO_LC_FUNCTIONAL 1
-#endif
-#if KAIXO_LC_FUNCTIONAL == 1
-#include <functional>
-namespace kaixo {
-    namespace overloads {
-        lc_std_fun(std::, bind_front);
-        lc_std_fun(std::, bind);
-        lc_std_fun(std::, ref);
-        lc_std_fun(std::, cref);
-        lc_std_fun(std::, invoke);
-    }
-}
-#endif
-
-#ifndef KAIXO_LC_ANY
-#define KAIXO_LC_ANY 1
-#endif
-#if KAIXO_LC_ANY == 1
-#include <any>
-namespace kaixo {
-    namespace overloads {
-        lc_std_fun(std::, any_cast);
-        lc_std_fun(std::, make_any);
-    }
-}
-#endif
-
-#ifndef KAIXO_LC_ALGORITHMS
-#define KAIXO_LC_ALGORITHMS 1
-#endif
-#if KAIXO_LC_ALGORITHMS == 1
-#include <algorithm>
-namespace kaixo {
-    namespace overloads {
-        lc_std_fun(std::, adjacent_find);
-        lc_std_fun(std::, binary_search);
-        lc_std_fun(std::, bsearch);
-        lc_std_fun(std::, clamp);
-        lc_std_fun(std::, copy_backward);
-        lc_std_fun(std::, copy_n);
-        lc_std_fun(std::, count);
-        lc_std_fun(std::, count_if);
-        lc_std_fun(std::, equal);
-        lc_std_fun(std::, equal_range);
-        lc_std_fun(std::, fill);
-        lc_std_fun(std::, fill_n);
-        lc_std_fun(std::, find);
-        lc_std_fun(std::, find_end);
-        lc_std_fun(std::, find_first_of);
-        lc_std_fun(std::, find_if);
-        lc_std_fun(std::, find_if_not);
-        lc_std_fun(std::, for_each);
-        lc_std_fun(std::, for_each_n);
-        lc_std_fun(std::, generate);
-        lc_std_fun(std::, generate_n);
-        lc_std_fun(std::, includes);
-        lc_std_fun(std::, inplace_merge);
-        lc_std_fun(std::, iter_swap);
-        lc_std_fun(std::, lexicographical_compare);
-        lc_std_fun(std::, lower_bound);
-        lc_std_fun(std::, make_heap);
-        lc_std_fun(std::, max);
-        lc_std_fun(std::, max_element);
-        lc_std_fun(std::, merge);
-        lc_std_fun(std::, min);
-        lc_std_fun(std::, min_element);
-        lc_std_fun(std::, minmax);
-        lc_std_fun(std::, minmax_element);
-        lc_std_fun(std::, mismatch);
-        lc_std_fun(std::, move);
-        lc_std_fun(std::, move_backward);
-        lc_std_fun(std::, next_permutation);
-        lc_std_fun(std::, nth_element);
-        lc_std_fun(std::, partial_sort);
-        lc_std_fun(std::, partial_sort_copy);
-        lc_std_fun(std::, partition);
-        lc_std_fun(std::, partition_copy);
-        lc_std_fun(std::, partition_point);
-        lc_std_fun(std::, pop_heap);
-        lc_std_fun(std::, prev_permutation);
-        lc_std_fun(std::, push_heap);
-        lc_std_fun(std::, qsort);
-        lc_std_fun(std::, remove);
-        lc_std_fun(std::, remove_copy);
-        lc_std_fun(std::, replace);
-        lc_std_fun(std::, replace_copy);
-        lc_std_fun(std::, replace_copy_if);
-        lc_std_fun(std::, reverse);
-        lc_std_fun(std::, reverse_copy);
-        lc_std_fun(std::, rotate);
-        lc_std_fun(std::, rotate_copy);
-        lc_std_fun(std::, sample);
-        lc_std_fun(std::, search);
-        lc_std_fun(std::, search_n);
-        lc_std_fun(std::, shift_left);
-        lc_std_fun(std::, shift_right);
-        lc_std_fun(std::, set_difference);
-        lc_std_fun(std::, set_intersection);
-        lc_std_fun(std::, set_symmetric_difference);
-        lc_std_fun(std::, set_union);
-        lc_std_fun(std::, sort);
-        lc_std_fun(std::, sort_heap);
-        lc_std_fun(std::, stable_partition);
-        lc_std_fun(std::, stable_sort);
-        lc_std_fun(std::, swap);
-        lc_std_fun(std::, swap_ranges);
-        lc_std_fun(std::, transform);
-        lc_std_fun(std::, unique);
-        lc_std_fun(std::, unique_copy);
-        lc_std_fun(std::, upper_bound);
-    }
-}
-#endif
-
-#ifndef KAIXO_LC_ITERATOR
-#define KAIXO_LC_ITERATOR 1
-#endif
-#if KAIXO_LC_ITERATOR == 1
-#include <iterator>
-namespace kaixo {
-    namespace overloads {
-        lc_std_fun(std::, advance);
-        lc_std_fun(std::, back_inserter);
-        lc_std_fun(std::, begin);
-        lc_std_fun(std::, data);
-        lc_std_fun(std::, distance);
-        lc_std_fun(std::, empty);
-        lc_std_fun(std::, end);
-        lc_std_fun(std::, front_inserter);
-        lc_std_fun(std::, inserter);
-        lc_std_fun(std::, make_move_iterator);
-        lc_std_fun(std::, make_reverse_iterator);
-        lc_std_fun(std::, next);
-        lc_std_fun(std::, prev);
-        lc_std_fun(std::, rbegin);
-        lc_std_fun(std::, rend);
-        lc_std_fun(std::, size);
-    }
-}
-#endif
-
-#ifndef KAIXO_LC_MEMORY
-#define KAIXO_LC_MEMORY 1
-#endif
-#if KAIXO_LC_MEMORY == 1
-#include <memory>
-#include <memory_resource>
-namespace kaixo {
-    namespace overloads {
-        lc_std_fun(std::, addressof);
-        lc_std_fun(std::, align);
-        lc_std_fun(std::, assume_aligned);
-        lc_std_fun(std::, calloc);
-        lc_std_fun(std::, free);
-        lc_std_fun(std::, malloc);
-        lc_std_fun(std::, realloc);
-        lc_std_fun(std::, destroy);
-        lc_std_fun(std::, destroy_at);
-        lc_std_fun(std::, destroy_n);
-        lc_std_fun(std::pmr::, get_default_resource);
-        lc_std_fun(std::, make_obj_using_allocator);
-        lc_std_fun(std::pmr::, new_delete_resource);
-        lc_std_fun(std::pmr::, null_memory_resource);
-        lc_std_fun(std::pmr::, pool_options);
-        lc_std_fun(std::pmr::, set_default_resource);
-        lc_std_fun(std::, to_address);
-        lc_std_fun(std::, uninitialized_construct_using_allocator);
-        lc_std_fun(std::, uninitialized_copy);
-        lc_std_fun(std::, uninitialized_copy_n);
-        lc_std_fun(std::, uninitialized_default_construct);
-        lc_std_fun(std::, uninitialized_default_construct_n);
-        lc_std_fun(std::, uninitialized_fill);
-        lc_std_fun(std::, uninitialized_fill_n);
-        lc_std_fun(std::, uninitialized_move);
-        lc_std_fun(std::, uninitialized_move_n);
-        lc_std_fun(std::, uninitialized_value_construct);
-        lc_std_fun(std::, uninitialized_value_construct_n);
-    }
-}
-#endif
-
-#ifndef KAIXO_LC_NUMERIC
-#define KAIXO_LC_NUMERIC 1
-#endif
-#if KAIXO_LC_NUMERIC == 1
-#include <numeric>
-namespace kaixo {
-    namespace overloads {
-        lc_std_fun(std::, accumulate);
-        lc_std_fun(std::, adjacent_difference);
-        lc_std_fun(std::, inclusive_scan);
-        lc_std_fun(std::, inner_product);
-        lc_std_fun(std::, iota);
-        lc_std_fun(std::, reduce);
-        lc_std_fun(std::, partial_sum);
-        lc_std_fun(std::, transform_exclusive_scan);
-        lc_std_fun(std::, transform_inclusive_scan);
-        lc_std_fun(std::, transform_reduce);
-
-        lc_std_fun(std::, bit_cast);
-        lc_std_fun(std::, gcd);
-        lc_std_fun(std::, lcm);
-        lc_std_fun(std::, lerp);
-        lc_std_fun(std::, abs);
-        lc_std_fun(std::, acos);
-        lc_std_fun(std::, acosh);
-        lc_std_fun(std::, asin);
-        lc_std_fun(std::, asinh);
-        lc_std_fun(std::, atan);
-        lc_std_fun(std::, atan2);
-        lc_std_fun(std::, atanh);
-        lc_std_fun(std::, cbrt);
-        lc_std_fun(std::, ceil);
-        lc_std_fun(std::, copysign);
-        lc_std_fun(std::, cos);
-        lc_std_fun(std::, cosh);
-        lc_std_fun(std::, div);
-        lc_std_fun(std::, erf);
-        lc_std_fun(std::, erfc);
-        lc_std_fun(std::, exp);
-        lc_std_fun(std::, exp2);
-        lc_std_fun(std::, expm1);
-        lc_std_fun(std::, fabs);
-        lc_std_fun(std::, fdim);
-        lc_std_fun(std::, floor);
-        lc_std_fun(std::, fma);
-        lc_std_fun(std::, fmax);
-        lc_std_fun(std::, fmin);
-        lc_std_fun(std::, fmod);
-        lc_std_fun(std::, fpclassify);
-        lc_std_fun(std::, frexp);
-        lc_std_fun(std::, hypot);
-        lc_std_fun(std::, ilogb);
-        lc_std_fun(std::, isfinite);
-        lc_std_fun(std::, isgreater);
-        lc_std_fun(std::, isgreaterequal);
-        lc_std_fun(std::, isinf);
-        lc_std_fun(std::, isless);
-        lc_std_fun(std::, islessequal);
-        lc_std_fun(std::, islessgreater);
-        lc_std_fun(std::, isnan);
-        lc_std_fun(std::, isnormal);
-        lc_std_fun(std::, isunordered);
-        lc_std_fun(std::, ldexp);
-        lc_std_fun(std::, lgamma);
-        lc_std_fun(std::, log);
-        lc_std_fun(std::, log10);
-        lc_std_fun(std::, log1p);
-        lc_std_fun(std::, log2);
-        lc_std_fun(std::, logb);
-        lc_std_fun(std::, modf);
-        lc_std_fun(std::, nan);
-        lc_std_fun(std::, nearbyint);
-        lc_std_fun(std::, nextafter);
-        lc_std_fun(std::, pow);
-        lc_std_fun(std::, remainder);
-        lc_std_fun(std::, remquo);
-        lc_std_fun(std::, rint);
-        lc_std_fun(std::, round);
-        lc_std_fun(std::, scalbn);
-        lc_std_fun(std::, signbit);
-        lc_std_fun(std::, sin);
-        lc_std_fun(std::, sinh);
-        lc_std_fun(std::, sqrt);
-        lc_std_fun(std::, tan);
-        lc_std_fun(std::, tanh);
-        lc_std_fun(std::, tgamma);
-        lc_std_fun(std::, trunc);
-        lc_std_fun(std::, midpoint);
-        lc_std_fun(std::, assoc_laguerre);
-        lc_std_fun(std::, assoc_legendre);
-        lc_std_fun(std::, beta);
-        lc_std_fun(std::, comp_ellint_1);
-        lc_std_fun(std::, comp_ellint_2);
-        lc_std_fun(std::, comp_ellint_3);
-        lc_std_fun(std::, cyl_bessel_i);
-        lc_std_fun(std::, cyl_bessel_j);
-        lc_std_fun(std::, cyl_bessel_k);
-        lc_std_fun(std::, cyl_neumann);
-        lc_std_fun(std::, ellint_1);
-        lc_std_fun(std::, ellint_2);
-        lc_std_fun(std::, ellint_3);
-        lc_std_fun(std::, expint);
-        lc_std_fun(std::, hermite);
-        lc_std_fun(std::, laguerre);
-        lc_std_fun(std::, legendre);
-        lc_std_fun(std::, riemann_zeta);
-        lc_std_fun(std::, sph_bessel);
-        lc_std_fun(std::, sph_legendre);
-        lc_std_fun(std::, sph_neumann);
-    }
-}
-#endif
-
-#ifndef KAIXO_LC_STRING
-#define KAIXO_LC_STRING 1
-#endif
-#if KAIXO_LC_STRING == 1
-#include <string>
-#include <cstring>
-#include <cwctype>
-#include <cuchar>
-namespace kaixo {
-    namespace overloads {
-        lc_std_fun(std::, atof);
-        lc_std_fun(std::, atoi);
-        lc_std_fun(std::, isalnum);
-        lc_std_fun(std::, isalpha);
-        lc_std_fun(std::, isblank);
-        lc_std_fun(std::, iscntrl);
-        lc_std_fun(std::, isdigit);
-        lc_std_fun(std::, isgraph);
-        lc_std_fun(std::, islower);
-        lc_std_fun(std::, isprint);
-        lc_std_fun(std::, ispunct);
-        lc_std_fun(std::, isspace);
-        lc_std_fun(std::, isupper);
-        lc_std_fun(std::, isxdigit);
-        lc_std_fun(std::, memchr);
-        lc_std_fun(std::, memcmp);
-        lc_std_fun(std::, memcpy);
-        lc_std_fun(std::, memmove);
-        lc_std_fun(std::, memset);
-        lc_std_fun(std::, strcat);
-        lc_std_fun(std::, strchr);
-        lc_std_fun(std::, strcmp);
-        lc_std_fun(std::, strcoll);
-        lc_std_fun(std::, strcpy);
-        lc_std_fun(std::, strcspn);
-        lc_std_fun(std::, strerror);
-        lc_std_fun(std::, strlen);
-        lc_std_fun(std::, strncat);
-        lc_std_fun(std::, strncmp);
-        lc_std_fun(std::, strncpy);
-        lc_std_fun(std::, strpbrk);
-        lc_std_fun(std::, strrchr);
-        lc_std_fun(std::, strspn);
-        lc_std_fun(std::, strstr);
-        lc_std_fun(std::, strtof);
-        lc_std_fun(std::, strtok);
-        lc_std_fun(std::, strtol);
-        lc_std_fun(std::, strtoul);
-        lc_std_fun(std::, strxfrm);
-        lc_std_fun(std::, tolower);
-        lc_std_fun(std::, toupper);
-        lc_std_fun(std::, copy);
-        lc_std_fun(std::, btowc);
-        lc_std_fun(std::, c16rtomb);
-        lc_std_fun(std::, c32rtomb);
-        lc_std_fun(std::, mblen);
-        lc_std_fun(std::, mbrlen);
-        lc_std_fun(std::, mbrtoc16);
-        lc_std_fun(std::, mbrtoc32);
-        lc_std_fun(std::, mbrtowc);
-        lc_std_fun(std::, mbsinit);
-        lc_std_fun(std::, mbsrtowcs);
-        lc_std_fun(std::, mbstowcs);
-        lc_std_fun(std::, mbtowc);
-        lc_std_fun(std::, wcrtomb);
-        lc_std_fun(std::, wcsrtombs);
-        lc_std_fun(std::, wcstombs);
-        lc_std_fun(std::, wctob);
-        lc_std_fun(std::, wctomb);
-        lc_std_fun(std::, iswalnum);
-        lc_std_fun(std::, iswalpha);
-        lc_std_fun(std::, iswblank);
-        lc_std_fun(std::, iswcntrl);
-        lc_std_fun(std::, iswctype);
-        lc_std_fun(std::, iswdigit);
-        lc_std_fun(std::, iswgraph);
-        lc_std_fun(std::, iswlower);
-        lc_std_fun(std::, iswprint);
-        lc_std_fun(std::, iswpunct);
-        lc_std_fun(std::, iswspace);
-        lc_std_fun(std::, iswupper);
-        lc_std_fun(std::, iswxdigit);
-        lc_std_fun(std::, towctrans);
-        lc_std_fun(std::, towlower);
-        lc_std_fun(std::, towupper);
-        lc_std_fun(std::, wcscat);
-        lc_std_fun(std::, wcschr);
-        lc_std_fun(std::, wcscmp);
-        lc_std_fun(std::, wcscoll);
-        lc_std_fun(std::, wcscpy);
-        lc_std_fun(std::, wcscspn);
-        lc_std_fun(std::, wcslen);
-        lc_std_fun(std::, wcsncat);
-        lc_std_fun(std::, wcsncmp);
-        lc_std_fun(std::, wcsncpy);
-        lc_std_fun(std::, wcspbrk);
-        lc_std_fun(std::, wcsrchr);
-        lc_std_fun(std::, wcsspn);
-        lc_std_fun(std::, wcsstr);
-        lc_std_fun(std::, wcstof);
-        lc_std_fun(std::, wcstok);
-        lc_std_fun(std::, wcstol);
-        lc_std_fun(std::, wcstoul);
-        lc_std_fun(std::, wcsxfrm);
-        lc_std_fun(std::, wctrans);
-        lc_std_fun(std::, wctype);
-        lc_std_fun(std::, wmemchr);
-        lc_std_fun(std::, wmemcmp);
-        lc_std_fun(std::, wmemcpy);
-        lc_std_fun(std::, wmemmove);
-        lc_std_fun(std::, wmemset);
-    }
-}
-#endif
-
-#undef lc_std_fun
-#undef lc_mem_fun
+// ------------------------------------------------
