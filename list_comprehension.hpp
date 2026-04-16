@@ -966,16 +966,16 @@ namespace kaixo {
 
             // ------------------------------------------------
 
-            constexpr static friend iterator_impl operator+(const iterator_impl& s, difference_type i)
+            constexpr friend iterator_impl operator+(const iterator_impl& s, difference_type i)
                 requires std::ranges::random_access_range<Range> { return iterator_impl{ s.base + i, s.self }; }
             
-            constexpr static friend iterator_impl operator+(difference_type i, const iterator_impl& s)
+            constexpr friend iterator_impl operator+(difference_type i, const iterator_impl& s)
                 requires std::ranges::random_access_range<Range> { return iterator_impl{ i + s.base, s.self }; }
             
-            constexpr static friend iterator_impl operator-(const iterator_impl& s, difference_type i)
+            constexpr friend iterator_impl operator-(const iterator_impl& s, difference_type i)
                 requires std::ranges::random_access_range<Range> { return iterator_impl{ s.base - i, s.self }; }
             
-            constexpr static friend iterator_impl operator-(difference_type i, const iterator_impl& s)
+            constexpr friend iterator_impl operator-(difference_type i, const iterator_impl& s)
                 requires std::ranges::random_access_range<Range> { return iterator_impl{ i - s.base, s.self }; }
 
             // ------------------------------------------------
@@ -1922,10 +1922,10 @@ namespace kaixo {
 
             // ------------------------------------------------
 
-            constexpr static friend iterator operator+(const iterator& s, difference_type i) { return iterator{ static_cast<Begin>(s.value + i), s.self }; }
-            constexpr static friend iterator operator+(difference_type i, const iterator& s) { return iterator{ static_cast<Begin>(i + s.value), s.self }; }
-            constexpr static friend iterator operator-(const iterator& s, difference_type i) { return iterator{ static_cast<Begin>(s.value - i), s.self }; }
-            constexpr static friend iterator operator-(difference_type i, const iterator& s) { return iterator{ static_cast<Begin>(i - s.value), s.self }; }
+            constexpr friend iterator operator+(const iterator& s, difference_type i) { return iterator{ static_cast<Begin>(s.value + i), s.self }; }
+            constexpr friend iterator operator+(difference_type i, const iterator& s) { return iterator{ static_cast<Begin>(i + s.value), s.self }; }
+            constexpr friend iterator operator-(const iterator& s, difference_type i) { return iterator{ static_cast<Begin>(s.value - i), s.self }; }
+            constexpr friend iterator operator-(difference_type i, const iterator& s) { return iterator{ static_cast<Begin>(i - s.value), s.self }; }
 
             // ------------------------------------------------
 
