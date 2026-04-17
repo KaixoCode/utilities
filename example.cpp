@@ -162,16 +162,25 @@ namespace kaixo {
 
         template<class Ty>
         struct parse_result {
+
+            // ------------------------------------------------
+
             using result_type = Ty;
+
+            // ------------------------------------------------
 
             std::vector<error_result> _errors;
             std::optional<Ty> _value;
             parse_result_state _state;
 
+            // ------------------------------------------------
+
             parse_result(Ty&& result)
                 : _value(std::move(result))
                 , _state(parse_result_state::success)
             {}
+
+            // ------------------------------------------------
 
             template<class T> 
                 requires (!std::same_as<T, void> && std::constructible_from<Ty, T>)
@@ -194,8 +203,12 @@ namespace kaixo {
                 , _state(std::move(result._state))
             {}
 
+            // ------------------------------------------------
+
             bool has_value() const { return _value.has_value(); }
             Ty& value() { return _value.value(); }
+
+            // ------------------------------------------------
 
             template<class T, class Self>
             Self&& merge_errors(this Self&& self, parse_result<T>&& other) {
@@ -209,6 +222,8 @@ namespace kaixo {
                 return std::forward<Self>(self);
             }
 
+            // ------------------------------------------------
+
             bool fatal() const { return _state == parse_result_state::fatal; }
             bool recoverable() const { return _state == parse_result_state::recoverable; }
             bool success() const { return _state == parse_result_state::success; }
@@ -220,14 +235,24 @@ namespace kaixo {
                 return _state == parse_result_state::success
                     || _state == parse_result_state::fatal;
             }
+
+            // ------------------------------------------------
+
         };
 
         template<>
         struct parse_result<void> {
+
+            // ------------------------------------------------
+
             using result_type = empty_t;
+
+            // ------------------------------------------------
 
             std::vector<error_result> _errors;
             parse_result_state _state;
+
+            // ------------------------------------------------
 
             template<class T, class Self>
             Self&& merge_errors(this Self&& self, parse_result<T>&& other) {
@@ -241,8 +266,12 @@ namespace kaixo {
                 return std::forward<Self>(self);
             }
 
+            // ------------------------------------------------
+
             bool has_value() const { return false; }
             empty_t value() const { return {}; }
+
+            // ------------------------------------------------
 
             bool fatal() const { return _state == parse_result_state::fatal; }
             bool recoverable() const { return _state == parse_result_state::recoverable; }
@@ -255,6 +284,9 @@ namespace kaixo {
                 return _state == parse_result_state::success
                     || _state == parse_result_state::fatal;
             }
+
+            // ------------------------------------------------
+
         };
 
         // ------------------------------------------------
@@ -328,14 +360,21 @@ namespace kaixo {
         // ------------------------------------------------
 
         struct context {
+
+            // ------------------------------------------------
+
             std::string_view original;
             std::string_view value = original;
+
+            // ------------------------------------------------
 
             bool consume(std::string_view word) {
                 if (!value.starts_with(word)) return false;
                 value = value.substr(word.size());
                 return true;
             }
+
+            // ------------------------------------------------
 
             backup_struct backup() { return backup_struct{ this, value }; }
             parse_result<> success() { return backup().revert_as_success(); }
@@ -344,6 +383,9 @@ namespace kaixo {
             parse_result<> fail(error_message message) { return backup().fail(message); }
             parse_result<> fail() { return backup().fail(); }
             parse_result<> warning(error_message message) { return backup().warning(message); }
+
+            // ------------------------------------------------
+
         };
 
         // ------------------------------------------------
@@ -358,77 +400,63 @@ namespace kaixo {
 
             // ------------------------------------------------
 
-            using value_type = R;
-
-            // ------------------------------------------------
-
             symbol(const symbol&) = default;
             symbol(symbol&&) = default;
 
-            symbol(symbol& self)
-                : def([&self](context& ctx) { return self(ctx); })
-            {}
-
-            symbol(token<R>& self)
-                : def([&self](context& ctx) { return self(ctx); })
-            {}
-
+            // ------------------------------------------------
+            
 		    template<std::invocable<context&> T> 
                 requires std::same_as<parse_result<R>, std::invoke_result_t<T, context&>>
-            symbol(T&& def)
-                : def(std::move(def))
+            symbol(T&& fun)
+                : _def(std::move(fun))
+            {}
+
+            // ------------------------------------------------
+
+            template<class T>
+            symbol(symbol<T>& self)
+                : _def([&self](context& ctx) { return self(ctx); })
             {}
 
             template<class T>
-                requires (std::constructible_from<std::string, T> && !std::same_as<R, void>)
-		    symbol(T&& def) 
-                : def([def = std::forward<T>(def)](context& ctx) -> parse_result<std::string> {
-                    if (ctx.consume(def)) return std::string(def);
-                    return ctx.revert();
-                })
+            symbol(symbol<T>&& self)
+                : _def([self = std::move(self)](context& ctx) { return self(ctx); })
             {}
 
             template<class T>
-                requires (std::constructible_from<std::string, T> && std::same_as<R, void>)
-		    symbol(T&& def) 
-                : def([def = std::forward<T>(def)](context& ctx) -> parse_result<void> {
-                    if (ctx.consume(def)) return {};
+            symbol(token<T>& self)
+                : _def([&self](context& ctx) { return self(ctx); })
+            {}
+
+            template<class T>
+            symbol(token<T>&& self)
+                : _def([self = std::move(self)](context& ctx) { return self(ctx); })
+            {}
+
+            // ------------------------------------------------
+            
+            template<class T>
+                requires std::constructible_from<std::string, T>
+		    symbol(T&& str) 
+                : _def([str = std::forward<T>(str)](context& ctx) -> parse_result<std::string> {
+                    if (ctx.consume(str)) return std::string(str);
                     return ctx.revert();
                 })
             {}
 
             // ------------------------------------------------
 
-            std::function<parse_result<R>(context&)> def;
-
-            // ------------------------------------------------
-
-            parse_result<R> operator()(context& ctx) const { return def(ctx); }
+            parse_result<R> operator()(context& ctx) const { return _def(ctx); }
 
             parse_result<R> parse(std::string_view str) const {
                 context ctx{ .original = str };
-                return def(ctx);
+                return _def(ctx);
             }
 
             // ------------------------------------------------
 
-            template<class Self, class To>
-                requires (!std::same_as<To, void> && !std::same_as<To, R>)
-            operator symbol<To>(this Self&& self) {
-                return [self = std::forward<Self>(self)](context& ctx) -> parse_result<To> { return self(ctx); };
-            }
-
-            template<class Self>
-            operator symbol<void>(this Self&& self) {
-                return [self = std::forward<Self>(self)](context& ctx) -> parse_result<void> { 
-                    auto _ = ctx.backup();
-
-                    auto res = self(ctx);
-                    if (res) return ctx.success().merge_errors(res);
-
-                    return _.revert();
-                };
-            }
+        private:
+            std::function<parse_result<R>(context&)> _def;
 
             // ------------------------------------------------
 
@@ -550,7 +578,7 @@ namespace kaixo {
         }
 
         template<class Ty>
-        auto flag(Ty&& a) {
+        symbol<bool> flag(Ty&& a) {
             return has_value(optional(std::forward<Ty>(a)));
         }
 
@@ -793,20 +821,18 @@ namespace kaixo {
 
         template<>
         struct convert<std::vector<char>, std::string> {
-            template<class Ta>
-            static std::string operator()(Ta&& chars) {
+            static std::string operator()(std::vector<char> chars) {
                 return std::string(std::begin(chars), std::end(chars));
             }
         };
 
         template<class ...As, class ...Bs>
         struct convert<std::variant<As...>, std::variant<Bs...>> {
-            template<class Ta>
-            static std::variant<Bs...> operator()(Ta&& v) {
-                return std::visit([](auto& v) { 
+            static std::variant<Bs...> operator()(std::variant<As...> v) {
+                return std::visit([](auto&& v) { 
 					static_assert(std::constructible_from<std::variant<Bs...>, decltype(v)>, "Cannot convert variant type");
-                    return std::variant<Bs...>(v); 
-                }, v);
+                    return std::variant<Bs...>(std::move(v)); 
+                }, std::move(v));
             }
         };
 
@@ -814,7 +840,16 @@ namespace kaixo {
             requires (std::constructible_from<T, Vs> || ...)
         struct convert<std::variant<Vs...>, T> {
             static T operator()(std::variant<Vs...> val) {
-                return std::visit([](auto& v) { return static_cast<T>(v); }, val);
+                return std::visit([](auto&& v) { return static_cast<T>(v); }, std::move(val));
+            }
+        };
+
+        template<class ...As, class ...Bs>
+        struct convert<std::tuple<As...>, std::tuple<Bs...>> {
+            static std::tuple<Bs...> operator()(std::tuple<As...> val) {
+                return std::apply([](auto&&... args) { 
+                    return std::tuple<Bs...>{ convert<As, Bs>::operator()(std::move(args))... };
+				}, std::move(val));
             }
         };
 
@@ -824,27 +859,39 @@ namespace kaixo {
             requires (!std::same_as<A, void> && !std::same_as<B, void>)
         struct combine<A, B> {
 		    using result = std::tuple<A, B>;
-            static result operator()(A a, B b) { return std::make_tuple(a, b); }
+
+            static result operator()(A a, B b) { 
+                return std::make_tuple(std::move(a), std::move(b)); 
+            }
         };
 
         template<class A, class ...Bs>
             requires (!std::same_as<A, void>)
         struct combine<A, std::tuple<Bs...>> {
 		    using result = std::tuple<A, Bs...>;
-            static result operator()(A a, std::tuple<Bs...> b) { return std::tuple_cat(std::make_tuple(a), b); }
+
+            static result operator()(A a, std::tuple<Bs...> b) {
+                return std::tuple_cat(std::make_tuple(std::move(a)), std::move(b)); 
+            }
         };
 
         template<class ...As, class B>
             requires (!std::same_as<B, void>)
         struct combine<std::tuple<As...>, B> {
 		    using result = std::tuple<As..., B>;
-            static result operator()(std::tuple<As...> a, B b) { return std::tuple_cat(a, std::make_tuple(b)); }
+
+            static result operator()(std::tuple<As...> a, B b) {
+                return std::tuple_cat(std::move(a), std::make_tuple(std::move(b)));
+            }
         };
 
         template<class ...As, class ...Bs>
         struct combine<std::tuple<As...>, std::tuple<Bs...>> {
 		    using result = std::tuple<As..., Bs...>;
-            static result operator()(std::tuple<As...> a, std::tuple<Bs...> b) { return std::tuple_cat(a, b); }
+
+            static result operator()(std::tuple<As...> a, std::tuple<Bs...> b) {
+                return std::tuple_cat(std::move(a), std::move(b)); 
+            }
         };
 
         template<>
@@ -858,28 +905,22 @@ namespace kaixo {
         struct combine<void, B> {
             using result = B;
 
-            template<class Tb>
-            static result operator()(empty_t, Tb&& b) { 
-                return static_cast<B>(b); 
-            }
+            static result operator()(empty_t, B b) { return b; }
         };
 
         template<class A>
         struct combine<A, void> {
             using result = A;
 
-            template<class Ta>
-            static result operator()(Ta&& a, empty_t) { 
-                return static_cast<A>(a); 
-            }
+            static result operator()(A a, empty_t) { return a; }
         };
 
         template<>
         struct combine<std::string, std::string> {
             using result = std::string;
 
-            static result operator()(std::string_view a, std::string_view b) { 
-                return std::string(a) + std::string(b); 
+            static result operator()(std::string a, std::string b) { 
+                return std::move(a) + std::move(b);
             }
         };
 
@@ -887,8 +928,8 @@ namespace kaixo {
         struct combine<std::string, char> {
             using result = std::string;
 
-            static result operator()(std::string_view a, char b) { 
-                return std::string(a) + b; 
+            static result operator()(std::string a, char b) { 
+                return std::move(a) + b; 
             }
         };
 
@@ -896,8 +937,8 @@ namespace kaixo {
         struct combine<char, std::string> {
             using result = std::string;
 
-            static result operator()(char a, std::string_view b) { 
-                return a + std::string(b); 
+            static result operator()(char a, std::string b) {
+                return a + std::move(b); 
             }
         };
 
@@ -910,27 +951,21 @@ namespace kaixo {
             }
         };
 
-        template<class A>
-            requires (!std::same_as<A, void>)
-        struct combine<A, std::optional<A>> {
-            using result = A;
+        template<>
+        struct combine<std::string, std::optional<std::string>> {
+            using result = std::string;
 
-            template<class Ta, class Tb>
-            static result operator()(Ta&& a, Tb&& b) {
-                if (b) return std::forward<Ta>(a) + *std::forward<Tb>(b);
-                return a;
+            static result operator()(std::string a, std::optional<std::string> b) {
+                return b ? std::move(a) + *std::move(b) : std::move(a);
             }
         };
 
-        template<class A>
-            requires (!std::same_as<A, void>)
-        struct combine<std::optional<A>, A> {
-            using result = A;
+        template<>
+        struct combine<std::optional<std::string>, std::string> {
+            using result = std::string;
 
-            template<class Ta, class Tb>
-            static result operator()(Ta&& a, Tb&& b) {
-                if (a) return *std::forward<Ta>(a) + std::forward<Tb>(b);
-                return b;
+            static result operator()(std::optional<std::string> a, std::string b) {
+                return a ? *std::move(a) + std::move(b) : std::move(b);
             }
         };
 
@@ -939,11 +974,9 @@ namespace kaixo {
         struct combine<std::vector<T>, B> {
             using result = std::vector<T>;
 
-            template<class Va, class Tb>
-            static result operator()(Va&& a, Tb&& b) {
-                std::vector<T> result = std::forward<Va>(a);
-                result.push_back(static_cast<T>(std::forward<Tb>(b)));
-                return result;
+            static result operator()(std::vector<T> a, B b) {
+                a.push_back(static_cast<T>(std::move(b)));
+                return a;
             }
         };
 
@@ -952,11 +985,9 @@ namespace kaixo {
         struct combine<A, std::vector<T>> {
             using result = std::vector<T>;
 
-            template<class Ta, class Vb>
-            static result operator()(Ta&& a, Vb&& b) {
-                std::vector<T> result = std::forward<Vb>(b);
-                result.insert(result.begin(), static_cast<A>(std::forward<Ta>(a)));
-                return result;
+            static result operator()(A a, std::vector<T> b) {
+                b.insert(b.begin(), static_cast<T>(std::move(a)));
+                return b;
             }
         };
 
@@ -964,11 +995,9 @@ namespace kaixo {
         struct combine<std::vector<T>, std::vector<T>> {
             using result = std::vector<T>;
 
-            template<class Va, class Vb>
-            static result operator()(Va&& a, Vb&& b) {
-                std::vector<T> result = std::forward<Va>(a);
-                result.insert_range(std::begin(result), std::forward<Vb>(b));
-                return result;
+            static result operator()(std::vector<T> a, std::vector<T> b) {
+                a.insert_range(std::begin(a), std::move(b));
+                return a;
             }
         };
 
