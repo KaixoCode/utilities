@@ -1,39 +1,30 @@
 ﻿
 // ------------------------------------------------
 
-#include <iostream>
-#include <fstream>
 #include <string>
-#include <source_location>
 #include <vector>
-#include <map>
-#include <ranges>
 #include <algorithm>
 #include <utility>
 #include <functional>
-#include <cassert>
-#include <set>
-#include <expected>
-#include <thread>
-#include <any>
-#include <mutex>
 #include <type_traits>
 #include <concepts>
-#include <cstddef>
 #include <string_view>
-#include <unordered_set>
 #include <regex>
-#include <span>
-#include <complex>
-#include <print>
-#include <coroutine>
-#include <typeindex>
-#include <filesystem>
 #include <variant>
 
 // ------------------------------------------------
 
 #include "json.hpp"
+#include <charconv>
+#include <cmath>
+#include <cstddef>
+#include <cassert>
+#include <cstdint>
+#include <format>
+#include <initializer_list>
+#include <iterator>
+#include <optional>
+#include <tuple>
 
 // ------------------------------------------------
 
@@ -152,6 +143,14 @@ namespace kaixo {
 
         template<class A, class B>
         struct combine;
+
+        // ------------------------------------------------
+
+        template<class Ty>
+        struct vector_of : std::type_identity<std::vector<Ty>> {};
+
+        template<>
+        struct vector_of<char> : std::type_identity<std::string> {};
 
         // ------------------------------------------------
 
@@ -348,13 +347,18 @@ namespace kaixo {
         };
 
         // ------------------------------------------------
+        
+        template<class R = void>
+        struct token;
+
+        // ------------------------------------------------
 
         template<class R = void>
         struct symbol {
 
             // ------------------------------------------------
 
-            using fun = std::function<parse_result<R>(context&)>;
+            using value_type = R;
 
             // ------------------------------------------------
 
@@ -362,7 +366,11 @@ namespace kaixo {
             symbol(symbol&&) = default;
 
             symbol(symbol& self)
-                : def([&self](context& ctx) { return self.def(ctx); })
+                : def([&self](context& ctx) { return self(ctx); })
+            {}
+
+            symbol(token<R>& self)
+                : def([&self](context& ctx) { return self(ctx); })
             {}
 
 		    template<std::invocable<context&> T> 
@@ -389,7 +397,11 @@ namespace kaixo {
                 })
             {}
 
-            fun def;
+            // ------------------------------------------------
+
+            std::function<parse_result<R>(context&)> def;
+
+            // ------------------------------------------------
 
             parse_result<R> operator()(context& ctx) const { return def(ctx); }
 
@@ -398,23 +410,84 @@ namespace kaixo {
                 return def(ctx);
             }
 
+            // ------------------------------------------------
+
             template<class Self, class To>
                 requires (!std::same_as<To, void> && !std::same_as<To, R>)
             operator symbol<To>(this Self&& self) {
                 return [self = std::forward<Self>(self)](context& ctx) -> parse_result<To> { return self(ctx); };
             }
 
+            template<class Self>
+            operator symbol<void>(this Self&& self) {
+                return [self = std::forward<Self>(self)](context& ctx) -> parse_result<void> { 
+                    auto _ = ctx.backup();
+
+                    auto res = self(ctx);
+                    if (res) return ctx.success().merge_errors(res);
+
+                    return _.revert();
+                };
+            }
+
+            // ------------------------------------------------
+
         };
 
         // ------------------------------------------------
     
-        symbol<> ignore(std::string_view a) {
-            return [a = std::move(a)](context& ctx) -> parse_result<> {
-                auto _ = ctx.backup();
-                if (ctx.consume(a)) return ctx.success();
-                return _.revert();
-            };
-        }
+        template<class R>
+        struct token : symbol<R> {
+
+            // ------------------------------------------------
+
+            template<class T>
+            static symbol<R> ignore(symbol<T> val, std::string_view ignore = " \t\n\r") {
+                return [val = std::move(val), ignore](context& ctx) -> parse_result<R> {
+                    auto _ = ctx.backup();
+                    auto preignore = ctx.value.find_first_not_of(ignore);
+                    if (preignore != std::string_view::npos) {
+                        ctx.value = ctx.value.substr(preignore);
+                    }
+
+                    auto res = val(ctx);
+                    if (res) {
+                        auto postignore = ctx.value.find_first_not_of(ignore);
+                        if (postignore != std::string_view::npos) {
+                            ctx.value = ctx.value.substr(postignore);
+                        }
+
+                        if constexpr (std::same_as<T, R>) {
+                            return res;
+                        } else if constexpr (std::same_as<R, void>) {
+                            return ctx.success().merge_errors(res);
+                        } else {
+                            return parse_result<R>(convert<T, R>::operator()(std::move(res.value()))).merge_errors(res);
+                        }
+                    }
+
+                    return _.revert();
+                };
+            }
+
+            // ------------------------------------------------
+
+            template<class T>
+            token(symbol<T> val, std::string_view to_ignore = " \t\n\r")
+                : symbol<R>(ignore(std::move(val), to_ignore))
+            { }
+        
+            template<class T>
+                requires std::constructible_from<std::string, T>
+            token(T&& a, std::string_view to_ignore = " \t\n\r")
+                : symbol<R>(ignore(symbol<std::string>(std::forward<T>(a)), to_ignore))
+            { }
+
+            // ------------------------------------------------
+
+		};
+    
+        // ------------------------------------------------
     
         template<class Ty>
         symbol<> ignore(symbol<Ty> a) {
@@ -428,16 +501,11 @@ namespace kaixo {
             };
         }
 
-        // ------------------------------------------------
-
-        symbol<std::optional<std::string>> optional(std::string_view a) {
-            return [a = std::move(a)](context& ctx) -> parse_result<std::optional<std::string>> {
-                auto _ = ctx.backup();
-                if (ctx.consume(a)) return { std::string(a) };
-                _.revert();
-                return { std::nullopt };
-            };
+        symbol<> ignore(std::string_view a) {
+            return ignore(symbol<std::string>(a));
         }
+
+        // ------------------------------------------------
 
         template<class Ty>
         symbol<std::optional<Ty>> optional(symbol<Ty> a) {
@@ -452,63 +520,46 @@ namespace kaixo {
             };
         }
 
-        // ------------------------------------------------
+        template<class Ty>
+        symbol<std::optional<Ty>> optional(symbol<std::optional<Ty>> a) {
+            return [a = std::move(a)](context& ctx) -> parse_result<std::optional<Ty>> {
+                auto _ = ctx.backup();
 
-        //parser_fun invert(std::string_view a) {
-        //    return [a = std::move(a)](context& ctx) -> parse_result<node> {
-        //        auto _ = ctx.backup();
-        //        if (ctx.consume(a)) return node{ .result = std::string(a) };
-        //        _.revert();
-        //        return node{};
-        //    };
-        //}
+                auto res = a(ctx);
+                if (res) return res;
 
-        // ------------------------------------------------
-
-        symbol<std::vector<std::string>> many(std::string_view a) {
-            return [a = std::move(a)](context& ctx) -> parse_result<std::vector<std::string>> {
-                parse_result<std::vector<std::string>> result{ std::vector<std::string>{} };
-
-                while (true) {
-                    auto _ = ctx.backup();
-                    if (ctx.consume(a)) {
-					    result.value().push_back(std::string(a));
-                        continue;
-                    }
-                    _.revert();
-                    break;
-                }
-
-                return result;
-            };
-        }
-
-        symbol<std::vector<std::string>> some(std::string_view a) {
-            return [a = std::move(a)](context& ctx) -> parse_result<std::vector<std::string>> {
-                parse_result<std::vector<std::string>> result{ std::vector<std::string>{} };
-                while (true) {
-                    auto _ = ctx.backup();
-                    if (ctx.consume(a)) {
-                        result.value().push_back(std::string(a));
-                        continue;
-                    }
-
-                    if (result.value().empty()) {
-                        return _.revert().merge_errors(result);
-                    }
-                
-                    _.revert();
-                    break;
-                }
-
-                return result;
+                _.revert();
+                return { std::nullopt };
             };
         }
 
         template<class Ty>
-        symbol<std::vector<Ty>> many(symbol<Ty> a) {
-            return [a = std::move(a)](context& ctx) -> parse_result<std::vector<Ty>> {
-                parse_result<std::vector<Ty>> result{ std::vector<Ty>{} };
+        symbol<std::vector<Ty>> optional(symbol<std::vector<Ty>> a) { return std::move(a); }
+        
+        symbol<std::optional<std::string>> optional(std::string_view a) {
+			return optional(symbol<std::string>(a));
+        }
+
+        template<class Ty>
+        symbol<bool> has_value(symbol<std::optional<Ty>> a) {
+            return [a = std::move(a)](context& ctx) -> parse_result<bool> {
+                auto res = a(ctx);
+				if (res.has_value() && res.value().has_value()) return true;
+                return false;
+            };
+        }
+
+        template<class Ty>
+        auto flag(Ty&& a) {
+            return has_value(optional(std::forward<Ty>(a)));
+        }
+
+        // ------------------------------------------------
+
+        template<class Ty, class V = typename vector_of<Ty>::type>
+        symbol<V> many(symbol<Ty> a) {
+            return [a = std::move(a)](context& ctx) -> parse_result<V> {
+                parse_result<V> result{ V{} };
 
                 while (true) {
                     auto _ = ctx.backup();
@@ -528,10 +579,10 @@ namespace kaixo {
             };
         }
 
-        template<class Ty>
-        symbol<std::vector<Ty>> some(symbol<Ty> a) {
-            return [a = std::move(a)](context& ctx) -> parse_result<std::vector<Ty>> {
-                parse_result<std::vector<Ty>> result{ std::vector<Ty>{} };
+        template<class Ty, class V = typename vector_of<Ty>::type>
+        symbol<V> some(symbol<Ty> a) {
+            return [a = std::move(a)](context& ctx) -> parse_result<V> {
+                parse_result<V> result{ V{} };
                 while (true) {
                     auto _ = ctx.backup();
 
@@ -555,9 +606,16 @@ namespace kaixo {
                 return result;
             };
         }
+        
+        symbol<std::vector<std::string>> many(std::string_view a) {
+            return many(symbol<std::string>(a));
+        }
+
+        symbol<std::vector<std::string>> some(std::string_view a) {
+            return some(symbol<std::string>(a));
+        }
 
         // ------------------------------------------------
-
 
         symbol<char> one_of(std::string_view a) {
             return [a = std::move(a)](context& ctx) -> parse_result<char> {
@@ -567,6 +625,7 @@ namespace kaixo {
 
                 char front = ctx.value.front();
                 if (a.find(front) == std::string_view::npos) return _.revert();
+				ctx.value = ctx.value.substr(1);
 
                 return front;
             };
@@ -580,9 +639,42 @@ namespace kaixo {
 
                 char front = ctx.value.front();
                 if (a.find(front) != std::string_view::npos) return _.revert();
+                ctx.value = ctx.value.substr(1);
 
                 return front;
             };
+        }
+
+        // ------------------------------------------------
+
+        symbol<std::string> regex(std::string_view a) {
+            return [regex = std::regex(std::string(a))](parser::context& ctx) -> parser::parse_result<std::string> {
+                auto it = std::regex_iterator<std::string_view::iterator>(ctx.value.begin(), ctx.value.end(), regex);
+                if (it == std::regex_iterator<std::string_view::iterator>{}) {
+                    return ctx.revert();
+                }
+
+                std::string result = it->str();
+                ctx.value = ctx.value.substr(result.size());
+                return result;
+            };
+        }
+
+        // ------------------------------------------------
+
+        template<class To, class Ty>
+        symbol<To> as(symbol<Ty> a) {
+            return [a = std::move(a)](context& ctx) -> parse_result<To> {
+                auto res = a(ctx);
+                if (!res) return ctx.revert().merge_errors(res);
+				if (res.fatal()) return ctx.fail().merge_errors(res);
+                return parse_result<To>(convert<Ty, To>::operator()(std::move(res.value()))).merge_errors(res);
+            };
+        }
+        
+        template<class To>
+        symbol<To> as(std::string_view a) {
+			return as<To>(symbol<std::string>(a));
         }
 
         // ------------------------------------------------
@@ -598,18 +690,19 @@ namespace kaixo {
                 auto res_b = b(ctx);
                 if (!res_b) return _.revert().merge_errors(res_a).merge_errors(res_b);
 
-                return combine<A, B>::operator()(res_a.value(), res_b.value());
+                return parse_result<R>(combine<A, B>::operator()(res_a.value(), res_b.value()))
+                    .merge_errors(res_a).merge_errors(res_b);
             };
         }
     
         template<class A, class R = typename combine<A, std::string>::result>
         friend symbol<R> operator+(symbol<A> a, std::string_view b) {
-		    return a + symbol<std::string>(b);
+		    return std::move(a) + symbol<std::string>(b);
         }
 
         template<class B, class R = typename combine<std::string, B>::result>
         friend symbol<R> operator+(std::string_view a, symbol<B> b) {
-            return symbol<std::string>(a) + b;
+            return symbol<std::string>(a) + std::move(b);
         }
 
         // ------------------------------------------------
@@ -619,6 +712,18 @@ namespace kaixo {
 
         template<class T>
         struct create_variant<T, T> : std::type_identity<T> {};
+
+        template<class T>
+        struct create_variant<void, T> : std::type_identity<T> {};
+
+        template<class T>
+        struct create_variant<T, void> : std::type_identity<T> {};
+
+        template<class ...As>
+        struct create_variant<std::variant<As...>, void> : std::type_identity<std::variant<As...>> {};
+
+        template<class ...Bs>
+        struct create_variant<void, std::variant<Bs...>> : std::type_identity<std::variant<Bs...>> {};
 
         template<class ...As, class B>
             requires (std::same_as<As, B> || ...)
@@ -635,6 +740,8 @@ namespace kaixo {
         template<class A, class ...Bs>
             requires ((!std::same_as<A, Bs>) && ...)
         struct create_variant<A, std::variant<Bs...>> : std::type_identity<std::variant<A, Bs...>> {};
+
+        // ------------------------------------------------
 
         template<class A, class B, class R = typename create_variant<A, B>::type>
         friend symbol<R> operator|(symbol<A> a, symbol<B> b) {
@@ -653,21 +760,61 @@ namespace kaixo {
 
         template<class A, class R = typename create_variant<A, std::string>::type>
         friend symbol<R> operator|(symbol<A> a, std::string_view b) {
-            return a | symbol<std::string>(b);
+            return std::move(a) | symbol<std::string>(b);
         }
 
         template<class B, class R = typename create_variant<std::string, B>::type>
         friend symbol<R> operator|(std::string_view a, symbol<B> b) {
-            return symbol<std::string>(a) | b;
+            return symbol<std::string>(a) | std::move(b);
         }
 
         // ------------------------------------------------
+
+        template<class Ty>
+            requires std::is_arithmetic_v<Ty>
+        struct convert<std::string, Ty> {
+            static Ty operator()(std::string_view sv) {
+                Ty value = Ty{};
+                std::from_chars(sv.data(), sv.data() + sv.size(), value);
+                return value;
+            }
+        };
+
+        template<class Ty>
+        struct convert<Ty, std::nullptr_t> {
+            static std::nullptr_t operator()(Ty) { return {}; }
+        };
+
+        template<class A, class B>
+            requires std::convertible_to<A, B>
+        struct convert<A, B> {
+            static B operator()(A value) { return static_cast<B>(value); }
+        };
 
         template<>
         struct convert<std::vector<char>, std::string> {
             template<class Ta>
             static std::string operator()(Ta&& chars) {
                 return std::string(std::begin(chars), std::end(chars));
+            }
+        };
+
+        template<class ...As, class ...Bs>
+        struct convert<std::variant<As...>, std::variant<Bs...>> {
+            template<class Ta>
+            static std::variant<Bs...> operator()(Ta&& v) {
+                return std::visit([](auto& v) { 
+					static_assert(std::constructible_from<std::variant<Bs...>, decltype(v)>, "Cannot convert variant type");
+                    return std::variant<Bs...>(v); 
+                }, v);
+            }
+        };
+
+        template<class ...Vs, class T>
+            requires (std::constructible_from<T, Vs> || ...)
+        struct convert<std::variant<Vs...>, T> {
+            static T operator()(std::variant<Vs...> val) {
+                return std::visit([](auto& v) { return static_cast<T>(v); }, val);
             }
         };
 
@@ -736,38 +883,54 @@ namespace kaixo {
             }
         };
 
-        template<class A, class B>
-        struct combine<std::optional<A>, std::optional<B>> {
-            using result = std::optional<typename combine<A, B>::result>;
+        template<>
+        struct combine<std::string, char> {
+            using result = std::string;
 
-            template<class Ta, class Tb>
-            static result operator()(Ta&& a, Tb&& b) {
-                if (a && b) return combine<A, B>::operator()(*std::forward<Ta>(a), *std::forward<Tb>(b));
-                return std::nullopt;
+            static result operator()(std::string_view a, char b) { 
+                return std::string(a) + b; 
             }
         };
 
-        template<class A, class B>
+        template<>
+        struct combine<char, std::string> {
+            using result = std::string;
+
+            static result operator()(char a, std::string_view b) { 
+                return a + std::string(b); 
+            }
+        };
+
+        template<>
+        struct combine<char, char> {
+            using result = std::string;
+
+            static result operator()(char a, char b) { 
+                return std::string(1, a) + b; 
+            }
+        };
+
+        template<class A>
             requires (!std::same_as<A, void>)
-        struct combine<A, std::optional<B>> {
-            using result = std::optional<typename combine<A, B>::result>;
+        struct combine<A, std::optional<A>> {
+            using result = A;
 
             template<class Ta, class Tb>
             static result operator()(Ta&& a, Tb&& b) {
-                if (b) return combine<A, B>::operator()(std::forward<Ta>(a), *std::forward<Tb>(b));
-                return std::nullopt;
+                if (b) return std::forward<Ta>(a) + *std::forward<Tb>(b);
+                return a;
             }
         };
 
-        template<class A, class B>
-            requires (!std::same_as<B, void>)
-        struct combine<std::optional<A>, B> {
-            using result = std::optional<typename combine<A, B>::result>;
+        template<class A>
+            requires (!std::same_as<A, void>)
+        struct combine<std::optional<A>, A> {
+            using result = A;
 
             template<class Ta, class Tb>
             static result operator()(Ta&& a, Tb&& b) {
-                if (a) return combine<A, B>::operator()(*std::forward<Ta>(a), std::forward<Tb>(b));
-                return std::nullopt;
+                if (a) return *std::forward<Ta>(a) + std::forward<Tb>(b);
+                return b;
             }
         };
 
@@ -815,124 +978,126 @@ namespace kaixo {
 
     // ------------------------------------------------
 
-    //parser::parser_fun operator ""_symbol(const char* str, std::size_t n) {
-    //    return [str = std::string_view(str, n)](parser::context& ctx) -> parser::parse_result<parser::node> {
-    //        if (ctx.consume(str)) return parser::node{ .result = std::string(str) };
-    //        return ctx.revert();
-    //    };
-    //}
-    //
-    //parser::parser_fun operator ""_regex(const char* str, std::size_t n) {
-    //    return [regex = std::regex(str)](parser::context& ctx) -> parser::parse_result<parser::node> {
-    //        auto it = std::regex_iterator<std::string_view::iterator>(ctx.value.begin(), ctx.value.end(), regex);
-    //        if (it == std::regex_iterator<std::string_view::iterator>{}) {
-    //            return ctx.revert();
-    //        }
-    //
-    //        parser::node result{ .result = it->str() };
-    //        ctx.value = ctx.value.substr(result.result.size());
-    //        return result;
-    //    };
-    //}
+}
 
-    // ------------------------------------------------
+// ------------------------------------------------
 
-    //struct json_parser : parser {
-    //
-    //    symbol start = object;
-    //
-    //    symbol object = "{" + optional(member + many("," + member)) + "}";
-    //    symbol array = "[" + optional(value + many("," + value)) + "]";
-    //    symbol string = "\"" + many(one_not_of("\"")) + "\"";
-    //    symbol number = "[0-9]*"_regex;
-    //
-    //    symbol value = string
-    //                 | object
-    //                 | array
-    //                 | "true"
-    //                 | "false"
-    //                 | "null"
-    //                 ;
-    //
-    //    symbol member = string + ":" + value;
-    //
-    //};
+namespace kaixo {
+    template<>
+    struct parser::convert<std::string, bool> {
+        template<class Ty>
+        static bool operator()(Ty&& str) {
+            if (str == "true") return true;
+            return false;
+        }
+    };
+
+    template<>
+    struct parser::convert<std::vector<std::tuple<std::string, basic_json>>, basic_json> {
+        static basic_json operator()(std::vector<std::tuple<std::string, basic_json>> val) {
+            basic_json result = basic_json::object_t{};
+		    for (auto& [key, value] : val) {
+                result[std::move(key)] = std::move(value);
+            }
+
+            return result;
+        }
+    };
+
+    template<>
+    struct parser::convert<std::tuple<bool, std::size_t, std::optional<std::size_t>, std::optional<std::tuple<bool, std::size_t>>>, basic_json> {
+        static basic_json operator()(std::tuple<bool, std::size_t, std::optional<std::size_t>, std::optional<std::tuple<bool, std::size_t>>> val) {
+            auto& [neg, whole, frac, exp] = val;
+
+            if (frac.has_value() || exp.has_value()) {
+                double result = static_cast<double>(whole);
+            
+                if (frac) {
+                    std::size_t f = *frac;
+                    std::size_t digits = 0;
+                    std::size_t tmp = f;
+                    if (tmp == 0) {
+                        digits = 1;
+                    } else {
+                        while (tmp > 0) {
+                            tmp /= 10;
+                            ++digits;
+                        }
+                    }
+
+                    result += f / std::pow(10.0, digits);
+                }
+
+                if (exp) {
+                    auto& [e_sign, e_val] = *exp;
+                    std::int64_t signed_exp = e_sign ? -e_val : e_val;
+                    result *= std::pow(10.0, signed_exp);
+                }
+
+                if (neg) result = -result;
+                return result;
+            }
+
+            if (neg) {
+                return -static_cast<int64_t>(whole);
+            } else {
+                return whole;
+            }
+        }
+    };
 }
 
 using namespace kaixo;
 
-template<>
-struct parser::convert<std::string, bool> {
-    template<class Ty>
-    static bool operator()(Ty&& str) {
-        if (str == "true") return true;
-        return false;
-    }
-};
-
-template<>
-struct parser::convert<std::variant<std::string, bool, basic_json>, basic_json> {
-    static basic_json operator()(std::variant<std::string, bool, basic_json> val) {
-        return std::visit([](auto& v) { return basic_json(v); }, val);
-    }
-};
-
-template<>
-struct parser::convert<std::optional<std::vector<std::tuple<std::string, basic_json>>>, basic_json> {
-    static basic_json operator()(std::optional<std::vector<std::tuple<std::string, basic_json>>> val) {
-        if (!val) return basic_json::object_t{};
-
-        basic_json result = basic_json::object_t{};
-		for (auto& [key, value] : *val) {
-            result[std::move(key)] = std::move(value);
-        }
-
-        return result;
-    }
-};
-
-template<>
-struct parser::convert<std::optional<std::vector<basic_json>>, basic_json> {
-    static basic_json operator()(std::optional<std::vector<basic_json>> val) {
-        if (!val) return basic_json::array_t{};
-
-        basic_json result = basic_json::array_t{};
-		for (auto& v : *val) {
-            result.push_back(std::move(v));
-        }
-
-        return result;
-    }
-};
-
 struct json_parser : kaixo::parser {
-    
-    symbol<> lbracket = "[";
-    symbol<> rbracket = "]";
-    symbol<> lbrace = "{";
-    symbol<> rbrace = "}";
-    symbol<> comma = ",";
-    symbol<> quote = "\"";
-    symbol<> colon = ":";
-    
-    symbol<bool> true_string = "true";
-    symbol<bool> false_string = "false";
-	symbol<bool> boolean = true_string | false_string;
+    token<> colon = ":";
+    token<> lbracket = "{";
+	token<> rbracket = "}";
+	token<> lbrace = "[";
+	token<> rbrace = "]";
+	token<> comma = ",";
 
-    symbol<std::string> string = quote + many(one_not_of("\"")) + quote;
+	symbol<char> digit = one_of("0123456789");
+	symbol<std::size_t> digits = some(digit);
 
-    symbol<basic_json> value = string | boolean | object | array;
-    
-    symbol<std::tuple<std::string, basic_json>> member = string + colon + value;
-    symbol<basic_json> object = lbrace + optional(many(member + comma) + member) + rbrace;
-    symbol<basic_json> array = lbracket + optional(many(value + comma) + value) + rbracket;
+    symbol<basic_json> number = flag("-")                           // Signedness
+        + as<std::size_t>("0" | one_of("123456789") + many(digit)) // Whole part
+        + optional(ignore(".") + digits)                           // Fractional part
+        + optional(ignore(one_of("eE")) + (flag("-") | ignore("+")) + digits); // Exponent
+
+    symbol<bool> boolean = as<bool>("true") | as<bool>("false");
+
+    symbol<std::nullptr_t> null = "null";
+
+    symbol<std::string> string = ignore("\"") + many(one_not_of("\"")) + ignore("\"");
+
+    token<basic_json> object = lbracket
+                             + optional(many(string + colon + value + comma) + (string + colon + value)) 
+                             + rbracket;
+
+    token<basic_json> array  = lbrace
+                             + optional(many(value + comma) + value) 
+                             + rbrace;
+
+    token<basic_json> value = null
+                            | string
+                            | boolean 
+                            | object 
+                            | array 
+                            | number;
 };
 
 int main() {
     json_parser parser{};
 
-	auto res = parser.boolean.parse("true");
-
+ 	auto res = parser.object.parse(R"({ "test" : 1.123E2, "woof": true, "carrot": null, "value": "string thing" })");
+    if (res) {
+        basic_json& value = res.value();
+    
+        double test = value["test"].as<double>();
+		assert(test == 112.3);
+    }
 
     return 0;
 }
+
